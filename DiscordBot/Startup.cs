@@ -53,25 +53,6 @@ namespace DiscordBot
 
             services.AddHostedService<ChatWorker>();
             services.AddHostedService<WebAlerterWorker>();
-            services.AddControllers();
-            services.AddCors(options =>
-                             {
-                                 options.AddPolicy("CorsPolicy",
-                                     builder => builder.AllowAnyOrigin()
-                                     .AllowAnyMethod()
-                                     .AllowAnyHeader());
-                             });
-
-
-            services.Configure<ForwardedHeadersOptions>(options =>
-            {
-                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
-                                           ForwardedHeaders.XForwardedProto;
-                options.KnownNetworks.Clear();
-                options.KnownProxies.Clear();
-
-
-            });
         }
 
         public void Configure(IApplicationBuilder app)
