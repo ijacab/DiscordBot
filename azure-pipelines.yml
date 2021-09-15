@@ -1,0 +1,78 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- master
+
+pool:
+  name: Pi
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+- task: Bash@3
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
+    script: env
+- task: Bash@3
+  displayName: "make directory service directory if it doesn't exist and apply permissions"
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
+    script: |
+      sudo mkdir /srv/DiscordBot
+      sudo chmod 777 /srv/DiscordBot
+
+- task: Bash@3
+  displayName: "stop service"
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
+    script: sudo systemctl stop DiscordBot
+
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet publish'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: 'DiscordBot/DiscordBot.sln'
+    arguments: '--configuration $(buildConfiguration) -r linux-arm --self-contained true -o /srv/DiscordBot /p:useapphost=true'
+    zipAfterPublish: false
+
+- task: Bash@3
+  displayName: "copy linux service file"
+  inputs:
+    targetType: 'inline'
+    script: |
+      sudo cp /srv/DiscordBot/DiscordBot/DiscordBot.service /etc/systemd/system/DiscordBot.service
+
+- task: Bash@3
+  displayName: "create and populate environment file"
+  inputs:
+    targetType: 'inline'
+    script: |
+      cat > /srv/DiscordBot/DiscordBot/DiscordBotEnv.conf << EOF
+      S_U=$(S_U)
+      S_P=$(S_P)
+      DiscordBotToken=$(DiscordBotToken)
+      GITHUB_GIST_ID=$(GITHUB_GIST_ID)
+      GITHUB_PAT_TOKEN=$(GITHUB_PAT_TOKEN)
+      GITHUB_USERNAME=$(GITHUB_USERNAME)
+      EOF
+      chmod 700 /srv/DiscordBot/DiscordBot/DiscordBotEnv.conf
+
+
+- task: Bash@3
+  displayName: "copy linux service file and start service"
+  inputs:
+    targetType: 'inline'
+    script: |
+      sudo cp /srv/DiscordBot/DiscordBot/DiscordBot.service /etc/systemd/system/DiscordBot.service
+      sudo systemctl daemon-reload
+      sudo systemctl start DiscordBot
+      sudo systemctl enable DiscordBot
