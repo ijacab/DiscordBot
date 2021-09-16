@@ -6,21 +6,22 @@ namespace DiscordBot.Games.Models
 {
     public class Card
     {
-        public readonly char Name; //A,2,3,J,K,etc
+        public readonly string Name; //A,2,3,J,K,etc
         public readonly int[] Values; //2,3,10,10,1/11etc
-        public readonly Face Face;
+        public readonly Suit Suit;
 
-        public Card(char name, Face face)
+        public Card(string name, Suit suit)
         {
             Name = name;
+            Suit = suit;
             switch (name)
             {
-                case 'A':
+                case "A":
                     Values = new int[] { 1, 11 };
                     break;
-                case 'J':
-                case 'Q':
-                case 'K':
+                case "J":
+                case "Q":
+                case "K":
                     Values = new int[] { 10 };
                     break;
                 default:
@@ -30,7 +31,7 @@ namespace DiscordBot.Games.Models
         }
     }
 
-    public enum Face
+    public enum Suit
     {
         Hearts,
         Diamonds,
