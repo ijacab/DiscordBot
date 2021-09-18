@@ -7,14 +7,15 @@ namespace DiscordBot.Games.Models
 {
     public class CardDeck
     {
-        public List<Card> Cards { get; }
+        public List<Card> Cards { get; private set; }
         public CardDeck(int numberOfDecks)
         {
-            InitialiseDeck(numberOfDecks);
+            Reshuffle(numberOfDecks);
         }
 
-        private void InitialiseDeck(int numberofDecks)
+        public void Reshuffle(int numberofDecks)
         {
+            Cards = new List<Card>();
             var cardArray = new string[] { "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A" };
             for (int i = 0; i < numberofDecks; i++)
             {
@@ -27,6 +28,14 @@ namespace DiscordBot.Games.Models
                     }
                 }
             }
+        }
+
+        public Card Take()
+        {
+            int randomIndex = new Random().Next(0, Cards.Count);
+            var card = Cards[randomIndex];
+            Cards.RemoveAt(randomIndex);
+            return card;
         }
     }
 }
