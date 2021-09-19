@@ -229,8 +229,8 @@ namespace DiscordBot.Managers
 
             double inputMoney = 0;
             inputBets.Where(b => b.RoulleteBetType != BetType.NotValid).ToList().ForEach(b => inputMoney += b.Amount);
-            
-            if(inputMoney == 0)
+
+            if (inputMoney == 0)
                 throw new BadInputException($"You didn't place any valid bets FUCK HEAD");
 
             if (inputMoney > account.NetWorth)
@@ -290,10 +290,18 @@ namespace DiscordBot.Managers
         {
             var accounts = await _coinService.GetAll();
             string output = "`Leaderboard:`\n";
+
+
+            int? prestige = null;
             foreach (var account in accounts.Accounts.OrderByDescending(a => a.NetWorth).OrderByDescending(a => a.PrestigeLevel))
             {
-                string prestige = account.PrestigeLevel == 0 ? "" : $"**[P{account.PrestigeLevel}]**";
-                output += $"{account.Name}: {prestige} ${FormatHelper.GetCommaNumber(account.NetWorth)}";
+                if (prestige != null && account.PrestigeLevel < prestige)
+                    output += "\n"; //line between each prestige lvl
+
+                prestige = account.PrestigeLevel;
+
+                string prestigeDisplay = prestige == 0 ? "" : $"**[P{prestige}]**";
+                output += $"{account.Name}: {prestigeDisplay} ${FormatHelper.GetCommaNumber(account.NetWorth)}";
 
                 if (account.DateHourlyBonusPaidFor == DateTime.UtcNow.ToString("yyyyMMdd"))
                     output += "   \\*";
@@ -342,7 +350,7 @@ namespace DiscordBot.Managers
                 if (donationAmount <= 0)
                     throw new BadInputException("Can't donate 0 or less than 0 DUMBASS");
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 if (ex is BadInputException) throw ex;
                 throw new BadSyntaxException();
@@ -378,7 +386,7 @@ namespace DiscordBot.Managers
 
             await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
             await _coinService.Update(donationAccount.UserId, donationAccount.NetWorth, donationAccount.Name);
-            
+
             await message.Channel.SendMessageAsync(output);
         }
 
@@ -397,9 +405,9 @@ namespace DiscordBot.Managers
 
         private async Task Time(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if(args[0] == "pst")
+            if (args[0] == "pst")
                 await message.Channel.SendMessageAsync($"PST: {DateTime.UtcNow.AddHours(-7).ToString("yyyy-MM-dd HH:mm:ss")}");
-            else if(args[0] == "aest")
+            else if (args[0] == "aest")
                 await message.Channel.SendMessageAsync($"AEST: {DateTime.UtcNow.AddHours(10).ToString("yyyy-MM-dd HH:mm:ss")}");
             else
                 await message.Channel.SendMessageAsync($"UTC: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")}");

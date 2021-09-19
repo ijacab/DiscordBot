@@ -7,7 +7,7 @@ namespace DiscordBot.Games.Models
     public class Card
     {
         public readonly string Name; //A,2,3,J,K,etc
-        public readonly int[] Values; //2,3,10,10,1/11etc
+        public readonly Tuple<int,int?> Values; //2,3,10,10,1/11etc
         public readonly Suit Suit;
 
         public Card(string name, Suit suit)
@@ -17,15 +17,15 @@ namespace DiscordBot.Games.Models
             switch (name)
             {
                 case "A":
-                    Values = new int[] { 1, 11 };
+                    Values = new Tuple<int, int?>(1, 11);
                     break;
                 case "J":
                 case "Q":
                 case "K":
-                    Values = new int[] { 10 };
+                    Values = new Tuple<int, int?>(10, null);
                     break;
                 default:
-                    Values = new int[] { Convert.ToInt32(name) };
+                    Values = new Tuple<int, int?>(Convert.ToInt32(name), null);
                     break;
             }
         }
