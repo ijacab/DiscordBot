@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace DiscordBot.Games
 {
-    public abstract class BaseMultiplayerGame<TPlayer>
+    public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer
     {
         protected List<TPlayer> _players;
 
