@@ -28,9 +28,6 @@ namespace DiscordBot
                 .ConfigureServices((hostContext, services) =>
                 {
                     services.AddHttpsRedirection(options => { options.HttpsPort = 443; });
-                    services.AddSingleton<MessageHandler>();
-                    services.AddHostedService<ChatWorker>();
-
                 });
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
