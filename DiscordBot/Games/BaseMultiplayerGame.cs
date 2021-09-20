@@ -6,6 +6,7 @@ namespace DiscordBot.Games
     public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer
     {
         protected List<TPlayer> _players;
+        public bool Started = false;
 
         public void Create(params TPlayer[] players)
         {
@@ -15,6 +16,10 @@ namespace DiscordBot.Games
         public void Join(TPlayer player)
         {
             _players.Add(player);
+        }
+        public void Start()
+        {
+            Started = true;
         }
     }
 }
