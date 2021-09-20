@@ -307,7 +307,7 @@ namespace DiscordBot.Managers
                     output += "   \\*";
                 output += "\n";
             }
-            output += "\n*Each day you will get $1000. If you bet over 50% in a single bet that day, you will also get an hourly bonus $1000 + (up to) 10% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
+            output += "\n*Each day you will get $1000 * P level. If you bet over 50% in a single bet that day, you will also get an hourly bonus $1000 * P level + (up to) 10% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
             output += $"\n*Type .prestige to level up your account if you have enough money (it will reset your money to ${FormatHelper.GetCommaNumber(_startingAmount)}). People who are lower prestige than you cannot donate to you.*";
 
             await message.Channel.SendMessageAsync(output);

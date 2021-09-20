@@ -55,7 +55,7 @@ namespace Common.Services
             return await ExtractFileContent<T>(responseString, fileName);
         }
 
-        private async Task<T> ExtractFileContent<T>(string httpReponseContent, string fileName) where T : new()
+        private async Task<T> ExtractFileContent<T>(string httpReponseContent, string fileName) where T : new() //'new' constraint ensures public constructor so we can initialize T
         {
             JObject contentJsonObj = JObject.Parse(httpReponseContent);
 

@@ -86,7 +86,7 @@ namespace DiscordBot.Services
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {
-                _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000); //add 1000 if it is the start of the day
+                _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000 * a.PrestigeLevel); //add 1000 if it is the start of the day
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
@@ -108,7 +108,7 @@ namespace DiscordBot.Services
             double y = c - c * x / p;
             double multiplier = y / 100; //0.1 at 0 nw and 0 at p nw
             if (multiplier < 0) multiplier = 0;
-            return 1000 + (multiplier * account.NetWorth);
+            return (fixedAmount * account.PrestigeLevel) + (multiplier * account.NetWorth);
         }
     }
 }
