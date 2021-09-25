@@ -7,5 +7,6 @@ namespace DiscordBot.Games.Models
     public interface IPlayer
     {
         public ulong Id { get; set; }
+        public bool IsDealer { get; set; }
     }
 }

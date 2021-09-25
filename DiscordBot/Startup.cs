@@ -2,6 +2,7 @@
 using Common.Models;
 using Common.Services;
 using Discord.WebSocket;
+using DiscordBot.Games;
 using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -43,6 +44,7 @@ namespace DiscordBot
             services.AddSingleton<CommandManager>();
             services.AddSingleton<MessageHandler>();
             services.AddTransient<StrawmanChecker>();
+            services.AddSingleton<BlackjackManager>();
 
             services.AddHttpClient<StrawmanChecker>(h =>
             {

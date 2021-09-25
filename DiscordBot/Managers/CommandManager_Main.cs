@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
+using DiscordBot.Games;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ namespace DiscordBot.Managers
         private readonly MappingService _mappingService;
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
+        private readonly BlackjackManager _blackjackManager;
         private Dictionary<string, string> _customMappings;
         private ulong _adminId = 166477511469957120;
         private int _argCharLimit = 950;
@@ -25,12 +27,13 @@ namespace DiscordBot.Managers
         private double _startingAmount = 10000;
 
         private bool _stopped;
-        public CommandManager(ILogger<CommandManager> logger, MappingService mappingService, ReminderService reminderService, CoinService coinService)
+        public CommandManager(ILogger<CommandManager> logger, MappingService mappingService, ReminderService reminderService, CoinService coinService, BlackjackManager blackjackManager)
         {
             _logger = logger;
             _mappingService = mappingService;
             _reminderService = reminderService;
             _coinService = coinService;
+            _blackjackManager = blackjackManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();
 
             //need to add new commands in here as they are created
@@ -133,7 +136,7 @@ namespace DiscordBot.Managers
 
                 try
                 {
-                    var args = ExtractArguments(message.Content.Substring(lengthOfCommand));
+                    var args = ExtractArguments(message.Content.Substring(lengthOfCommand).ToLowerInvariant());
                     foreach (string arg in args)
                     {
                         if (arg.Length > _argCharLimit)
@@ -174,6 +177,23 @@ namespace DiscordBot.Managers
         public async Task RunBackgroundTasks(DiscordSocketClient client)
         {
             //reminder tasks
+            Task reminderTask = Task.CompletedTask;
+            try
+            {
+                 reminderTask = SendReminders(client);
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, $"Error while sending reminders {nameof(CommandManager)}: {ex.Message}");
+            }
+
+            //coin tasks
+            Task coinServiceTask = _coinService.AddInterest();
+            await Task.WhenAll(reminderTask, coinServiceTask);
+        }
+
+        private async Task SendReminders(DiscordSocketClient client)
+        {
             var reminders = await _reminderService.GetAll();
             var remindersToAction = reminders.Where(r => DateTime.Now >= r.TimeToRemind);
 
@@ -181,14 +201,22 @@ namespace DiscordBot.Managers
             {
                 foreach (var reminder in remindersToAction)
                 {
-                    var channel = client.GetChannel(reminder.ChannelId) as IMessageChannel;
-                    await channel.SendMessageAsync($"Reminder: {reminder.AuthorMention} {reminder.Message}");
+                    string reminderMessage = $"Reminder: {reminder.AuthorMention} {reminder.Message}";
+                    var messageChannel = client.GetChannel(reminder.ChannelId) as IMessageChannel;
+
+                    if (messageChannel == null)
+                    {
+                        var dmChannel = client.GetDMChannelAsync(reminder.ChannelId);
+                        await messageChannel.SendMessageAsync(reminderMessage);
+                    }
+                    else
+                    {
+                        await messageChannel.SendMessageAsync(reminderMessage);
+                    }
+
                     await _reminderService.Remove(reminder.Id);
                 }
             }
-
-            //coin tasks
-            await _coinService.AddInterest();
         }
 
         private void EnsureInputContainsOnlyValidCharacters(string input)

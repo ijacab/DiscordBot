@@ -119,14 +119,39 @@ namespace DiscordBot.Managers
 
         //private async Task GameBlackjack(DiscordSocketClient client, SocketMessage message, List<string> args)
         //{
-        //    if (args.Count == 0)
-        //        throw new BadSyntaxException();
 
-        //    var blackjack = new Blackjack(message.Author.Id);
+        //    var playerId = message.Author.Id;
 
-        //    if(args)
+        //    //args valid inputs:
+        //    //1000|any numbers - create or join game with 1000 as your bet
+        //    //s|stay - blackjack stay action
+        //    //h|hit - blackjack hit action
+        //    //start - start the game without waiting
 
-        //    message.
+        //    if (args.Count() == 0) //'.bj'
+        //    {
+        //        var game = _blackjackManager.CreateOrJoin(playerId); //will throw an exception if player already in a game, don't need to check
+        //        _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(t => _blackjackManager.Start(playerId));
+        //        await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game starting in 30 seconds... type");
+        //    }
+
+        //    if (args[0].StartsWith("start"))//'.bj start'
+        //    {
+        //        if (!_blackjackManager.TryGetExisitingGame(playerId, out Blackjack game))
+        //        {
+        //            await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't start someone else's game. Type '.bj' to join a game.");
+        //            return;
+        //        }
+
+        //        _blackjackManager.Start(playerId);
+        //        //var game = _blackjackManager.CreateOrJoin(playerId);
+        //        //await message.Channel.SendMessageAsync("");
+        //    }
+        //    else if (args[0].StartsWith("stay"))
+        //    {
+        //        var game = _blackjackManager.GetExisitingGame(playerId);
+        //        game.
+        //    }
 
         //    ulong userId = message.Author.Id;
 

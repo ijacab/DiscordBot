@@ -5,6 +5,7 @@ using System;
 using System.Threading.Tasks;
 using DiscordBot.Managers;
 using Common.Helpers;
+using System.Linq;
 
 namespace DiscordBot
 {
@@ -26,6 +27,7 @@ namespace DiscordBot
         {
             _client.MessageReceived += CommandHandler;
             _client.Log += Log;
+            _client.Ready += DownloadChannels;
 
             //  You can assign your bot token to a string, and pass that in to connect.
             //  This is, however, insecure, particularly if you plan to have your code hosted in a public repository.
@@ -53,6 +55,12 @@ namespace DiscordBot
             _logger.LogDebug($"Discord log message: {msg}");
             Console.WriteLine(msg.ToString());
             return Task.CompletedTask;
+        }
+
+        private async Task DownloadChannels()
+        {
+            var guilds = _client.Guilds.ToList();
+            await _client.DownloadUsersAsync(guilds);
         }
 
         private Task CommandHandler(SocketMessage message)

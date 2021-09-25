@@ -21,53 +21,63 @@ namespace DiscordBot.Games
 
 
         /// <returns>The list of possible total values not over 21. If the returned list is empty it means player has gone over 21 in value combinations.</returns>
-        public IEnumerable<int> Hit(ulong playerId)
+        public BlackjackResultType Hit(BlackjackPlayer player)
         {
             var card = _deck.Take();
-            var player = _players.First(p => p.Id == playerId);
             player.Cards.Add(card);
 
-            return player.GetPossibleTotalValues().Where(t => t <= 21); //return value combinations which are not bust
+            var nonBustResults = player.GetPossibleTotalValues().Where(t => t <= 21); //return value combinations which are not bust
+
+            if (nonBustResults.Count() == 0)
+                return BlackjackResultType.Lose;
+            else
+                return BlackjackResultType.InProgress;
         }
 
         /// <returns>True if the player won. Otherwise false.</returns>
-        public BlackjackWinType Resolve(ulong playerId)
+        public BlackjackResultType Resolve(BlackjackPlayer player, bool isStaying)
         {
-            var player = _players.First(p => p.Id == playerId);
-            var dealer = _players.First(p => p.IsDealer);
 
             var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
-            var dealerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
+            if (!isStaying)
+            {
+                if (playerValidTotals.Count() == 0)
+                    return BlackjackResultType.Lose;
+                else
+                    return BlackjackResultType.InProgress;
+            }
+
+            var dealer = GetDealer();
+            var dealerValidTotals = dealer.GetPossibleTotalValues().Where(t => t <= 21);
 
             if (playerValidTotals.Count() == 0)
-                return BlackjackWinType.Lose;
+                return BlackjackResultType.Lose;
 
-            int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First();
-            int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).First();
+            int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
+            int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results
 
             if (playerHighestTotal == dealerHighestTotal)
             {
-                return BlackjackWinType.Draw;
+                return BlackjackResultType.Draw;
             }
             else if (playerHighestTotal > dealerHighestTotal)
             {
                 if (playerHighestTotal == 21)
-                    return BlackjackWinType.WinTwentyOne;
+                    return BlackjackResultType.WinTwentyOne;
 
-                return BlackjackWinType.Win;
+                return BlackjackResultType.Win;
             }
 
-            return BlackjackWinType.Lose;
-
+            return BlackjackResultType.Lose;
         }
 
-        public enum BlackjackWinType
+        public enum BlackjackResultType
         {
+            InProgress,
             Win,
             Lose,
             Draw,
             WinTwentyOne
         }
-
     }
 }
