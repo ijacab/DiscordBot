@@ -11,7 +11,16 @@ namespace DiscordBot.Games.Models
         public ulong Id { get; set; }
         public List<Card> Cards { get; set; }
         public double BetAmount { get; set; }
-
+        public bool IsFinishedPlaying { get; set; } = false;
+        public BlackjackPlayer(ulong id, double betAmount)
+        {
+            Id = id;
+            BetAmount = betAmount;
+            Cards = new List<Card>();
+        }
+        public BlackjackPlayer()
+        {
+        }
         public List<int> GetPossibleTotalValues()
         {
             var totals = new List<int>();

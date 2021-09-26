@@ -10,48 +10,63 @@ namespace DiscordBot.Games
     {
         public readonly Guid Guid;
         private readonly CardDeck _deck;
-        public Blackjack(ulong startingPlayerId)
+        public Blackjack(BlackjackPlayer startingPlayer)
         {
             Guid = Guid.NewGuid();
             _deck = new CardDeck(6);
             var dealer = new BlackjackPlayer() { IsDealer = true };
-            var player = new BlackjackPlayer() { Id = startingPlayerId };
-            Create(player, dealer);
+            Create(startingPlayer, dealer);
         }
 
 
-        /// <returns>The list of possible total values not over 21. If the returned list is empty it means player has gone over 21 in value combinations.</returns>
-        public BlackjackResultType Hit(BlackjackPlayer player)
+        /// <returns>True if player is still in the game. False if they are bust.</returns>
+        public bool Hit(BlackjackPlayer player)
         {
             var card = _deck.Take();
             player.Cards.Add(card);
+            var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
 
-            var nonBustResults = player.GetPossibleTotalValues().Where(t => t <= 21); //return value combinations which are not bust
+            if (playerValidTotals.Count() == 0)
+            {
+                player.IsFinishedPlaying = true;
+                return false;
+            }
 
-            if (nonBustResults.Count() == 0)
-                return BlackjackResultType.Lose;
-            else
-                return BlackjackResultType.InProgress;
+            return true;
         }
 
-        /// <returns>True if the player won. Otherwise false.</returns>
-        public BlackjackResultType Resolve(BlackjackPlayer player, bool isStaying)
+        public void Stay(BlackjackPlayer player)
         {
+            player.IsFinishedPlaying = true;
+        }
 
-            var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
-            if (!isStaying)
+        public double GetWinnings(BlackjackPlayer player)
+        {
+            BlackjackResultType result = Resolve(player);
+
+            switch (result)
             {
-                if (playerValidTotals.Count() == 0)
-                    return BlackjackResultType.Lose;
-                else
-                    return BlackjackResultType.InProgress;
+                case BlackjackResultType.Draw:
+                    return player.BetAmount;
+                case BlackjackResultType.Win:
+                    return player.BetAmount * 2;
+                case BlackjackResultType.WinTwentyOne:
+                    return player.BetAmount * 3;
+                default:
+                    return 0;
             }
+
+
+        }
+
+        private BlackjackResultType Resolve(BlackjackPlayer player)
+        {
+            var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
+            if (playerValidTotals.Count() == 0)
+                return BlackjackResultType.Lose;
 
             var dealer = GetDealer();
             var dealerValidTotals = dealer.GetPossibleTotalValues().Where(t => t <= 21);
-
-            if (playerValidTotals.Count() == 0)
-                return BlackjackResultType.Lose;
 
             int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
             int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results
@@ -73,7 +88,6 @@ namespace DiscordBot.Games
 
         public enum BlackjackResultType
         {
-            InProgress,
             Win,
             Lose,
             Draw,
