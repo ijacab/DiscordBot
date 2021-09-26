@@ -108,7 +108,7 @@ namespace DiscordBot.Services
             double y = c - c * x / p;
             double multiplier = y / 100; //0.1 at 0 nw and 0 at p nw
             if (multiplier < 0) multiplier = 0;
-            return (fixedAmount * account.PrestigeLevel) + (multiplier * account.NetWorth);
+            return (fixedAmount * (account.PrestigeLevel + 1)) + (multiplier * account.NetWorth);
         }
     }
 }
