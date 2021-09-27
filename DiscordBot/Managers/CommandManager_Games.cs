@@ -120,7 +120,6 @@ namespace DiscordBot.Managers
 
         //private async Task GameBlackjack(DiscordSocketClient client, SocketMessage message, List<string> args)
         //{
-
         //    var playerId = message.Author.Id;
 
         //    //args valid inputs:
@@ -132,11 +131,23 @@ namespace DiscordBot.Managers
         //    if (args.Count != 1)
         //        throw new BadSyntaxException();
 
+        //    if(_blackjackManager.IsPlayerInGame(playerId) 
+        //        && _blackjackManager.GetPlayer(playerId).IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
+        //    {
+        //        await message.Channel.SendMessageAsync($"{message.Author.Mention} You are still in a game but your turn is over. Once it ends and bets are calculated you can join another game.");
+        //        return;
+        //    }
+
         //    string input = args[0];
 
         //    if (double.TryParse(input, out double inputMoney)) //'.bj 1000'
         //    {
         //        bool created = _blackjackManager.CreateOrJoin(playerId, inputMoney); //will throw an exception if player already in a game, don't need to check
+                
+        //        CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+        //        coinAccount.NetWorth -= inputMoney;
+        //        await _coinService.Update(playerId, coinAccount.NetWorth, message.Author.Username)
+
         //        _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(t => _blackjackManager.Start(playerId));
 
         //        if (created)
@@ -152,9 +163,15 @@ namespace DiscordBot.Managers
         //            await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj \\*betAmount\\*` to join/create a game.");
         //            return;
         //        }
-
-        //        _blackjackManager.Start(playerId);
-        //        await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. Cannot join");
+        //        if (!_blackjackManager.IsGameStarted(playerId))
+        //        {
+        //            _blackjackManager.Start(playerId);
+        //            await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. No one else can join this game now.");
+        //        }
+        //        else
+        //        {
+        //            await message.Channel.SendMessageAsync($"{message.Author.Mention} The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+        //        }
         //    }
         //    else if (args[0].StartsWith("stay"))//'.bj stay'
         //    {
@@ -165,11 +182,7 @@ namespace DiscordBot.Managers
         //        }
 
         //        _blackjackManager.Stay(playerId);
-        //        bool isGameEnded = _blackjackManager.AreAllPlayersInSameGameFinished(playerId);
-        //        if (isGameEnded)
-        //        {
-        //            var results = _blackjackManager.End(playerId);
-        //        }
+        //        await GameBlackjackGiveWinningsIfEnded(playerId, client, message);
 
         //    }
         //    else if (args[0].StartsWith("hit"))//'.bj hit'
@@ -187,12 +200,8 @@ namespace DiscordBot.Managers
         //        if (!isStillInGame) //player is bust
         //        {
         //            _blackjackManager.Stay(playerId);
-        //            bool isGameEnded = _blackjackManager.AreAllPlayersInSameGameFinished(playerId);
-        //            if (isGameEnded)
-        //            {
-        //                var results = _blackjackManager.End(playerId);
-        //            }
-        //            await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj \\*betAmount\\*` to join/create a game.");
+        //            await GameBlackjackGiveWinningsIfEnded(playerId, client, message);
+        //            //await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj \\*betAmount\\*` to join/create a game.");
         //        }
 
         //    }
@@ -202,7 +211,21 @@ namespace DiscordBot.Managers
         //    CoinAccount account = await _coinService.Get(userId, message.Author.Username);
 
         //    await message.Channel.SendMessageAsync(output);
+        //}
 
+        //private async Task GameBlackjackGiveWinningsIfEnded(ulong playerId, DiscordSocketClient client, SocketMessage message)
+        //{
+        //    bool isGameEnded = _blackjackManager.AreAllPlayersInSameGameFinished(playerId);
+        //    if (isGameEnded)
+        //    {
+        //        var results = _blackjackManager.End(playerId);
+        //        foreach(var result in results)
+        //        {
+        //            CoinAccount account = await _coinService.Get(playerId, message.Author.Username);
+        //            account.NetWorth
+        //            await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username, overFiftyPercentBet);
+        //        }
+        //    }
         //}
     }
 }

@@ -4,6 +4,7 @@ using DiscordBot.Games.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using static DiscordBot.Games.Blackjack;
 
 namespace DiscordBot.Games
@@ -41,10 +42,26 @@ namespace DiscordBot.Games
 
         }
 
-        public void Start(ulong playerId)
+        public void Start(ulong playerId, int secondsToPlay = 90)
         {
             var game = GetExisitingGame(playerId);
             game.Started = true;
+
+            _ = Task.Delay(TimeSpan.FromSeconds(secondsToPlay))
+                .ContinueWith(t =>
+            {
+                foreach(BlackjackPlayer player in game.Players)
+                {
+                    game.Stay(player);
+                }
+            }
+            );
+        }
+
+        public bool IsGameStarted(ulong playerId)
+        {
+            var game = GetExisitingGame(playerId);
+            return game.Started;
         }
 
         /// <summary>
@@ -52,12 +69,15 @@ namespace DiscordBot.Games
         /// </summary>
         public List<Tuple<ulong,double>> End(ulong playerId)
         {
+            if (AreAllPlayersInSameGameFinished(playerId) == false)
+                throw new Exception($"{nameof(BlackjackManager.End)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
+
             var game = GetExisitingGame(playerId);
-            
+            game.PlayDealer();
+
             Games.Remove(game);
             var playerIdsInGame = game.Players.Select(p => p.Id).ToList();
-            //var playerIdsInGame = PlayerGameMappings.Where(m => m.Value == game.Guid).Select(m => m.Key).ToList(); //tolist to close reader so we can alter dictionary
-
+            
             var playerWinnings = new List<Tuple<ulong, double>>();
             foreach (ulong playerIdInGame in playerIdsInGame)
             {

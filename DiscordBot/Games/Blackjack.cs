@@ -40,6 +40,24 @@ namespace DiscordBot.Games
             player.IsFinishedPlaying = true;
         }
 
+        public void PlayDealer()
+        {
+            /*When the dealer has served every player, the dealers face - down card is turned up. 
+             If the total is 17 or more, it must stand.
+             If the total is 16 or under, they must take a card.
+             The dealer must continue to take cards until the total is 17 or more, at which point the dealer must stand.
+             If the dealer has an ace, and counting it as 11 would bring the total to 17 or more(but not over 21), the dealer must count the ace as 11 and stand. 
+             The dealer's decisions, then, are automatic on all plays, whereas the player always has the option of taking one or more cards.
+             */
+
+            var dealer = GetDealer();
+            while(dealer.GetPossibleTotalValues().OrderByDescending(v => v).FirstOrDefault() <= 16) //get the highest possible total and check if it is 16 or under, if so dealer needs to hit
+            {
+                Hit(dealer);
+            }
+            Stay(dealer);
+        }
+
         public double GetWinnings(BlackjackPlayer player)
         {
             BlackjackResultType result = Resolve(player);
@@ -55,8 +73,6 @@ namespace DiscordBot.Games
                 default:
                     return 0;
             }
-
-
         }
 
         private BlackjackResultType Resolve(BlackjackPlayer player)
