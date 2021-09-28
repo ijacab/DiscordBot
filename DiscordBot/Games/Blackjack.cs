@@ -8,11 +8,9 @@ namespace DiscordBot.Games
 {
     public class Blackjack : BaseMultiplayerGame<BlackjackPlayer>
     {
-        public readonly Guid Guid;
         private readonly CardDeck _deck;
         public Blackjack(BlackjackPlayer startingPlayer)
         {
-            Guid = Guid.NewGuid();
             _deck = new CardDeck(6);
             var dealer = new BlackjackPlayer() { IsDealer = true };
             Create(startingPlayer, dealer);

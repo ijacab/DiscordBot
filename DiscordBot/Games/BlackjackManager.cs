@@ -94,6 +94,9 @@ namespace DiscordBot.Games
         {
             var game = GetExisitingGame(playerId);
             var player = game.GetPlayer(playerId);
+
+            if (player.IsFinishedPlaying) throw new BadInputException("You have already finished playing. Wait for the game to end and the results will be calculated.");
+
             bool isStillInGame = game.Hit(player);
             if (isStillInGame)
                 return true;
@@ -106,6 +109,9 @@ namespace DiscordBot.Games
         {
             var game = GetExisitingGame(playerId);
             var player = GetPlayer(playerId);
+            
+            if(player.IsFinishedPlaying) throw new BadInputException("You have already finished playing. Wait for the game to end and the results will be calculated.");
+
             game.Stay(player);
         }
 
@@ -131,13 +137,11 @@ namespace DiscordBot.Games
             return game.GetPlayer(playerId);
         }
 
-        private Blackjack GetExisitingGame(ulong playerId)
+        public Blackjack GetExisitingGame(ulong playerId)
         {
             var game = Games.FirstOrDefault(g => g.Players.Contains(g.GetPlayer(playerId)));
             if (game == null) throw new BadInputException("You are not in a game yet. Type '.bj \\*betAmount\\*' to create/join an open game.");
             return game;
         }
-
-
     }
 }
