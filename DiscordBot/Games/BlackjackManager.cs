@@ -89,21 +89,16 @@ namespace DiscordBot.Games
             return playerWinnings;
         }
 
-        /// <returns>True if still in the game, false is player is bust.</returns>
-        public bool Hit(ulong playerId)
+
+        public void Hit(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
             var player = game.GetPlayer(playerId);
 
             if (player.IsFinishedPlaying) throw new BadInputException("You have already finished playing. Wait for the game to end and the results will be calculated.");
 
-            bool isStillInGame = game.Hit(player);
-            if (isStillInGame)
-                return true;
-            else
-                return false;
+            game.Hit(player);
         }
-
 
         public void Stay(ulong playerId)
         {
@@ -118,7 +113,7 @@ namespace DiscordBot.Games
         public bool AreAllPlayersInSameGameFinished(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
-            if (game.Players.Any(p => !p.IsFinishedPlaying))
+            if (game.Players.Where(p=>!p.IsDealer).Any(p => !p.IsFinishedPlaying))
                 return false;
             else
                 return true;

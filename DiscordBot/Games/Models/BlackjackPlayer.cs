@@ -23,6 +23,7 @@ namespace DiscordBot.Games.Models
         }
         public List<int> GetPossibleTotalValues()
         {
+            //todo FIX
             var totals = new List<int>();
             foreach (var card in Cards)
             {
@@ -50,9 +51,9 @@ namespace DiscordBot.Games.Models
             string cardsStr = "";
             foreach (var card in Cards)
             {
-                cardsStr += $"{card.Name}{GetSuitSymbol(card.Suit)},";
+                cardsStr += $"{card.Name}{GetSuitSymbol(card.Suit)}, ";
             }
-            cardsStr.TrimEnd(',');
+            cardsStr = cardsStr.TrimEnd(' ').TrimEnd(',');
 
             int highestValidValue = GetPossibleTotalValues().Where(t => t <= 21).OrderByDescending(t => t).FirstOrDefault();
             string valueStr = "";
@@ -61,7 +62,7 @@ namespace DiscordBot.Games.Models
             else
                 valueStr = $"{highestValidValue}";
 
-            cardsStr += $" - {valueStr}";
+            cardsStr += $":\t{valueStr}";
             return cardsStr;
         }
 

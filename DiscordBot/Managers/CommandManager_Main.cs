@@ -51,7 +51,7 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
             _commands.Add(new Command("r", GameRoulette) { Hidden = true, Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
-            //_commands.Add(new Command("bj", GameBlackjack) { });
+            _commands.Add(new Command("bj", GameBlackjack) { });
             _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
             _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard", Hidden = true });
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });

@@ -17,20 +17,14 @@ namespace DiscordBot.Games
         }
 
 
-        /// <returns>True if player is still in the game. False if they are bust.</returns>
-        public bool Hit(BlackjackPlayer player)
+        public void Hit(BlackjackPlayer player)
         {
             var card = _deck.Take();
             player.Cards.Add(card);
             var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
 
             if (playerValidTotals.Count() == 0)
-            {
                 player.IsFinishedPlaying = true;
-                return false;
-            }
-
-            return true;
         }
 
         public void Stay(BlackjackPlayer player)
