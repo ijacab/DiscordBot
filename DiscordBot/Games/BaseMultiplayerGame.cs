@@ -1,4 +1,5 @@
 ﻿using DiscordBot.Games.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -6,6 +7,7 @@ namespace DiscordBot.Games
 {
     public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer
     {
+        public Guid GameGuid { get; set; } = Guid.NewGuid();
         public List<TPlayer> Players { get; protected set; }
         public bool Started = false;
 
@@ -18,9 +20,10 @@ namespace DiscordBot.Games
         {
             Players.Add(player);
         }
-        public void Start()
+        public Guid Start()
         {
             Started = true;
+            return GameGuid;
         }
         public TPlayer GetPlayer(ulong playerId)
         {

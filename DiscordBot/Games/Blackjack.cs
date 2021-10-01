@@ -21,7 +21,7 @@ namespace DiscordBot.Games
         {
             var card = _deck.Take();
             player.Cards.Add(card);
-            var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
+            var playerValidTotals = player.GetPossibleTotalValues();
 
             if (playerValidTotals.Count() == 0)
                 player.IsFinishedPlaying = true;
@@ -61,7 +61,7 @@ namespace DiscordBot.Games
                 case BlackjackResultType.Win:
                     return player.BetAmount * 2;
                 case BlackjackResultType.WinTwentyOne:
-                    return player.BetAmount * 3;
+                    return player.BetAmount * 2.5;
                 default:
                     return 0;
             }
@@ -69,12 +69,11 @@ namespace DiscordBot.Games
 
         private BlackjackResultType Resolve(BlackjackPlayer player)
         {
-            var playerValidTotals = player.GetPossibleTotalValues().Where(t => t <= 21);
-            if (playerValidTotals.Count() == 0)
+            var playerValidTotals = player.GetPossibleTotalValues();
                 return BlackjackResultType.Lose;
 
             var dealer = GetDealer();
-            var dealerValidTotals = dealer.GetPossibleTotalValues().Where(t => t <= 21);
+            var dealerValidTotals = dealer.GetPossibleTotalValues();
 
             int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
             int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results

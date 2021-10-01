@@ -131,8 +131,8 @@ namespace DiscordBot.Managers
             if (args.Count != 1)
                 throw new BadSyntaxException();
 
-            if (_blackjackManager.IsPlayerInGame(playerId)
-                && _blackjackManager.GetPlayer(playerId).IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
+            if (_blackjackManager.TryGetPlayer(playerId, out var player)
+                && player.IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
             {
                 await message.Channel.SendMessageAsync($"{message.Author.Mention} You are still in a game but your turn is over. Once it ends and bets are calculated you can join another game.");
                 return;
@@ -149,25 +149,44 @@ namespace DiscordBot.Managers
                 coinAccount.NetWorth -= inputMoney;
                 await _coinService.Update(playerId, coinAccount.NetWorth, message.Author.Username);
 
-                _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(t => _blackjackManager.Start(playerId));
+                _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(t =>
+                {
+                    if (_blackjackManager.TryGetExisitingGame(playerId, out var gameToStart))
+                    {
+                        if (!gameToStart.Started)
+                        {
+                            Guid gameGuid = gameToStart.Start();
+                        }
+                    }
+
+                });
 
                 if (created)
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is a number of the amount you want to bet. For example `.bj 1000`.");
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
                 else
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is a number of the amount you want to bet. For example `.bj 1000`.");
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
 
             if (args[0].StartsWith("start"))//'.bj start'
             {
-                if (!_blackjackManager.IsPlayerInGame(playerId))
+                if (!_blackjackManager.TryGetPlayer(playerId, out _))
                 {
                     await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
                     return;
                 }
+
                 if (!_blackjackManager.IsGameStarted(playerId))
                 {
                     _blackjackManager.Start(playerId);
                     await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. No one else can join this game now.");
+                    var game = _blackjackManager.GetExisitingGame(playerId);
+                    foreach (var gamePlayer in game.Players.Where(p => !p.IsDealer))
+                    {
+                        _blackjackManager.Hit(gamePlayer.Id);
+                    }
+                    await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, client));
+                    await message.Channel.SendMessageAsync("Type `.bj hit` or `.bj stay` to play.");
+
                 }
                 else
                 {
@@ -176,7 +195,7 @@ namespace DiscordBot.Managers
             }
             else if (args[0].StartsWith("stay"))//'.bj stay'
             {
-                if (!_blackjackManager.IsPlayerInGame(playerId))
+                if (!_blackjackManager.TryGetPlayer(playerId, out _))
                 {
                     await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
                     return;
@@ -192,15 +211,13 @@ namespace DiscordBot.Managers
             }
             else if (args[0].StartsWith("hit"))//'.bj hit'
             {
-                if (!_blackjackManager.IsPlayerInGame(playerId))
+                if (!_blackjackManager.TryGetPlayer(playerId, out _))
                 {
                     await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
                     return;
                 }
 
-                var possibleValuesBeforeHit = _blackjackManager.GetPlayer(playerId).GetPossibleTotalValues();
                 _blackjackManager.Hit(playerId);
-                var possibleValuesAfterHit = _blackjackManager.GetPlayer(playerId).GetPossibleTotalValues();
 
                 if (!await GameBlackjackGiveWinningsIfEnded(playerId, client, message))
                 {
@@ -217,20 +234,19 @@ namespace DiscordBot.Managers
             {
                 string output = "Blackjack game results:";
 
-                var results = _blackjackManager.End(playerId);
-                foreach (var result in results)
-                {
-                    ulong userId = result.Item1;
-                    double userWinnings = result.Item2;
+                var playersInGame = _blackjackManager.End(playerId);
+                var dealer = playersInGame.First(p => p.IsDealer);
 
-                    CoinAccount account = await _coinService.Get(userId, message.Author.Username);
-                    account.NetWorth += userWinnings;
+                output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
+                foreach (var player in playersInGame.Where(p => !p.IsDealer))
+                {
+                    CoinAccount account = await _coinService.Get(player.Id, message.Author.Username);
+                    account.NetWorth += player.Winnings;
                     await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
 
-                    var player = _blackjackManager.GetPlayer(userId);
-                    output += $"\n{client.GetUser(userId)}: {player.GetFormattedCards()}" +
-                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(userWinnings)}" +
-                        $"\n\t`Networth is now {account.NetWorth}`";
+                    output += $"\n{client.GetUser(player.Id).Username}: {player.GetFormattedCards()}" +
+                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
+                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
                 }
 
                 await message.Channel.SendMessageAsync(output);

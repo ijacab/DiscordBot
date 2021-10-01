@@ -9,33 +9,45 @@ namespace DiscordBot.Games.Models
     {
         public bool IsDealer { get; set; } = false;
         public ulong Id { get; set; }
-        public List<Card> Cards { get; set; }
+        public List<Card> Cards { get; set; } = new List<Card>();
         public double BetAmount { get; set; }
+        public double Winnings { get; set; }
         public bool IsFinishedPlaying { get; set; } = false;
         public BlackjackPlayer(ulong id, double betAmount)
         {
             Id = id;
             BetAmount = betAmount;
-            Cards = new List<Card>();
         }
         public BlackjackPlayer()
         {
         }
-        public List<int> GetPossibleTotalValues()
+        public IEnumerable<int> GetPossibleTotalValues(bool returnOnlyNonBustValues = true)
         {
-            //todo FIX
             var totals = new List<int>();
             foreach (var card in Cards)
             {
-                totals.Add(0);
+                int defaultValue = 0;
 
-                if (card.Values.Item2 == null)
+                if (card.Values.Item2 == null) //when not an Ace, i.e. only has one possible value
                 {
-                    totals[totals.Count - 1] += card.Values.Item1;
+                    int cardValue = card.Values.Item1;
+                    if (!totals.Any())
+                    {
+                        totals.Add(cardValue);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < totals.Count; i++)
+                        {
+                            totals[i] += cardValue;
+                        }
+                    }
                 }
-                else
+                else //when ace, it has 2 possible values 1 and 11
                 {
+                    if (!totals.Any()) totals.Add(defaultValue);
                     int lastValue = totals[totals.Count - 1];
+
                     for (int i = 0; i < totals.Count; i++)
                     {
                         totals[i] += card.Values.Item1;
@@ -43,7 +55,11 @@ namespace DiscordBot.Games.Models
                     totals.Add(lastValue + (int)card.Values.Item2);
                 }
             }
-            return totals;
+
+            if (returnOnlyNonBustValues)
+                return totals.Where(t => t <= 21);
+            else
+                return totals;
         }
 
         public string GetFormattedCards()
@@ -55,12 +71,19 @@ namespace DiscordBot.Games.Models
             }
             cardsStr = cardsStr.TrimEnd(' ').TrimEnd(',');
 
-            int highestValidValue = GetPossibleTotalValues().Where(t => t <= 21).OrderByDescending(t => t).FirstOrDefault();
+            var possibleTotals = GetPossibleTotalValues().ToList();
+            int highestValidValue = possibleTotals.OrderByDescending(t => t).FirstOrDefault();
             string valueStr = "";
             if (highestValidValue == default(int))
-                valueStr = "(No non bust values)";
+                valueStr = "(No valid values)";
             else
-                valueStr = $"{highestValidValue}";
+            {
+                foreach (int total in possibleTotals)
+                {
+                    valueStr += $"{total}, ";
+                }
+            }
+            valueStr = valueStr.TrimEnd(' ').TrimEnd(',');
 
             cardsStr += $":\t{valueStr}";
             return cardsStr;

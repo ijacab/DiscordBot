@@ -16,7 +16,7 @@ namespace DiscordBot.Games
         /// <returns>True if new game created, false if joining existing game.</returns>
         public bool CreateOrJoin(ulong playerId, double inputMoney)
         {
-            if (IsPlayerInGame(playerId))
+            if (TryGetPlayer(playerId, out _))
             {
                 var joinedGame = GetExisitingGame(playerId); //get the game that the player is in
                 if (joinedGame.Started)
@@ -24,7 +24,7 @@ namespace DiscordBot.Games
                 else
                     throw new BadInputException("You are already in a game but it hasn't started yet. \nType `.bj start` to start or wait for the game to start automatically.");
             }
-            
+
             var player = new BlackjackPlayer(playerId, inputMoney);
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
@@ -42,20 +42,13 @@ namespace DiscordBot.Games
 
         }
 
-        public void Start(ulong playerId, int secondsToPlay = 90)
+        /// <summary>
+        /// Starts game and returns the game Guid.
+        /// </summary>
+        public Guid Start(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
-            game.Started = true;
-
-            _ = Task.Delay(TimeSpan.FromSeconds(secondsToPlay))
-                .ContinueWith(t =>
-            {
-                foreach(BlackjackPlayer player in game.Players)
-                {
-                    game.Stay(player);
-                }
-            }
-            );
+            return game.Start();
         }
 
         public bool IsGameStarted(ulong playerId)
@@ -65,9 +58,9 @@ namespace DiscordBot.Games
         }
 
         /// <summary>
-        /// Ends the game that the player is in and returns a list of mappings of each player in that game and their winnings.
+        /// Ends the game that the player is in and returns a list the players in the game.
         /// </summary>
-        public List<Tuple<ulong,double>> End(ulong playerId)
+        public List<BlackjackPlayer> End(ulong playerId)
         {
             if (AreAllPlayersInSameGameFinished(playerId) == false)
                 throw new Exception($"{nameof(BlackjackManager.End)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
@@ -75,18 +68,16 @@ namespace DiscordBot.Games
             var game = GetExisitingGame(playerId);
             game.PlayDealer();
 
-            Games.Remove(game);
-            var playerIdsInGame = game.Players.Select(p => p.Id).ToList();
-            
-            var playerWinnings = new List<Tuple<ulong, double>>();
+            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.Id).ToList();
+
             foreach (ulong playerIdInGame in playerIdsInGame)
             {
-                var player = GetPlayer(playerIdInGame);
-                double winnings = game.GetWinnings(player);
-                playerWinnings.Add(new Tuple<ulong, double>(playerIdInGame, winnings));
+                TryGetPlayer(playerIdInGame, out var player);
+                player.Winnings = game.GetWinnings(player);
             }
 
-            return playerWinnings;
+            Games.Remove(game);
+            return game.Players;
         }
 
 
@@ -103,9 +94,9 @@ namespace DiscordBot.Games
         public void Stay(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
-            var player = GetPlayer(playerId);
-            
-            if(player.IsFinishedPlaying) throw new BadInputException("You have already finished playing. Wait for the game to end and the results will be calculated.");
+            TryGetPlayer(playerId, out var player);
+
+            if (player.IsFinishedPlaying) throw new BadInputException("You have already finished playing. Wait for the game to end and the results will be calculated.");
 
             game.Stay(player);
         }
@@ -113,30 +104,54 @@ namespace DiscordBot.Games
         public bool AreAllPlayersInSameGameFinished(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
-            if (game.Players.Where(p=>!p.IsDealer).Any(p => !p.IsFinishedPlaying))
+            if (game.Players.Where(p => !p.IsDealer).Any(p => !p.IsFinishedPlaying))
                 return false;
             else
                 return true;
         }
 
-        public bool IsPlayerInGame(ulong playerId)
+        public bool TryGetPlayer(ulong playerId, out BlackjackPlayer player)
         {
-            var game = Games.FirstOrDefault(g => g.Players.Contains(g.GetPlayer(playerId)));
-            if (game == null) return false;
-            return true;
-        }
+            player = null;
+            try
+            {
+                var game = GetExisitingGame(playerId);
+                player = game.GetPlayer(playerId);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
 
-        public BlackjackPlayer GetPlayer(ulong playerId)
-        {
-            var game = GetExisitingGame(playerId);
-            return game.GetPlayer(playerId);
+            if (player != null) 
+                return true;
+            else 
+                return false;
         }
 
         public Blackjack GetExisitingGame(ulong playerId)
         {
-            var game = Games.FirstOrDefault(g => g.Players.Contains(g.GetPlayer(playerId)));
+            var game = Games.FirstOrDefault(g => g.Players.Select(p => p.Id).Contains(playerId));
             if (game == null) throw new BadInputException("You are not in a game yet. Type '.bj \\*betAmount\\*' to create/join an open game.");
             return game;
+        }
+
+        public bool TryGetExisitingGame(ulong playerId, out Blackjack game)
+        {
+            game = null;
+            try
+            {
+                game = GetExisitingGame(playerId);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+             if (game != null)
+                return true;
+            else
+                return false;
         }
     }
 }
