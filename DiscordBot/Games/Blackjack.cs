@@ -70,6 +70,8 @@ namespace DiscordBot.Games
         private BlackjackResultType Resolve(BlackjackPlayer player)
         {
             var playerValidTotals = player.GetPossibleTotalValues();
+
+            if(!playerValidTotals.Any())
                 return BlackjackResultType.Lose;
 
             var dealer = GetDealer();
