@@ -9,10 +9,11 @@ using Discord.WebSocket;
 using Discord;
 using Microsoft.Extensions.Logging;
 using Moq;
+using WebAlerter;
 
-namespace WebAlerter.Tests
+namespace Tests
 {
-    public class Tests
+    public class WebAlterterTests
     {
         [Fact]
         public async Task Test1()

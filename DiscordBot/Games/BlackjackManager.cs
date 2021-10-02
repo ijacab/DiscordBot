@@ -1,17 +1,31 @@
-﻿using Discord.WebSocket;
+﻿using Common.Helpers;
+using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
+using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static DiscordBot.Games.Blackjack;
+using static DiscordBot.Models.CoinAccounts;
 
 namespace DiscordBot.Games
 {
     public class BlackjackManager //should be singleton
     {
         public List<Blackjack> Games = new List<Blackjack>();
+        private const int _secondsToForceStartAfter = 30;
+        private const int _secondsToForceEndAfter = 90;
+
+        private readonly CoinService _coinService;
+        private readonly DiscordSocketClient _client;
+
+        public BlackjackManager(DiscordSocketClient client, CoinService coinService)
+        {
+            _coinService = coinService;
+            _client = client;
+        }
 
         /// <returns>True if new game created, false if joining existing game.</returns>
         public bool CreateOrJoin(ulong playerId, double inputMoney)
@@ -32,6 +46,14 @@ namespace DiscordBot.Games
             {
                 var newGame = new Blackjack(player);
                 Games.Add(newGame);
+
+                //timer on starting the game
+                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceStartAfter)).ContinueWith(t =>
+                {
+                    if (!newGame.Started)
+                        Start(playerId);
+                });
+
                 return true;
             }
             else
@@ -42,10 +64,47 @@ namespace DiscordBot.Games
 
         }
 
+        public async Task Start(ulong playerId, SocketMessage message)
+        {
+            if (!TryGetPlayer(playerId, out _))
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
+                return;
+            }
+
+            if (!IsGameStarted(playerId))
+            {
+                Start(playerId);
+
+                //timer on ending the game
+                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                {
+                    if(TryGetExisitingGame(playerId, out var game))
+                    {
+                        await GiveWinningsIfEnded(playerId, _client, message, forceEnd: true);
+                    }
+                });
+
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. No one else can join this game now.");
+                var game = GetExisitingGame(playerId);
+                foreach (var gamePlayer in game.Players.Where(p => !p.IsDealer))
+                {
+                    Hit(gamePlayer.Id);
+                }
+                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.Channel.SendMessageAsync("Type `.bj hit` or `.bj stay` to play.");
+
+            }
+            else
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+            }
+        }
+
         /// <summary>
         /// Starts game and returns the game Guid.
         /// </summary>
-        public Guid Start(ulong playerId)
+        private Guid Start(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
             return game.Start();
@@ -80,8 +139,23 @@ namespace DiscordBot.Games
             return game.Players;
         }
 
+        public async Task Hit(ulong playerId, SocketMessage message)
+        {
+            if (!TryGetPlayer(playerId, out _))
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+                return;
+            }
 
-        public void Hit(ulong playerId)
+            Hit(playerId);
+
+            if (!await GiveWinningsIfEnded(playerId, _client, message))
+            {
+                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+            }
+        }
+
+        private void Hit(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
             var player = game.GetPlayer(playerId);
@@ -91,7 +165,23 @@ namespace DiscordBot.Games
             game.Hit(player);
         }
 
-        public void Stay(ulong playerId)
+        public async Task Stay(ulong playerId, SocketMessage message)
+        {
+            if (!TryGetPlayer(playerId, out _))
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+                return;
+            }
+
+            Stay(playerId);
+
+            if (!await GiveWinningsIfEnded(playerId, _client, message))
+            {
+                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+            }
+        }
+
+        private void Stay(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
             TryGetPlayer(playerId, out var player);
@@ -152,6 +242,56 @@ namespace DiscordBot.Games
                 return true;
             else
                 return false;
+        }
+
+
+        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
+        {
+            string output = "";
+            var game = GetExisitingGame(playerId);
+            foreach (var player in game.Players.Where(p => !p.IsDealer))
+            {
+                output += $"{client.GetUser(player.Id)}: {player.GetFormattedCards()}\n";
+            }
+            return output;
+        }
+
+        /// <returns>True if game ended, false if not.</returns>
+        private async Task<bool> GiveWinningsIfEnded(ulong playerId, DiscordSocketClient client, SocketMessage message, bool forceEnd = false)
+        {
+            var game = GetExisitingGame(playerId);
+            if (forceEnd)
+            {
+                foreach (var player in game.Players)
+                {
+                    game.Stay(player);
+                }
+            }
+
+            bool isGameEnded = AreAllPlayersInSameGameFinished(playerId);
+            if (isGameEnded)
+            {
+                string output = "Blackjack game results:";
+
+                var playersInGame = End(playerId);
+                var dealer = playersInGame.First(p => p.IsDealer);
+
+                output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
+                foreach (var player in playersInGame.Where(p => !p.IsDealer))
+                {
+                    CoinAccount account = await _coinService.Get(player.Id, message.Author.Username);
+                    account.NetWorth += player.Winnings;
+                    await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
+
+                    output += $"\n{client.GetUser(player.Id).Username}: {player.GetFormattedCards()}" +
+                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
+                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
+                }
+
+                await message.Channel.SendMessageAsync(output);
+            }
+
+            return isGameEnded;
         }
     }
 }

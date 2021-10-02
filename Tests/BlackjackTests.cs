@@ -1,12 +1,13 @@
-using DiscordBot.Games.Models;
+﻿using DiscordBot.Games.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Xunit;
 
-namespace DiscordBot.Tests
+namespace Tests
 {
-    public class Tests
+    public class BlackjackTests
     {
         [Fact]
         public void CardTotalPossibleValues_ShouldReturn_AsExpected()
@@ -18,7 +19,7 @@ namespace DiscordBot.Tests
                 new Card("10", Suit.Hearts)
             };
 
-            var values = player.GetPossibleTotalValues(false).OrderBy(v=>v).ToArray();
+            var values = player.GetPossibleTotalValues(false).OrderBy(v => v).ToArray();
             Assert.True(values.Count() == 3);
             Assert.True(values[0] == 12);
             Assert.True(values[1] == 22);

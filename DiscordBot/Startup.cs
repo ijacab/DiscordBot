@@ -1,6 +1,7 @@
 ﻿using Common.Helpers;
 using Common.Models;
 using Common.Services;
+using Discord;
 using Discord.WebSocket;
 using DiscordBot.Games;
 using DiscordBot.Managers;
@@ -37,7 +38,16 @@ namespace DiscordBot
             });
 
 
-            services.AddSingleton<DiscordSocketClient>();
+            services.AddSingleton<DiscordSocketClient>(sp => 
+                {
+                    var config = new DiscordSocketConfig()
+                    {
+                        AlwaysDownloadUsers = true
+                    };
+                    var client = new DiscordSocketClient(config);
+                    return client;
+                }
+            );
             services.AddTransient<MappingService>();
             services.AddTransient<ReminderService>();
             services.AddTransient<CoinService>();
