@@ -48,11 +48,11 @@ namespace DiscordBot.Games
                 Games.Add(newGame);
 
                 //timer on starting the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceStartAfter)).ContinueWith(t =>
-                {
-                    if (!newGame.Started)
-                        Start(playerId);
-                });
+                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceStartAfter)).ContinueWith(t =>
+                //{
+                //    if (!newGame.Started)
+                //        Start(playerId);
+                //});
 
                 return true;
             }
@@ -77,13 +77,13 @@ namespace DiscordBot.Games
                 Start(playerId);
 
                 //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
-                {
-                    if(TryGetExisitingGame(playerId, out var game))
-                    {
-                        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
-                    }
-                });
+                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                //{
+                //    if(TryGetExisitingGame(playerId, out var game))
+                //    {
+                //        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
+                //    }
+                //});
 
                 await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. No one else can join this game now.");
                 var game = GetExisitingGame(playerId);
