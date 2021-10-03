@@ -15,6 +15,7 @@ namespace DiscordBot
         private readonly DiscordSocketClient _client;
         private readonly ILogger<MessageHandler> _logger;
         private readonly CommandManager _commandManager;
+        private const ulong _adminId = 166477511469957120;
 
         public MessageHandler(ILogger<MessageHandler> logger, CommandManager commandManager, DiscordSocketClient client)
         {
@@ -76,6 +77,9 @@ namespace DiscordBot
                 try
                 {
                     message.Channel.SendMessageAsync($"HOLY FUCK! I just encountered an error... Check my FUCKING logs");
+
+                    var dmChannel = _client.GetUser(_adminId).GetOrCreateDMChannelAsync().GetAwaiter().GetResult();
+                    dmChannel.SendMessageAsync($"Error in {nameof(MessageHandler)}: {ex.Message}").GetAwaiter().GetResult();
                 }
                 catch (Exception ex2)
                 {

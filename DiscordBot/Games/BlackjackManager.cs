@@ -81,7 +81,7 @@ namespace DiscordBot.Games
                 {
                     if(TryGetExisitingGame(playerId, out var game))
                     {
-                        await GiveWinningsIfEnded(playerId, _client, message, forceEnd: true);
+                        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
                     }
                 });
 
@@ -116,29 +116,6 @@ namespace DiscordBot.Games
             return game.Started;
         }
 
-        /// <summary>
-        /// Ends the game that the player is in and returns a list the players in the game.
-        /// </summary>
-        public List<BlackjackPlayer> End(ulong playerId)
-        {
-            if (AreAllPlayersInSameGameFinished(playerId) == false)
-                throw new Exception($"{nameof(BlackjackManager.End)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
-
-            var game = GetExisitingGame(playerId);
-            game.PlayDealer();
-
-            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.Id).ToList();
-
-            foreach (ulong playerIdInGame in playerIdsInGame)
-            {
-                TryGetPlayer(playerIdInGame, out var player);
-                player.Winnings = game.GetWinnings(player);
-            }
-
-            Games.Remove(game);
-            return game.Players;
-        }
-
         public async Task Hit(ulong playerId, SocketMessage message)
         {
             if (!TryGetPlayer(playerId, out _))
@@ -149,7 +126,7 @@ namespace DiscordBot.Games
 
             Hit(playerId);
 
-            if (!await GiveWinningsIfEnded(playerId, _client, message))
+            if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
                 await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
@@ -175,7 +152,7 @@ namespace DiscordBot.Games
 
             Stay(playerId);
 
-            if (!await GiveWinningsIfEnded(playerId, _client, message))
+            if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
                 await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
@@ -257,7 +234,7 @@ namespace DiscordBot.Games
         }
 
         /// <returns>True if game ended, false if not.</returns>
-        private async Task<bool> GiveWinningsIfEnded(ulong playerId, DiscordSocketClient client, SocketMessage message, bool forceEnd = false)
+        private async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, DiscordSocketClient client, SocketMessage message, bool forceEnd = false)
         {
             var game = GetExisitingGame(playerId);
             if (forceEnd)
@@ -273,7 +250,7 @@ namespace DiscordBot.Games
             {
                 string output = "Blackjack game results:";
 
-                var playersInGame = End(playerId);
+                var playersInGame = PlayDealerAndCalculateWinnings(playerId);
                 var dealer = playersInGame.First(p => p.IsDealer);
 
                 output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
@@ -292,6 +269,30 @@ namespace DiscordBot.Games
             }
 
             return isGameEnded;
+        }
+
+
+        /// <summary>
+        /// Ends the game that the player is in and returns a list the players in the game.
+        /// </summary>
+        public List<BlackjackPlayer> PlayDealerAndCalculateWinnings(ulong playerId)
+        {
+            if (AreAllPlayersInSameGameFinished(playerId) == false)
+                throw new Exception($"{nameof(BlackjackManager.PlayDealerAndCalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
+
+            var game = GetExisitingGame(playerId);
+            game.PlayDealer();
+
+            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.Id).ToList();
+
+            foreach (ulong playerIdInGame in playerIdsInGame)
+            {
+                TryGetPlayer(playerIdInGame, out var player);
+                player.Winnings = game.GetWinnings(player);
+            }
+
+            Games.Remove(game);
+            return game.Players;
         }
     }
 }

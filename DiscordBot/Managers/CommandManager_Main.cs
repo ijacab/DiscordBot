@@ -167,7 +167,7 @@ namespace DiscordBot.Managers
                         return;
                     }
 
-                    _logger.LogError(ex, ex.Message);
+                    throw;
                 }
             }
             else
