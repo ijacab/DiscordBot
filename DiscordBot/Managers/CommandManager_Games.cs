@@ -142,17 +142,12 @@ namespace DiscordBot.Managers
 
             if (double.TryParse(input, out double inputMoney)) //'.bj 1000'
             {
-                bool created = _blackjackManager.CreateOrJoin(playerId, inputMoney); //will throw an exception if player already in a game, don't need to check
+                await _blackjackManager.CreateOrJoin(playerId, inputMoney, message); //will throw an exception if player already in a game, don't need to check
 
                 //minus their input money - they will get it back when the game ends (if they don't lose)
                 CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
                 coinAccount.NetWorth -= inputMoney;
                 await _coinService.Update(playerId, coinAccount.NetWorth, message.Author.Username);
-
-                if (created)
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
-                else
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
 
             if (args[0].StartsWith("start"))//'.bj start'

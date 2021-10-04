@@ -72,14 +72,14 @@ namespace DiscordBot
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error in {nameof(MessageHandler)}: {ex.Message}");
+                _logger.LogError(ex, $"Error in {nameof(MessageHandler)}: {ex.Message}n\n{ex.StackTrace}");
 
                 try
                 {
                     message.Channel.SendMessageAsync($"HOLY FUCK! I just encountered an error... Check my FUCKING logs");
 
                     var dmChannel = _client.GetUser(_adminId).GetOrCreateDMChannelAsync().GetAwaiter().GetResult();
-                    dmChannel.SendMessageAsync($"Error in {nameof(MessageHandler)}: {ex.Message}").GetAwaiter().GetResult();
+                    dmChannel.SendMessageAsync($"Error in {nameof(MessageHandler)}: {ex.Message}\n\n{ex.StackTrace}").GetAwaiter().GetResult();
                 }
                 catch (Exception ex2)
                 {

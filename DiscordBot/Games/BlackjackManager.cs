@@ -28,7 +28,7 @@ namespace DiscordBot.Games
         }
 
         /// <returns>True if new game created, false if joining existing game.</returns>
-        public bool CreateOrJoin(ulong playerId, double inputMoney)
+        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
         {
             if (TryGetPlayer(playerId, out _))
             {
@@ -53,13 +53,12 @@ namespace DiscordBot.Games
                 //    if (!newGame.Started)
                 //        Start(playerId);
                 //});
-
-                return true;
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
             else
             {
                 openGame.Join(player);
-                return false;
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
 
         }
@@ -119,10 +118,10 @@ namespace DiscordBot.Games
         public async Task Hit(ulong playerId, SocketMessage message)
         {
             if (!TryGetPlayer(playerId, out _))
-            {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
-                return;
-            }
+                throw new BadInputException($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+
+            if (!IsGameStarted(playerId))
+                throw new BadInputException($"{message.Author.Mention} Game hasn't started yet. Type `.bj start` to start the game.");
 
             Hit(playerId);
 
@@ -145,10 +144,10 @@ namespace DiscordBot.Games
         public async Task Stay(ulong playerId, SocketMessage message)
         {
             if (!TryGetPlayer(playerId, out _))
-            {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
-                return;
-            }
+                throw new BadInputException($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+
+            if(!IsGameStarted(playerId))
+                throw new BadInputException($"{message.Author.Mention} Game hasn't started yet. Type `.bj start` to start the game.");
 
             Stay(playerId);
 
@@ -256,9 +255,9 @@ namespace DiscordBot.Games
                 output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
                 foreach (var player in playersInGame.Where(p => !p.IsDealer))
                 {
-                    CoinAccount account = await _coinService.Get(player.Id, message.Author.Username);
+                    CoinAccount account = await _coinService.Get(player.Id, _client.GetUser(player.Id).Username);
                     account.NetWorth += player.Winnings;
-                    await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
+                    await _coinService.Update(account.UserId, account.NetWorth, _client.GetUser(player.Id).Username);
 
                     output += $"\n{client.GetUser(player.Id).Username}: {player.GetFormattedCards()}" +
                         $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
