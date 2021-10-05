@@ -89,7 +89,10 @@ namespace DiscordBot.Games
                 foreach (var gamePlayer in game.Players.Where(p => !p.IsDealer))
                 {
                     Hit(gamePlayer.Id);
+                    Hit(gamePlayer.Id);
                 }
+                var dealer = game.GetDealer();
+                game.Hit(dealer);
                 await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
                 await message.Channel.SendMessageAsync("Type `.bj hit` or `.bj stay` to play.");
 
@@ -118,10 +121,10 @@ namespace DiscordBot.Games
         public async Task Hit(ulong playerId, SocketMessage message)
         {
             if (!TryGetPlayer(playerId, out _))
-                throw new BadInputException($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+                throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
 
             if (!IsGameStarted(playerId))
-                throw new BadInputException($"{message.Author.Mention} Game hasn't started yet. Type `.bj start` to start the game.");
+                throw new BadInputException($"Game hasn't started yet. Type `.bj start` to start the game.");
 
             Hit(playerId);
 
@@ -221,14 +224,22 @@ namespace DiscordBot.Games
         }
 
 
-        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
+        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client, bool includeDealer = false)
         {
             string output = "";
             var game = GetExisitingGame(playerId);
+
+            if (includeDealer)
+            {
+                var dealer = game.GetDealer();
+                output += $"**Dealer**: {dealer.GetFormattedCards()}\n";
+            }
+
             foreach (var player in game.Players.Where(p => !p.IsDealer))
             {
                 output += $"{client.GetUser(player.Id)}: {player.GetFormattedCards()}\n";
             }
+
             return output;
         }
 
@@ -280,7 +291,7 @@ namespace DiscordBot.Games
                 throw new Exception($"{nameof(BlackjackManager.PlayDealerAndCalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
 
             var game = GetExisitingGame(playerId);
-            game.PlayDealer();
+            game.EndDealerTurn();
 
             var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.Id).ToList();
 

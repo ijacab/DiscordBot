@@ -42,7 +42,8 @@ namespace DiscordBot.Games.Models
             }
             catch (Exception ex)
             {
-                throw new Exception($"Failed in Card Take method. Card count: {Cards.Count} RandomIndex: {randomIndex}\n{ex.Message}");
+                card = null;
+                //throw new Exception($"Failed in Card Take method. Card count: {Cards.Count} RandomIndex: {randomIndex}\n{ex.Message}");
             }
 
             return card;

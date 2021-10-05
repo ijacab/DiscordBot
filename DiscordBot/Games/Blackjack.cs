@@ -32,7 +32,7 @@ namespace DiscordBot.Games
             player.IsFinishedPlaying = true;
         }
 
-        public void PlayDealer()
+        public void EndDealerTurn()
         {
             /*When the dealer has served every player, the dealers face - down card is turned up. 
              If the total is 17 or more, it must stand.
@@ -43,9 +43,19 @@ namespace DiscordBot.Games
              */
 
             var dealer = GetDealer();
-            while(dealer.GetPossibleTotalValues().OrderByDescending(v => v).FirstOrDefault() <= 16) //get the highest possible total and check if it is 16 or under, if so dealer needs to hit
+
+            var totals = dealer.GetPossibleTotalValues();
+            int highestValidTotal = dealer.GetPossibleTotalValues().OrderByDescending(v => v).First(); //first, because we expect the dealer has been hit one card already at the start of the game
+
+            while (highestValidTotal <= 16) //get the highest possible total and check if it is 16 or under, if so dealer needs to hit
             {
                 Hit(dealer);
+                totals = dealer.GetPossibleTotalValues();
+
+                if (totals.Any())
+                    highestValidTotal = dealer.GetPossibleTotalValues().OrderByDescending(v => v).First();
+                else 
+                    break;
             }
             Stay(dealer);
         }

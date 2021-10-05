@@ -29,7 +29,7 @@ namespace DiscordBot.Games
         {
             return Players.First(p => p.Id == playerId);
         }
-        protected TPlayer GetDealer()
+        public TPlayer GetDealer()
         {
             return Players.First(p => p.IsDealer);
         }
