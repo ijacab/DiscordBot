@@ -162,7 +162,7 @@ namespace DiscordBot.Managers
 
         private void EnsureGameMoneyInputIsValid(double inputMoney, CoinAccount account, int? minimumPercentBetRequired = null)
         {
-            if (inputMoney == 0)
+            if (inputMoney <= 0)
                 throw new BadInputException($"You didn't place any valid bets FUCK HEAD");
 
             if (inputMoney > account.NetWorth)
