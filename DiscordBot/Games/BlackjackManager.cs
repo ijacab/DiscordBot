@@ -255,7 +255,7 @@ namespace DiscordBot.Games
             bool isGameEnded = AreAllPlayersInSameGameFinished(playerId);
             if (isGameEnded)
             {
-                string output = "Blackjack game results:";
+                string output = "`Blackjack game results:`";
 
                 var playersInGame = PlayDealerAndCalculateWinnings(playerId);
                 var dealer = playersInGame.First(p => p.IsDealer);
