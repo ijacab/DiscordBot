@@ -224,16 +224,13 @@ namespace DiscordBot.Games
         }
 
 
-        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client, bool includeDealer = false)
+        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
         {
             string output = "";
             var game = GetExisitingGame(playerId);
 
-            if (includeDealer)
-            {
-                var dealer = game.GetDealer();
-                output += $"**Dealer**: {dealer.GetFormattedCards()}\n";
-            }
+            var dealer = game.GetDealer();
+            output += $"**Dealer**: {dealer.GetFormattedCards()}\n\n";
 
             foreach (var player in game.Players.Where(p => !p.IsDealer))
             {
@@ -268,12 +265,14 @@ namespace DiscordBot.Games
                 {
                     CoinAccount account = await _coinService.Get(player.Id, _client.GetUser(player.Id).Username);
                     account.NetWorth += player.Winnings;
-                    await _coinService.Update(account.UserId, account.NetWorth, _client.GetUser(player.Id).Username);
+                    _coinService.UpdateLocal(account.UserId, account.NetWorth, _client.GetUser(player.Id).Username);
 
                     output += $"\n{client.GetUser(player.Id).Username}: {player.GetFormattedCards()}" +
                         $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
                         $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
                 }
+
+                await _coinService.UpdateRemoteWithLocal();
 
                 await message.Channel.SendMessageAsync(output);
             }
