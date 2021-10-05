@@ -170,7 +170,7 @@ namespace DiscordBot.Managers
 
             if (minimumPercentBetRequired != null)
             {
-                double betRequired = account.NetWorth * ((double) minimumPercentBetRequired / 100));
+                double betRequired = account.NetWorth * ((double) minimumPercentBetRequired / 100);
                 if (inputMoney < minimumPercentBetRequired - 1)
                     throw new BadInputException($"Total bet amount must be at least 10% of your net worth. Bet at least ${FormatHelper.GetCommaNumber(betRequired + 1)} or higher.");
             }
