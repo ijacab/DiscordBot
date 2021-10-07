@@ -8,14 +8,20 @@ namespace DiscordBot.Games.Models
     public class BlackjackPlayer : IPlayer
     {
         public bool IsDealer { get; set; } = false;
-        public ulong Id { get; set; }
+        public ulong UserId { get; set; }
+        public ulong ChannelId { get; set; }
+        public ulong ServerId { get; set; }
+
         public List<Card> Cards { get; set; } = new List<Card>();
         public double BetAmount { get; set; }
         public double Winnings { get; set; }
         public bool IsFinishedPlaying { get; set; } = false;
-        public BlackjackPlayer(ulong id, double betAmount)
+
+        public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount)
         {
-            Id = id;
+            UserId = userId;
+            ChannelId = channelId;
+            ServerId = serverId;
             BetAmount = betAmount;
         }
         public BlackjackPlayer()

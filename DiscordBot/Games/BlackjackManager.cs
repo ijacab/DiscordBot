@@ -39,7 +39,9 @@ namespace DiscordBot.Games
                     throw new BadInputException("You are already in a game but it hasn't started yet. \nType `.bj start` to start or wait for the game to start automatically.");
             }
 
-            var player = new BlackjackPlayer(playerId, inputMoney);
+            var channel = message.Channel as SocketGuildChannel;
+            var guildId = channel.Guild.Id;
+            var player = new BlackjackPlayer(playerId, message.Channel.Id, guildId, inputMoney);
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
             if (openGame == null) //if no open games found, create new game
@@ -84,18 +86,24 @@ namespace DiscordBot.Games
                 //    }
                 //});
 
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game started. No one else can join this game now.");
+
                 var game = GetExisitingGame(playerId);
-                foreach (var gamePlayer in game.Players.Where(p => !p.IsDealer))
+                var players = game.Players.Where(p => !p.IsDealer);
+                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
+                var distinctServerChannelMappings = serverChannelMappings.Distinct();
+                
+                await distinctServerChannelMappings.SendMessageToEachChannel($"Blackjack game started. No one else can join this game now.", _client);
+                
+                foreach (var gamePlayer in players)
                 {
-                    Hit(gamePlayer.Id);
-                    Hit(gamePlayer.Id);
+                    Hit(gamePlayer.UserId);
+                    Hit(gamePlayer.UserId);
                 }
                 var dealer = game.GetDealer();
                 game.Hit(dealer);
-                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
-                await message.Channel.SendMessageAsync("Type `.bj hit` or `.bj stay` to play.");
 
+                await distinctServerChannelMappings.SendMessageToEachChannel(GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("Type `.bj hit` or `.bj stay` to play.", _client);
             }
             else
             {
@@ -200,7 +208,7 @@ namespace DiscordBot.Games
 
         public Blackjack GetExisitingGame(ulong playerId)
         {
-            var game = Games.FirstOrDefault(g => g.Players.Select(p => p.Id).Contains(playerId));
+            var game = Games.FirstOrDefault(g => g.Players.Select(p => p.UserId).Contains(playerId));
             if (game == null) throw new BadInputException("You are not in a game yet. Type '.bj \\*betAmount\\*' to create/join an open game.");
             return game;
         }
@@ -234,7 +242,7 @@ namespace DiscordBot.Games
 
             foreach (var player in game.Players.Where(p => !p.IsDealer))
             {
-                output += $"{client.GetUser(player.Id)}: {player.GetFormattedCards()}\n";
+                output += $"{client.GetUser(player.UserId).Username}: {player.GetFormattedCards()}\n";
             }
 
             return output;
@@ -261,20 +269,25 @@ namespace DiscordBot.Games
                 var dealer = playersInGame.First(p => p.IsDealer);
 
                 output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
-                foreach (var player in playersInGame.Where(p => !p.IsDealer))
-                {
-                    CoinAccount account = await _coinService.Get(player.Id, _client.GetUser(player.Id).Username);
-                    account.NetWorth += player.Winnings;
-                    _coinService.UpdateLocal(account.UserId, account.NetWorth, _client.GetUser(player.Id).Username);
 
-                    output += $"\n{client.GetUser(player.Id).Username}: {player.GetFormattedCards()}" +
+                var players = game.Players.Where(p => !p.IsDealer);
+                foreach (var player in players)
+                {
+                    CoinAccount account = await _coinService.Get(player.UserId, _client.GetUser(player.UserId).Username);
+                    account.NetWorth += player.Winnings;
+                    _coinService.UpdateLocal(account.UserId, account.NetWorth, _client.GetUser(player.UserId).Username);
+
+                    output += $"\n{client.GetUser(player.UserId).Username}: {player.GetFormattedCards()}" +
                         $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
                         $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
                 }
 
                 await _coinService.UpdateRemoteWithLocal();
 
-                await message.Channel.SendMessageAsync(output);
+                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
+                var distinctServerChannelMappings = serverChannelMappings.Distinct();
+
+                await distinctServerChannelMappings.SendMessageToEachChannel(output, _client);
             }
 
             return isGameEnded;
@@ -284,7 +297,7 @@ namespace DiscordBot.Games
         /// <summary>
         /// Ends the game that the player is in and returns a list the players in the game.
         /// </summary>
-        public List<BlackjackPlayer> PlayDealerAndCalculateWinnings(ulong playerId)
+        private List<BlackjackPlayer> PlayDealerAndCalculateWinnings(ulong playerId)
         {
             if (AreAllPlayersInSameGameFinished(playerId) == false)
                 throw new Exception($"{nameof(BlackjackManager.PlayDealerAndCalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
@@ -292,7 +305,7 @@ namespace DiscordBot.Games
             var game = GetExisitingGame(playerId);
             game.EndDealerTurn();
 
-            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.Id).ToList();
+            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.UserId).ToList();
 
             foreach (ulong playerIdInGame in playerIdsInGame)
             {

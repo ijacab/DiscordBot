@@ -27,7 +27,7 @@ namespace DiscordBot.Games
         }
         public TPlayer GetPlayer(ulong playerId)
         {
-            return Players.First(p => p.Id == playerId);
+            return Players.First(p => p.UserId == playerId);
         }
         public TPlayer GetDealer()
         {

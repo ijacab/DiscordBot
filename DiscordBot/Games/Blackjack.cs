@@ -90,15 +90,15 @@ namespace DiscordBot.Games
             int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
             int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results
 
+            if (playerHighestTotal == 21)
+                return BlackjackResultType.WinTwentyOne;
+
             if (playerHighestTotal == dealerHighestTotal)
             {
                 return BlackjackResultType.Draw;
             }
             else if (playerHighestTotal > dealerHighestTotal)
             {
-                if (playerHighestTotal == 21)
-                    return BlackjackResultType.WinTwentyOne;
-
                 return BlackjackResultType.Win;
             }
 
