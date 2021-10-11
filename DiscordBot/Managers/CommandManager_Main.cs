@@ -19,6 +19,7 @@ namespace DiscordBot.Managers
         private readonly MappingService _mappingService;
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
+        private readonly DuckDuckGoService _duckDuckGoService;
         private readonly BlackjackManager _blackjackManager;
         private Dictionary<string, string> _customMappings;
         private ulong _adminId = 166477511469957120;
@@ -27,17 +28,21 @@ namespace DiscordBot.Managers
         private double _startingAmount = 10000;
 
         private bool _stopped;
-        public CommandManager(ILogger<CommandManager> logger, MappingService mappingService, ReminderService reminderService, CoinService coinService, BlackjackManager blackjackManager)
+        public CommandManager(ILogger<CommandManager> logger, MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager)
         {
             _logger = logger;
             _mappingService = mappingService;
             _reminderService = reminderService;
             _coinService = coinService;
+            _duckDuckGoService = duckDuckGoService;
             _blackjackManager = blackjackManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();
 
             //need to add new commands in here as they are created
             _commands = new List<Command>();
+
+            _commands.Add(new Command("imagesearch", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query" });
+
             _commands.Add(new Command("hellotest", Test));
             _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = ".age" });
 
