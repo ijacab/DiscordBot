@@ -28,6 +28,9 @@ namespace DiscordBot.Services
         /// <returns></returns>
         public async Task InitializeAsync(string query)
         {
+            //using "!" in a search query causes a redirect to happen,
+            //so we need to catch that earlier so initialization is able to occur normally
+
             var req = new HttpRequestMessage
             {
                 Method = HttpMethod.Get,
@@ -45,7 +48,7 @@ namespace DiscordBot.Services
             var remainingVqdScriptContentArray = vqdStart?.Split(';', StringSplitOptions.RemoveEmptyEntries);
             var vqdDict = remainingVqdScriptContentArray?.Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
 
-            var vqd = vqdDict.TryGetValue("vqd", out var v) ? new string(v.Where(c => c != '\'').ToArray()) : null;
+            var vqd = vqdDict != null ? vqdDict.TryGetValue("vqd", out var v) ? new string(v.Where(c => c != '\'').ToArray()) : null : null;
 
             if (string.IsNullOrWhiteSpace(vqd)) throw new Exception("Could not find a value for 'vqd'");
 
@@ -54,37 +57,36 @@ namespace DiscordBot.Services
 
         public async Task<List<ImageResult>> GetImages(string query)
         {
-            try
+            var safeOff = query.ToLower().Contains("safeoff");
+            query = new string(query.Replace("safeoff", "").Where(c => char.IsLetterOrDigit(c) || c == ' ').ToArray()).Trim();
+
+            if (string.IsNullOrWhiteSpace(VQD)) await InitializeAsync(query);
+
+            var retryCount = 5;
+            do
             {
-                if (string.IsNullOrWhiteSpace(VQD)) await InitializeAsync(query);
-                var retryCount = 5;
-                do
+                var querystringParams = new Dictionary<string, string>
                 {
-                    var querystringParams = new Dictionary<string, string>
-                    {
-                        { "o", "json" },
-                        { "q", query },
-                        { "vqd", VQD },
-                        { "f", ",,,,," },
-                    };
-                    var url = QueryHelpers.AddQueryString("https://duckduckgo.com/i.js", querystringParams);
-                    var req = new HttpRequestMessage
-                    {
-                        Method = HttpMethod.Get,
-                        RequestUri = new Uri(url),
-                    };
-                    req.Headers.Add("Host", "duckduckgo.com");
-                    var res = await _httpClient.SendAsync(req);
-                    var c = await res.Content.ReadAsStringAsync();
-                    if (res.StatusCode == HttpStatusCode.Forbidden) await InitializeAsync(query);
-                    else if (res.StatusCode != HttpStatusCode.OK) throw new Exception($"Request returned error code '{res.StatusCode}'");
-                    else return JsonSerializer.Deserialize<ImageSearch>(await res.Content.ReadAsStringAsync())?.ImageResults;
-                } while (--retryCount > 1);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception(ex.ToString());
-            }
+                    { "o", "json" },
+                    { "q", query },
+                    { "vqd", VQD },
+                    { "f", ",,,,," },
+                };
+                if (safeOff) querystringParams.Add("p", "-1");
+                var url = QueryHelpers.AddQueryString("https://duckduckgo.com/i.js", querystringParams);
+                var req = new HttpRequestMessage
+                {
+                    Method = HttpMethod.Get,
+                    RequestUri = new Uri(url),
+                };
+                req.Headers.Add("Host", "duckduckgo.com");
+                var res = await _httpClient.SendAsync(req);
+                var c = await res.Content.ReadAsStringAsync();
+                if (res.StatusCode == HttpStatusCode.Forbidden) await InitializeAsync(query);
+                else if (res.StatusCode != HttpStatusCode.OK) throw new Exception($"Request returned error code '{res.StatusCode}'");
+                else return JsonSerializer.Deserialize<ImageSearch>(await res.Content.ReadAsStringAsync())?.ImageResults;
+            } while (--retryCount > 1);
+
             return new List<ImageResult>();
         }
     }
