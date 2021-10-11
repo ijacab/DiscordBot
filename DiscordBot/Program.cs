@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,6 @@ namespace DiscordBot
                 .ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Debug))
                 .ConfigureServices((hostContext, services) =>
                 {
-                    services.AddHttpsRedirection(options => { options.HttpsPort = 443; });
                 });
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

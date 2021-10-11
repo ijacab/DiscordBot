@@ -16,6 +16,7 @@ namespace DiscordBot.Managers
     {
         private List<Command> _commands;
         private readonly ILogger<CommandManager> _logger;
+        private readonly AppSettings _appSettings;
         private readonly MappingService _mappingService;
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
@@ -28,9 +29,11 @@ namespace DiscordBot.Managers
         private double _startingAmount = 10000;
 
         private bool _stopped;
-        public CommandManager(ILogger<CommandManager> logger, MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager)
+        public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager)
         {
             _logger = logger;
+            _appSettings = appSettings;
             _mappingService = mappingService;
             _reminderService = reminderService;
             _coinService = coinService;

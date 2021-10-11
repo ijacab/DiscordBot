@@ -314,11 +314,19 @@ namespace DiscordBot.Managers
 
         public async Task ImageSearch(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            args.ForEach(arg =>
+            {
+                _appSettings.BlackListedWords.ForEach(bw =>
+                {
+                    if (arg.Contains(bw)) throw new BadInputException("No");
+                });
+            });
+
             var searchQuery = string.Join(' ', args);
-            if (string.IsNullOrWhiteSpace(searchQuery)) { 
-                await message.Channel.SendMessageAsync("You didn't provide an argument"); 
-                return; 
-            }
+
+            if (string.IsNullOrWhiteSpace(searchQuery)) 
+                throw new BadInputException("You didn't provide an argument"); 
+
             var images = await _duckDuckGoService.GetImages(searchQuery);
             await message.Channel.SendMessageAsync(images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found");
         }

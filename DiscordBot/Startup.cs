@@ -9,6 +9,7 @@ using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Net.Http.Headers;
@@ -21,6 +22,14 @@ namespace DiscordBot
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddHttpsRedirection(options => { options.HttpsPort = 443; });
+
+            var config = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables()
+                .Build();
+
+            var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
+            services.AddSingleton<AppSettings>(appSettings);
 
             services.AddTransient<GistSettings>(sp =>
             {
@@ -37,7 +46,7 @@ namespace DiscordBot
                 h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
             });
 
-
+            
             services.AddSingleton<DiscordSocketClient>(sp => 
                 {
                     var config = new DiscordSocketConfig()
