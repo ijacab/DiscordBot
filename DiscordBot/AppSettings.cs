@@ -7,5 +7,6 @@ namespace DiscordBot
     public class AppSettings
     {
         public List<string> BlackListedWords { get; set; }
+        public List<ulong> BlackListedIds { get; set; }
     }
 }

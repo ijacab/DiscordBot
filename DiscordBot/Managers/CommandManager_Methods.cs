@@ -314,13 +314,7 @@ namespace DiscordBot.Managers
 
         public async Task ImageSearch(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            args.ForEach(arg =>
-            {
-                _appSettings.BlackListedWords.ForEach(bw =>
-                {
-                    if (arg.Contains(bw)) throw new BadInputException("No");
-                });
-            });
+            ThrowIfBlackListed(client, message, args);
 
             var searchQuery = string.Join(' ', args);
 
@@ -336,6 +330,22 @@ namespace DiscordBot.Managers
             {
                 await message.Channel.SendMessageAsync(ex.Message);
             }
+        }
+
+        public void ThrowIfBlackListed(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if(_appSettings.BlackListedIds.Contains(message.Author.Id))
+                throw new BadInputException("No");
+
+            args.ForEach(arg =>
+            {
+                _appSettings.BlackListedWords.ForEach(bw =>
+                {
+                    if (arg.Contains(bw)) throw new BadInputException("No");
+                });
+            });
+
+
         }
     }
 }
