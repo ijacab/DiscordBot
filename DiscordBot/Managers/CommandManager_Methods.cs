@@ -360,20 +360,15 @@ namespace DiscordBot.Managers
             }
         }
 
-        public void ThrowIfBlackListed(DiscordSocketClient client, SocketMessage message, List<string> args)
+        public void ThrowIfBlackListed(DiscordSocketClient client, SocketMessage message)
         {
             if (_appSettings.BlackListedIds.Contains(message.Author.Id))
                 throw new BadInputException("No");
 
-            args.ForEach(arg =>
+            _appSettings.BlackListedWords.ForEach(bw =>
             {
-                _appSettings.BlackListedWords.ForEach(bw =>
-                {
-                    if (arg.Contains(bw)) throw new BadInputException("No");
-                });
+                if (message.Content.Contains(bw)) throw new BadInputException("No");
             });
-
-
         }
     }
 }
