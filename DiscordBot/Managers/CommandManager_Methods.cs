@@ -295,6 +295,7 @@ namespace DiscordBot.Managers
             {
                 _imageSearchStopped = false;
                 await message.Channel.SendMessageAsync("Image search enabled.");
+                return;
             }
 
             await message.Channel.SendMessageAsync("I WAKE");
@@ -307,6 +308,7 @@ namespace DiscordBot.Managers
             {
                 _imageSearchStopped = true;
                 await message.Channel.SendMessageAsync("Image search disabled.");
+                return;
             }
 
             await message.Channel.SendMessageAsync("I SLEEP");
