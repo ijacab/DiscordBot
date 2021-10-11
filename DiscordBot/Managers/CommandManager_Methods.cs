@@ -330,7 +330,7 @@ namespace DiscordBot.Managers
             if (_imageSearchStopped)
                 return;
 
-            ThrowIfBlackListed(client, message, args);
+            ThrowIfBlackListed(message);
 
             var searchQuery = string.Join(' ', args);
 
@@ -360,7 +360,7 @@ namespace DiscordBot.Managers
             }
         }
 
-        public void ThrowIfBlackListed(DiscordSocketClient client, SocketMessage message)
+        public void ThrowIfBlackListed(SocketMessage message)
         {
             if (_appSettings.BlackListedIds.Contains(message.Author.Id))
                 throw new BadInputException("No");
