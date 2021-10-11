@@ -334,13 +334,25 @@ namespace DiscordBot.Managers
 
             var searchQuery = string.Join(' ', args);
 
-            if (string.IsNullOrWhiteSpace(searchQuery)) 
-                throw new BadInputException("You didn't provide an argument"); 
+            if (string.IsNullOrWhiteSpace(searchQuery))
+                throw new BadInputException("You didn't provide an argument");
 
             try
             {
                 var images = await _duckDuckGoService.GetImages(searchQuery);
-                await message.Channel.SendMessageAsync(images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found");
+                string output = images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found";
+
+                var msg = await message.Channel.SendMessageAsync(output);
+
+                if (searchQuery.Contains("safeoff"))
+                {
+                    //delete nsfw messages after delay
+                    _ = Task.Delay(TimeSpan.FromSeconds(90)).ContinueWith(async t =>
+                    {
+                        await msg.DeleteAsync();
+                    });
+
+                }
             }
             catch (Exception ex)
             {
@@ -350,7 +362,7 @@ namespace DiscordBot.Managers
 
         public void ThrowIfBlackListed(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if(_appSettings.BlackListedIds.Contains(message.Author.Id))
+            if (_appSettings.BlackListedIds.Contains(message.Author.Id))
                 throw new BadInputException("No");
 
             args.ForEach(arg =>
