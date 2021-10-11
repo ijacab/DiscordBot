@@ -327,8 +327,15 @@ namespace DiscordBot.Managers
             if (string.IsNullOrWhiteSpace(searchQuery)) 
                 throw new BadInputException("You didn't provide an argument"); 
 
-            var images = await _duckDuckGoService.GetImages(searchQuery);
-            await message.Channel.SendMessageAsync(images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found");
+            try
+            {
+                var images = await _duckDuckGoService.GetImages(searchQuery);
+                await message.Channel.SendMessageAsync(images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found");
+            }
+            catch (Exception ex)
+            {
+                await message.Channel.SendMessageAsync(ex.Message);
+            }
         }
     }
 }
