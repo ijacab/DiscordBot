@@ -23,12 +23,13 @@ namespace DiscordBot.Managers
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly BlackjackManager _blackjackManager;
         private Dictionary<string, string> _customMappings;
-        private ulong _adminId = 166477511469957120;
+        private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
         private int _argCharLimit = 950;
         private int _messageCharLimit = 2000;
         private double _startingAmount = 10000;
 
         private bool _stopped;
+        private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager)
         {
@@ -60,7 +61,7 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
             _commands.Add(new Command("r", GameRoulette) { Hidden = true, Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
 
-            _commands.Add(new Command("blackjack", GameBlackjack) { Description= "Plays a multiplayer blackjack game using virtual money.Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`"});
+            _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money.Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
             _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
 
             _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
@@ -139,7 +140,7 @@ namespace DiscordBot.Managers
 
             if (commandToExecute != null)
             {
-                if (commandToExecute.RequiresAdmin && message.Author.Id != _adminId)
+                if (commandToExecute.RequiresAdmin && _adminIds.Contains(message.Author.Id) == false)
                 {
                     await message.Channel.SendMessageAsync($"You not admin. FUCK OFF");
                     return;
@@ -191,9 +192,9 @@ namespace DiscordBot.Managers
             Task reminderTask = Task.CompletedTask;
             try
             {
-                 reminderTask = SendReminders(client);
+                reminderTask = SendReminders(client);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error while sending reminders {nameof(CommandManager)}: {ex.Message}");
             }

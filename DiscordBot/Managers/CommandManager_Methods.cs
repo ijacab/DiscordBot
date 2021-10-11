@@ -291,12 +291,23 @@ namespace DiscordBot.Managers
 
         private async Task Start(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (args.Count > 0 && args[0].StartsWith("im"))
+            {
+                _imageSearchStopped = false;
+                await message.Channel.SendMessageAsync("Image search enabled.");
+            }
+
             await message.Channel.SendMessageAsync("I WAKE");
             _stopped = false;
         }
 
         private async Task Stop(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (args.Count > 0 && args[0].StartsWith("im"))
+            {
+                _imageSearchStopped = true;
+                await message.Channel.SendMessageAsync("Image search disabled.");
+            }
 
             await message.Channel.SendMessageAsync("I SLEEP");
             _stopped = true;
@@ -314,6 +325,9 @@ namespace DiscordBot.Managers
 
         public async Task ImageSearch(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (_imageSearchStopped)
+                return;
+
             ThrowIfBlackListed(client, message, args);
 
             var searchQuery = string.Join(' ', args);
