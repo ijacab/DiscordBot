@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace Common.Services
 {
-    public class GistService
+    public class GistService : IFileService
     {
         private readonly HttpClient _httpClient;
         private readonly GistSettings _settings;
@@ -63,7 +63,7 @@ namespace Common.Services
             string result = (string)contentJsonObj["files"][fileName]["content"];
 
             //if the file is empty initialize it with an new instance of that class
-            if (string.IsNullOrWhiteSpace(result)) 
+            if (string.IsNullOrWhiteSpace(result))
             {
                 T initializedObj = new T();
                 await UpdateContent(fileName, JsonConvert.SerializeObject(initializedObj));
