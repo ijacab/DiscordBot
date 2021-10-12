@@ -65,6 +65,7 @@ namespace DiscordBot
             services.AddTransient<StrawmanChecker>();
             services.AddSingleton<BlackjackManager>();
             services.AddScoped<DuckDuckGoService>();
+            services.AddTransient<BetManager>();
 
             services.AddHttpClient<StrawmanChecker>(h =>
             {

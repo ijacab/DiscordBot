@@ -9,6 +9,7 @@ namespace DiscordBot.Games.Models
     {
         public bool IsDealer { get; set; } = false;
         public ulong UserId { get; set; }
+        public string Username { get; set; }
         public ulong ChannelId { get; set; }
         public ulong ServerId { get; set; }
 
@@ -17,12 +18,13 @@ namespace DiscordBot.Games.Models
         public double Winnings { get; set; }
         public bool IsFinishedPlaying { get; set; } = false;
 
-        public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount)
+        public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount, string username)
         {
             UserId = userId;
             ChannelId = channelId;
             ServerId = serverId;
             BetAmount = betAmount;
+            Username = username;
         }
         public BlackjackPlayer()
         {

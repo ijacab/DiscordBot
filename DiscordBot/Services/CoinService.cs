@@ -51,10 +51,7 @@ namespace DiscordBot.Services
             return coinAccount;
         }
 
-        /// <summary>
-        /// Only updates in memory. Call UpdateRemoteWithLocal when you want these changes to be applied remotely.
-        /// </summary>
-        public bool UpdateLocal(ulong userId, double netWorth, string name, bool hourlyBonusGranted = false)
+        public async Task<bool> Update(ulong userId, double netWorth, string name, bool hourlyBonusGranted = false, bool updateRemote = true)
         {
             bool bonusGranted = false;
             var account = _coinAccounts.Accounts.First(a => a.UserId == userId);
@@ -68,31 +65,13 @@ namespace DiscordBot.Services
                 bonusGranted = true;
             }
 
-            return bonusGranted;
-        }
-
-        public async Task UpdateRemoteWithLocal()
-        {
-            string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _gistService.UpdateContent(_fileName, content);
-        }
-
-        public async Task<bool> Update(ulong userId, double netWorth, string name, bool hourlyBonusGranted = false)
-        {
-            bool bonusGranted = false;
-            var account = _coinAccounts.Accounts.First(a => a.UserId == userId);
-            account.NetWorth = netWorth;
-            account.Name = name;
-
-            var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            if (account.DateHourlyBonusPaidFor != todayString && hourlyBonusGranted)
+            //update remote with local changes when update remote is true
+            if (updateRemote)
             {
-                account.DateHourlyBonusPaidFor = todayString;
-                bonusGranted = true;
+                string content = JsonConvert.SerializeObject(_coinAccounts);
+                await _gistService.UpdateContent(_fileName, content);
             }
 
-            string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _gistService.UpdateContent(_fileName, content);
             return bonusGranted;
         }
 

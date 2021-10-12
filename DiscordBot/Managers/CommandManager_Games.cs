@@ -63,14 +63,7 @@ namespace DiscordBot.Managers
             double inputMoney = 0;
             inputBets.Where(b => b.RoulleteBetType != BetType.NotValid).ToList().ForEach(b => inputMoney += b.Amount);
 
-            EnsureGameMoneyInputIsValid(inputMoney, account, minPercentBetRequired);
-
-            bool overFiftyPercentBet = false;
-            if (inputMoney >= (account.NetWorth * 0.5) - 1)
-                overFiftyPercentBet = true; //if bet made over 50% networth for that day they get the bonus
-
-
-            account.NetWorth -= inputMoney;
+            await _betManager.InitiateBet(userId, message.Author.Username, inputMoney);
 
             var resultTuple = new Roulette().Play(inputBets);
             string resultString = "";
@@ -103,9 +96,9 @@ namespace DiscordBot.Managers
                 output += $"{message.Author.Mention} `Your networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
             }
 
-            bool bonusGranted = await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username, overFiftyPercentBet);
+            bool bonusGranted = await _betManager.ResolveBet(userId, message.Author.Username, account.NetWorth);
 
-            if (overFiftyPercentBet && bonusGranted)
+            if (bonusGranted)
                 output += $"\n\n*You will get a bonus $1000 + 10% net worth each hour for the rest of the day (UTC).*";
 
             await message.Channel.SendMessageAsync(output);
@@ -136,14 +129,7 @@ namespace DiscordBot.Managers
 
             if (double.TryParse(input, out double inputMoney)) //'.bj 1000'
             {
-                CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
-                EnsureGameMoneyInputIsValid(inputMoney, coinAccount, null);
-
                 await _blackjackManager.CreateOrJoin(playerId, inputMoney, message); //will throw an exception if player already in a game, don't need to check
-
-                //minus their input money - they will get it back when the game ends (if they don't lose)
-                coinAccount.NetWorth -= inputMoney;
-                await _coinService.Update(playerId, coinAccount.NetWorth, message.Author.Username);
             }
 
             if (args[0].StartsWith("start"))//'.bj start'
@@ -160,20 +146,6 @@ namespace DiscordBot.Managers
             }
         }
 
-        private void EnsureGameMoneyInputIsValid(double inputMoney, CoinAccount account, int? minimumPercentBetRequired = null)
-        {
-            if (inputMoney <= 0)
-                throw new BadInputException($"You didn't place any valid bets FUCK HEAD");
 
-            if (inputMoney > account.NetWorth)
-                throw new BadInputException($"CAN'T BET WITH MORE MONEY THAN YOU HAVE DUMBASS. YOU HAVE ${FormatHelper.GetCommaNumber(account.NetWorth)}");
-
-            if (minimumPercentBetRequired != null)
-            {
-                double betRequired = account.NetWorth * ((double) minimumPercentBetRequired / 100);
-                if (inputMoney < betRequired - 1)
-                    throw new BadInputException($"Total bet amount must be at least 10% of your net worth. Bet at least ${FormatHelper.GetCommaNumber(betRequired + 1)} or higher.");
-            }
-        }
     }
 }

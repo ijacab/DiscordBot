@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
+using DiscordBot.Managers;
 using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
@@ -18,13 +19,15 @@ namespace DiscordBot.Games
         private const int _secondsToForceStartAfter = 30;
         private const int _secondsToForceEndAfter = 90;
 
-        private readonly CoinService _coinService;
+        private readonly BetManager _betManager;
         private readonly DiscordSocketClient _client;
+        private readonly CoinService _coinService;
 
-        public BlackjackManager(DiscordSocketClient client, CoinService coinService)
+        public BlackjackManager(DiscordSocketClient client, BetManager betManager, CoinService coinService)
         {
-            _coinService = coinService;
+            _betManager = betManager;
             _client = client;
+            _coinService = coinService;
         }
 
         /// <returns>True if new game created, false if joining existing game.</returns>
@@ -39,9 +42,11 @@ namespace DiscordBot.Games
                     throw new BadInputException("You are already in a game but it hasn't started yet. \nType `.bj start` to start or wait for the game to start automatically.");
             }
 
+            await _betManager.InitiateBet(playerId, message.Author.Username, inputMoney);
+
             var channel = message.Channel as SocketGuildChannel;
             var guildId = channel.Guild.Id;
-            var player = new BlackjackPlayer(playerId, message.Channel.Id, guildId, inputMoney);
+            var player = new BlackjackPlayer(playerId, message.Channel.Id, guildId, inputMoney, message.Author.Username);
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
             if (openGame == null) //if no open games found, create new game
@@ -91,9 +96,9 @@ namespace DiscordBot.Games
                 var players = game.Players.Where(p => !p.IsDealer);
                 var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
                 var distinctServerChannelMappings = serverChannelMappings.Distinct();
-                
+
                 await distinctServerChannelMappings.SendMessageToEachChannel($"Blackjack game started. No one else can join this game now.", _client);
-                
+
                 foreach (var gamePlayer in players)
                 {
                     Hit(gamePlayer.UserId);
@@ -157,7 +162,7 @@ namespace DiscordBot.Games
             if (!TryGetPlayer(playerId, out _))
                 throw new BadInputException($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
 
-            if(!IsGameStarted(playerId))
+            if (!IsGameStarted(playerId))
                 throw new BadInputException($"{message.Author.Mention} Game hasn't started yet. Type `.bj start` to start the game.");
 
             Stay(playerId);
@@ -200,9 +205,9 @@ namespace DiscordBot.Games
                 return false;
             }
 
-            if (player != null) 
+            if (player != null)
                 return true;
-            else 
+            else
                 return false;
         }
 
@@ -225,7 +230,7 @@ namespace DiscordBot.Games
                 return false;
             }
 
-             if (game != null)
+            if (game != null)
                 return true;
             else
                 return false;
@@ -271,18 +276,14 @@ namespace DiscordBot.Games
                 output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
 
                 var players = game.Players.Where(p => !p.IsDealer);
+                await _betManager.ResolveBet(players);
                 foreach (var player in players)
                 {
-                    CoinAccount account = await _coinService.Get(player.UserId, _client.GetUser(player.UserId).Username);
-                    account.NetWorth += player.Winnings;
-                    _coinService.UpdateLocal(account.UserId, account.NetWorth, _client.GetUser(player.UserId).Username);
-
+                    CoinAccount account = await _coinService.Get(player.UserId, player.Username);
                     output += $"\n{client.GetUser(player.UserId).Username}: {player.GetFormattedCards()}" +
                         $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
                         $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
                 }
-
-                await _coinService.UpdateRemoteWithLocal();
 
                 var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
                 var distinctServerChannelMappings = serverChannelMappings.Distinct();

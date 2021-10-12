@@ -22,6 +22,7 @@ namespace DiscordBot.Managers
         private readonly CoinService _coinService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly BlackjackManager _blackjackManager;
+        private readonly BetManager _betManager;
         private Dictionary<string, string> _customMappings;
         private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
         private int _argCharLimit = 950;
@@ -31,7 +32,7 @@ namespace DiscordBot.Managers
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager)
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager, BetManager betManager)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -40,6 +41,7 @@ namespace DiscordBot.Managers
             _coinService = coinService;
             _duckDuckGoService = duckDuckGoService;
             _blackjackManager = blackjackManager;
+            _betManager = betManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();
 
             //need to add new commands in here as they are created
