@@ -23,7 +23,7 @@ namespace DiscordBot.Games
             player.Cards.Add(card);
             var playerValidTotals = player.GetPossibleTotalValues();
 
-            if (playerValidTotals.Count() == 0)
+            if (playerValidTotals.Count() == 0 || player.Cards.Count >= 5)
                 player.IsFinishedPlaying = true;
         }
 
@@ -90,7 +90,7 @@ namespace DiscordBot.Games
             int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
             int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results
 
-            if (playerHighestTotal == 21)
+            if (player.Cards.Count >= 5 || playerHighestTotal == 21)
                 return BlackjackResultType.WinTwentyOne;
 
             if (playerHighestTotal == dealerHighestTotal)
