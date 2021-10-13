@@ -39,14 +39,6 @@ namespace DiscordBot
                 return settings;
             });
 
-            services.AddHttpClient<GistService>(h =>
-            {
-                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot");
-                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
-            });
-
-            
             services.AddSingleton<DiscordSocketClient>(sp => 
                 {
                     var config = new DiscordSocketConfig()
@@ -67,11 +59,24 @@ namespace DiscordBot
             services.AddScoped<DuckDuckGoService>();
             services.AddTransient<BetManager>();
 
+            services.AddHttpClient<GistService>(h =>
+            {
+                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot");
+                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
+            });
+
             services.AddHttpClient<StrawmanChecker>(h =>
             {
                 h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
                 h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
                 h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
+            });
+
+            services.AddHttpClient<FaceService>(h =>
+            {
+                h.BaseAddress = new Uri(@"https://thispersondoesnotexist.com");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
             });
 
             services.AddHostedService<ChatWorker>();

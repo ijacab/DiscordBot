@@ -1,9 +1,4 @@
-﻿using Discord;
-using Discord.WebSocket;
-using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System;
 
 namespace Common.Helpers
 {
@@ -20,15 +15,6 @@ namespace Common.Helpers
                     numberObj = Math.Ceiling(numberDouble);
             }
             return String.Format("{0:n0}", numberObj);
-        }
-
-        public static async Task SendRichEmbedMessage(this IMessage message, string title, string messageContent)
-        {
-            var embed = new EmbedBuilder();
-            // Or with methods
-            embed.AddField(title, messageContent)
-                .WithColor(Color.DarkPurple);
-            await message.Channel.SendMessageAsync(embed: embed.Build());
         }
     }
 }

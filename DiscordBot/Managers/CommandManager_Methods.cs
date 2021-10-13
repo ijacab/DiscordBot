@@ -370,5 +370,11 @@ namespace DiscordBot.Managers
                 if (message.Content.Contains(bw)) throw new BadInputException("No");
             });
         }
+
+        public async Task FaceGenerate(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            using var stream = await _faceService.Run();
+            await message.Channel.SendFileAsync(stream: stream, "image.jpg");
+        }
     }
 }

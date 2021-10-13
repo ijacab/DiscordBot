@@ -21,6 +21,7 @@ namespace DiscordBot.Managers
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
         private readonly DuckDuckGoService _duckDuckGoService;
+        private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
         private readonly BetManager _betManager;
         private Dictionary<string, string> _customMappings;
@@ -32,7 +33,8 @@ namespace DiscordBot.Managers
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, BlackjackManager blackjackManager, BetManager betManager)
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            BlackjackManager blackjackManager, BetManager betManager)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -40,6 +42,7 @@ namespace DiscordBot.Managers
             _reminderService = reminderService;
             _coinService = coinService;
             _duckDuckGoService = duckDuckGoService;
+            _faceService = faceService;
             _blackjackManager = blackjackManager;
             _betManager = betManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();
@@ -48,6 +51,7 @@ namespace DiscordBot.Managers
             _commands = new List<Command>();
 
             _commands.Add(new Command("imagesearch", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query" });
+            _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from https://thispersondoesnotexist.com and displays it." });
 
             _commands.Add(new Command("hellotest", Test));
             _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = ".age" });
@@ -57,7 +61,7 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("clear", Clear, hidden: true, requiresAdmin: true));
 
             _commands.Add(new Command("help", Help));
-            _commands.Add(new Command("remindme", AddReminder));
+            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`"});
             _commands.Add(new Command("roll", Roll) { Syntax = ".roll 1 100" });
 
             _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });

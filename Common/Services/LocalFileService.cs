@@ -16,7 +16,7 @@ namespace Common.Services
             return Task.CompletedTask;
         }
 
-        public Task<T> GetContent<T>(string fileName)
+        public Task<T> GetContent<T>(string fileName) where T : new()
         {
             string path = Path.Join(Directory.GetCurrentDirectory(), fileName);
             string fileContent = File.ReadAllText(path);
