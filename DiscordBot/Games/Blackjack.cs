@@ -22,8 +22,8 @@ namespace DiscordBot.Games
             var card = _deck.Take();
             player.Cards.Add(card);
             var playerValidTotals = player.GetPossibleTotalValues();
-
-            if (playerValidTotals.Count() == 0 || player.Cards.Count >= 5)
+            
+            if (playerValidTotals.Count() == 0 || player.Cards.Count >= 5 || playerValidTotals.OrderByDescending(t => t).First() == 21)
                 player.IsFinishedPlaying = true;
         }
 

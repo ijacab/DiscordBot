@@ -154,7 +154,7 @@ namespace DiscordBot.Managers
 
                 try
                 {
-                    var args = ExtractArguments(message.Content.Substring(lengthOfCommand).ToLowerInvariant());
+                    var args = ExtractArguments(message.Content.Substring(lengthOfCommand));
                     foreach (string arg in args)
                     {
                         if (arg.Length > _argCharLimit)
