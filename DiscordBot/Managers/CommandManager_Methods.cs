@@ -269,7 +269,7 @@ namespace DiscordBot.Managers
 
 
             string output = "";
-            int chance = 9, multiplier = 6;
+            int chance = 11, multiplier = 6;
             int rand = new Random().Next(0, chance);
             if (rand == 0)
             {
