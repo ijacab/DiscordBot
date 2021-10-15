@@ -63,7 +63,9 @@ namespace DiscordBot.Managers
             double inputMoney = 0;
             inputBets.Where(b => b.RoulleteBetType != BetType.NotValid).ToList().ForEach(b => inputMoney += b.Amount);
 
-            await _betManager.InitiateBet(userId, message.Author.Username, inputMoney);
+            var bet = await _betManager.InitiateBet(userId, message.Author.Username, inputMoney);
+            bool wasBonusGranted = bet.WasBonusGranted;
+            bool isFirstGameOfTheDay = bet.IsFirstGameOfTheDay;
 
             var resultTuple = new Roulette().Play(inputBets);
             string resultString = "";
@@ -79,26 +81,34 @@ namespace DiscordBot.Managers
 
             List<RouletteBet> winningBets = resultTuple.Item2;
 
+
+            double baseWinnings = 0;
             string output = $"Winning results were {resultString}.\n";
             if (winningBets.Count == 0)
+            {
                 output += $"{message.Author.Username} you did not make any successful bets. Your net worth is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.";
+                var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
+            }
             else
             {
                 output += "`Your winning bets were:`\n";
                 foreach (var winningBet in winningBets)
                 {
                     double amountBack = winningBet.Amount + (winningBet.PayoutMultiple * winningBet.Amount);
-                    account.NetWorth += amountBack;
+                    baseWinnings += amountBack;
                     output += winningBet.BetNumberChoice != null
                         ? $"{winningBet.BetNumberChoice.ToString().Replace("-1", "00")}: ${FormatHelper.GetCommaNumber(winningBet.Amount)} -> ${FormatHelper.GetCommaNumber(amountBack)}\n"
                         : $"{winningBet.RoulleteBetType}: ${FormatHelper.GetCommaNumber(winningBet.Amount)} -> ${FormatHelper.GetCommaNumber(amountBack)}\n";
                 }
-                output += $"{message.Author.Mention} `Your networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
+
+                var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
+                output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)})\n";
+                output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(account.NetWorth)}`";
             }
 
-            bool bonusGranted = await _betManager.ResolveBet(userId, message.Author.Username, account.NetWorth);
 
-            if (bonusGranted)
+
+            if (wasBonusGranted)
                 output += $"\n\n*You will get a bonus $1000 + 10% net worth each hour for the rest of the day (UTC).*";
 
             await message.Channel.SendMessageAsync(output);

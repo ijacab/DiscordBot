@@ -41,7 +41,7 @@ namespace DiscordBot.Services
                 Name = name,
                 UserId = userId,
                 NetWorth = netWorth,
-                DateHourlyBonusPaidFor = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
+                MostRecentDatePlayed = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
             };
 
             _coinAccounts.Accounts.Add(coinAccount);
@@ -51,19 +51,12 @@ namespace DiscordBot.Services
             return coinAccount;
         }
 
-        public async Task<bool> Update(ulong userId, double netWorth, string name, bool hourlyBonusGranted = false, bool updateRemote = true)
+        public async Task<bool> Update(ulong userId, double netWorth, string name, bool updateRemote = true)
         {
             bool bonusGranted = false;
             var account = _coinAccounts.Accounts.First(a => a.UserId == userId);
             account.NetWorth = netWorth;
             account.Name = name;
-
-            var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            if (account.DateHourlyBonusPaidFor != todayString && hourlyBonusGranted)
-            {
-                account.DateHourlyBonusPaidFor = todayString;
-                bonusGranted = true;
-            }
 
             //update remote with local changes when update remote is true
             if (updateRemote)
@@ -95,7 +88,7 @@ namespace DiscordBot.Services
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
-            var accountsToAction = _coinAccounts.Accounts.Where(a => a.DateHourlyBonusPaidFor == dateString);
+            var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDatePlayed == dateString);
             foreach (var account in accountsToAction)
             {
                 account.NetWorth += CalculateAddedInterest(account); //add 1000 + 10% per hour if they are granted the bonus

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
+using DiscordBot.Exceptions;
 
 namespace DiscordBot.Games
 {
@@ -16,6 +17,7 @@ namespace DiscordBot.Games
         }
         public Tuple<List<string>, List<RouletteBet>> Play(List<RouletteBet> inputs)
         {
+            
             var result = new Random().Next(-1, 36 + 1);
 
             List<string> winningChoices = _outcomes[result].Split(',').ToList();
@@ -97,6 +99,31 @@ namespace DiscordBot.Games
             }
 
             return outcomes;
+        }
+
+        public void EnsureValidCombinations(List<RouletteBet> inputs)
+        {
+
+            if (inputs.Exists(i => i.RoulleteBetType == BetType.Red)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.Black))
+                throw new BadInputException("Can't bet Red and Black at the same time.");
+
+            if (inputs.Exists(i => i.RoulleteBetType == BetType.Odd)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.Even))
+                throw new BadInputException("Can't bet Even and Odd at the same time.");
+
+            if (inputs.Exists(i => i.RoulleteBetType == BetType.FirstDozen)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.SecondDozen)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.ThirdDozen))
+                throw new BadInputException("Can't bet all 3 Dozens at the same time");
+
+            if (inputs.Exists(i => i.RoulleteBetType == BetType.FirstColumn)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.SecondColumn)
+                && inputs.Exists(i => i.RoulleteBetType == BetType.ThirdColumn))
+                throw new BadInputException("Can't bet all 3 Columns at the same time");
+
+            if (inputs.Count > 18)
+                throw new BadInputException("Can't bet more than 18 selections at once");
         }
     }
 }

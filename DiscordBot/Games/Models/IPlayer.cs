@@ -11,7 +11,9 @@ namespace DiscordBot.Games.Models
         public ulong ChannelId { get; set; }
         public ulong ServerId { get; set; }
         public double BetAmount { get; set; }
-        public double Winnings { get; set; }
+        public double BaseWinnings { get; set; }
+        public double BonusWinnings { get; set; }
+        public double TotalWinnings { get { return BaseWinnings + BonusWinnings; } }
         public bool IsDealer { get; set; }
     }
 }

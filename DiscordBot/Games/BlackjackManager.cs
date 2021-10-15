@@ -83,13 +83,13 @@ namespace DiscordBot.Games
                 Start(playerId);
 
                 //timer on ending the game
-                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
-                //{
-                //    if(TryGetExisitingGame(playerId, out var game))
-                //    {
-                //        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
-                //    }
-                //});
+                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                {
+                    if (TryGetExisitingGame(playerId, out var game))
+                    {
+                        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
+                    }
+                });
 
 
                 var game = GetExisitingGame(playerId);
@@ -236,7 +236,6 @@ namespace DiscordBot.Games
                 return false;
         }
 
-
         private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
         {
             string output = "";
@@ -280,8 +279,10 @@ namespace DiscordBot.Games
                 foreach (var player in players)
                 {
                     CoinAccount account = await _coinService.Get(player.UserId, player.Username);
-                    output += $"\n{client.GetUser(player.UserId).Username}: {player.GetFormattedCards()}" +
-                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.Winnings)}" +
+                    string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
+                    output += $"\n{player.Username}: {player.GetFormattedCards()}" +
+                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
+                        $"\t{bonusLine}" +
                         $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
                 }
 
@@ -311,7 +312,7 @@ namespace DiscordBot.Games
             foreach (ulong playerIdInGame in playerIdsInGame)
             {
                 TryGetPlayer(playerIdInGame, out var player);
-                player.Winnings = game.GetWinnings(player);
+                player.BaseWinnings = game.GetWinnings(player);
             }
 
             Games.Remove(game);

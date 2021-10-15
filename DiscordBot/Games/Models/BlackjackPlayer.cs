@@ -15,8 +15,10 @@ namespace DiscordBot.Games.Models
 
         public List<Card> Cards { get; set; } = new List<Card>();
         public double BetAmount { get; set; }
-        public double Winnings { get; set; }
+        public double BaseWinnings { get; set; }
+        public double BonusWinnings { get; set; }
         public bool IsFinishedPlaying { get; set; } = false;
+        
 
         public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount, string username)
         {
@@ -83,12 +85,12 @@ namespace DiscordBot.Games.Models
             int highestValidValue = possibleTotals.OrderByDescending(t => t).FirstOrDefault();
             string valueStr = "";
             if (highestValidValue == default(int))
-                valueStr = "(No valid values)";
+                valueStr = "(Bust)";
             else
             {
                 foreach (int total in possibleTotals)
                 {
-                    valueStr += $"{total}, ";
+                    valueStr += $"*{total}*, ";
                 }
             }
             valueStr = valueStr.TrimEnd(' ').TrimEnd(',');
