@@ -19,6 +19,13 @@ namespace Common.Services
         public Task<T> GetContent<T>(string fileName) where T : new()
         {
             string path = Path.Join(Directory.GetCurrentDirectory(), fileName);
+            if(!File.Exists(path))
+            {
+                T initializedObj = new T();
+                UpdateContent(fileName, JsonConvert.SerializeObject(initializedObj));
+                return Task.FromResult(initializedObj);
+            }
+
             string fileContent = File.ReadAllText(path);
             return Task.FromResult(JsonConvert.DeserializeObject<T>(fileContent));
         }

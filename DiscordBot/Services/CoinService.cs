@@ -12,17 +12,17 @@ namespace DiscordBot.Services
     public class CoinService
     {
         private const string _fileName = "coinaccounts.json";
-        private readonly GistService _gistService;
+        private readonly LocalFileService _fileService;
         private CoinAccounts _coinAccounts;
 
-        public CoinService(GistService gistService)
+        public CoinService(LocalFileService fileService)
         {
-            _gistService = gistService;
+            _fileService = fileService;
             GetAll().Wait();
         }
         public async Task<CoinAccounts> GetAll()
         {
-            _coinAccounts = await _gistService.GetContent<CoinAccounts>(_fileName);
+            _coinAccounts = await _fileService.GetContent<CoinAccounts>(_fileName);
             return _coinAccounts;
         }
 
@@ -47,7 +47,7 @@ namespace DiscordBot.Services
             _coinAccounts.Accounts.Add(coinAccount);
 
             string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _gistService.UpdateContent(_fileName, content);
+            await _fileService.UpdateContent(_fileName, content);
             return coinAccount;
         }
 
@@ -62,7 +62,7 @@ namespace DiscordBot.Services
             if (updateRemote)
             {
                 string content = JsonConvert.SerializeObject(_coinAccounts);
-                await _gistService.UpdateContent(_fileName, content);
+                await _fileService.UpdateContent(_fileName, content);
             }
 
             return bonusGranted;
@@ -72,7 +72,7 @@ namespace DiscordBot.Services
         {
             _coinAccounts = new CoinAccounts();
             string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _gistService.UpdateContent(_fileName, content);
+            await _fileService.UpdateContent(_fileName, content);
         }
 
         public async Task AddInterest()
@@ -95,7 +95,7 @@ namespace DiscordBot.Services
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);
             string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _gistService.UpdateContent(_fileName, content);
+            await _fileService.UpdateContent(_fileName, content);
         }
 
         public double CalculateAddedInterest(CoinAccount account, int fixedAmount = 1000)
