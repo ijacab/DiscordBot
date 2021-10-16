@@ -217,16 +217,18 @@ namespace DiscordBot.Managers
 
         private async Task ArchiveLeaderboard(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            string fileNamePrefix = "leaderboard_season", fileNameExtension = ".json";
             string fileNamePattern = "leaderboard_season*.json";
             var fileNames = Directory.GetFiles(Directory.GetCurrentDirectory(), fileNamePattern);
             int i = 1;
             if (fileNames.Any())
             {
-                string latestFileName = fileNames.OrderByDescending(fn => fn).First();
-                i = int.Parse(latestFileName.Replace("leaderboard_season", "").Replace(".json", ""));
+                string latestFileNameFullPath = fileNames.OrderByDescending(fn => fn).First();
+                string latestFileName = Path.GetFileName(latestFileNameFullPath);
+                i = 1 + int.Parse(latestFileName.Replace(fileNamePrefix, "").Replace(fileNameExtension, ""));
             }
             string fileName = fileNamePattern.Replace("*", i.ToString());
-            string path = Path.Join(Directory.GetCurrentDirectory(), fileName);
+            string path = Path.Combine(Directory.GetCurrentDirectory(), fileName);
             var accounts = await _coinService.GetAll();
             File.WriteAllText(path, JsonConvert.SerializeObject(accounts));
 

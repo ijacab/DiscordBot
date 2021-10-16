@@ -72,6 +72,7 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
             _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard", Hidden = true });
+            _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".leaderboard", RequiresAdmin = true, Hidden = true });
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });
 
             _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = ".donate @person 1000" });
