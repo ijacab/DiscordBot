@@ -60,10 +60,12 @@ namespace DiscordBot.Managers
 
             double bonusWinnings = baseWinnings * CalculateBonusMultiplier(coinAccount);
             double totalWinnings = baseWinnings + bonusWinnings;
+
+            double netWinnings = Math.Floor(baseWinnings - betAmount);
             if (isFirstGameOfTheDay)
-                coinAccount.MoneyWonToday = totalWinnings;
+                coinAccount.NetWinningsToday = netWinnings;
             else
-                coinAccount.MoneyWonToday += totalWinnings;
+                coinAccount.NetWinningsToday += netWinnings;
 
             coinAccount.NetWorth += totalWinnings;
 
@@ -92,10 +94,11 @@ namespace DiscordBot.Managers
                 if (coinAccount.MostRecentDatePlayed != todayString)
                     firstGameOfTheDay = true;
 
+                double netWinnings = Math.Floor(player.BaseWinnings - player.BetAmount);
                 if (firstGameOfTheDay)
-                    coinAccount.MoneyWonToday = totalWinnings;
+                    coinAccount.NetWinningsToday = netWinnings;
                 else
-                    coinAccount.MoneyWonToday += totalWinnings;
+                    coinAccount.NetWinningsToday += netWinnings;
 
                 coinAccount.NetWorth += totalWinnings;
 
@@ -169,11 +172,11 @@ namespace DiscordBot.Managers
         public double CalculateBonusMultiplier(CoinAccount coinAccount)
         {
             double p = coinAccount.GetAmountRequiredForNextLevel();
-            double moneyWon = coinAccount.MoneyWonToday;
-            double m = 50;
-            double y = (m / p) * moneyWon;
-            double multiplier = y / 100; //0 at 0 moneyWon and 2 at p moneyWon
-            if (multiplier > 0.5) multiplier = 0.5;
+            double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
+            double m = 1;
+            double y = (m / p) * moneyWon * 5;
+            double multiplier = y; //0 at 0 moneyWon and 2 at p moneyWon
+            if (multiplier > 1) multiplier = 1;
             return multiplier;
         }
     }

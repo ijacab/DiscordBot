@@ -245,7 +245,7 @@ namespace DiscordBot.Managers
 
             account.PrestigeLevel += 1;
             account.NetWorth = _startingAmount;
-            account.MoneyWonToday = 0;
+            account.NetWinningsToday = 0;
             await _coinService.Update(account.UserId, account.NetWorth, account.Name);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} you have prestiged to level {account.PrestigeLevel} and your networth has been reset to {_startingAmount}.");
