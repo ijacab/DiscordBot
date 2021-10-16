@@ -25,7 +25,10 @@ namespace DiscordBot.Models
         public long GamesPlayed { get; set; }
         public long BetsWon { get; set; }
         public long BetsLost { get; set; }
+        public long CurrentWinStreak { get; set; }
         public long MaxWinStreak { get; set; }
+        public long CurrentLossStreak { get; set; }
+        public long MaxLossStreak { get; set; }
         public double TotalMoneyDonated { get; set; }
         public double TotalMoneyReceivedFromDonations { get; set; }
         public double MaxMoneyReceivedFromDonationAtOnce { get; set; }

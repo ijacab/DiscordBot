@@ -91,7 +91,6 @@ namespace DiscordBot.Games
                     }
                 });
 
-
                 var game = GetExisitingGame(playerId);
                 var players = game.Players.Where(p => !p.IsDealer);
                 var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
@@ -106,6 +105,9 @@ namespace DiscordBot.Games
                 }
                 var dealer = game.GetDealer();
                 game.Hit(dealer);
+
+                if (await EndGameIfAllPlayersFinished(playerId, _client, message))
+                    return;
 
                 await distinctServerChannelMappings.SendMessageToEachChannel(GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
                 await distinctServerChannelMappings.SendMessageToEachChannel("Type `.bj hit` or `.bj stay` to play.", _client);

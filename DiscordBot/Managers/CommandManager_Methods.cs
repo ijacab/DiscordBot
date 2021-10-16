@@ -11,6 +11,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace DiscordBot.Managers
 {
@@ -213,6 +215,24 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync(output);
         }
 
+        private async Task ArchiveLeaderboard(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            string fileNamePattern = "leaderboard_season*.json";
+            var fileNames = Directory.GetFiles(Directory.GetCurrentDirectory(), fileNamePattern);
+            int i = 1;
+            if (fileNames.Any())
+            {
+                string latestFileName = fileNames.OrderByDescending(fn => fn).First();
+                i = int.Parse(latestFileName.Replace("leaderboard_season", "").Replace(".json", ""));
+            }
+            string fileName = fileNamePattern.Replace("*", i.ToString());
+            string path = Path.Join(Directory.GetCurrentDirectory(), fileName);
+            var accounts = await _coinService.GetAll();
+            File.WriteAllText(path, JsonConvert.SerializeObject(accounts));
+
+            await message.Channel.SendMessageAsync($"Season {i} archived.");
+        }
+
         private async Task Prestige(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
@@ -223,6 +243,7 @@ namespace DiscordBot.Managers
 
             account.PrestigeLevel += 1;
             account.NetWorth = _startingAmount;
+            account.MoneyWonToday = 0;
             await _coinService.Update(account.UserId, account.NetWorth, account.Name);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} you have prestiged to level {account.PrestigeLevel} and your networth has been reset to {_startingAmount}.");
@@ -241,50 +262,68 @@ namespace DiscordBot.Managers
             if (userId == userIdToDonateTo)
                 throw new BadInputException("You can't **FUCKING** donate to yourself you stupid PIECE OF SHIT");
 
-            double donationAmount = 0;
-            try
-            {
-                donationAmount = Convert.ToDouble(args[1]);
+            if (client.GetUser(userIdToDonateTo).IsBot)
+                throw new BadInputException("You STUPID *CUNT*! YOU CAN'T DONATE TO A FUCKING BOT!");
 
-                if (donationAmount <= 0)
-                    throw new BadInputException("Can't donate 0 or less than 0 DUMBASS");
-            }
-            catch (Exception ex)
-            {
-                if (ex is BadInputException) throw ex;
+
+            if (!double.TryParse(args[1], out double donationAmount))
                 throw new BadSyntaxException();
-            }
+
+            if (donationAmount <= 0)
+                throw new BadInputException("Can't donate 0 or less than 0 DUMBASS");
 
             CoinAccount account = await _coinService.Get(userId, message.Author.Username);
-            CoinAccount donationAccount = await _coinService.Get(userIdToDonateTo, client.GetUser(userIdToDonateTo).Username);
+            CoinAccount donationReceiverAccount = await _coinService.Get(userIdToDonateTo, client.GetUser(userIdToDonateTo).Username);
 
-            if (donationAccount.PrestigeLevel > account.PrestigeLevel)
-                throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {donationAccount.PrestigeLevel}.");
+            if (donationReceiverAccount.PrestigeLevel > account.PrestigeLevel)
+                throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {donationReceiverAccount.PrestigeLevel}.");
 
             if (donationAmount > account.NetWorth)
                 throw new BadInputException($"Can't donate more than you have ({FormatHelper.GetCommaNumber(account.NetWorth)})... SCHYUPID IDIOT");
 
             account.NetWorth -= donationAmount;
-            donationAccount.NetWorth += donationAmount * 0.8;
+            donationReceiverAccount.NetWorth += donationAmount * 0.8;
 
+            //statsfor donater
+            account.Stats.TotalMoneyDonated += donationAmount;
+            if (donationAmount > account.Stats.MaxMoneyDonatedAtOnce)
+                account.Stats.MaxMoneyDonatedAtOnce = donationAmount;
+
+            if (account.Stats.DonationAmountsToDict.ContainsKey(userIdToDonateTo))
+                account.Stats.DonationAmountsToDict[userIdToDonateTo] += donationAmount;
+            else
+                account.Stats.DonationAmountsToDict.Add(userIdToDonateTo, donationAmount);
+
+            //stats for donatee
+            donationReceiverAccount.Stats.TotalMoneyReceivedFromDonations += donationAmount;
+            if (donationAmount > account.Stats.MaxMoneyReceivedFromDonationAtOnce)
+                donationReceiverAccount.Stats.MaxMoneyReceivedFromDonationAtOnce = donationAmount;
+
+            if (donationReceiverAccount.Stats.DonationAmountsFromDict.ContainsKey(userId))
+                donationReceiverAccount.Stats.DonationAmountsFromDict[userId] += donationAmount;
+            else
+                donationReceiverAccount.Stats.DonationAmountsFromDict.Add(userIdToDonateTo, donationAmount);
 
             string output = "";
-            int chance = 11, multiplier = 6;
+            int chance = 12, multiplier = 6;
             int rand = new Random().Next(0, chance);
             if (rand == 0)
             {
                 double returnAmount = multiplier * donationAmount;
                 output += $"*You encountered a rare bonus reward for donating. You get back ${FormatHelper.GetCommaNumber(returnAmount)}.*\n";
                 account.NetWorth += returnAmount;
+
+                //stats for donation bonus
+                account.Stats.DonationBonusesEncountered += 1;
             }
 
             output += $"{message.Author.Mention} you donated {FormatHelper.GetCommaNumber(donationAmount)} to {args[0]} (minus 20% tax)." +
             $"\n`Net worth:`" +
             $"\n{account.Name}: ${FormatHelper.GetCommaNumber(account.NetWorth)}" +
-            $"\n{donationAccount.Name}: ${FormatHelper.GetCommaNumber(donationAccount.NetWorth)}";
+            $"\n{donationReceiverAccount.Name}: ${FormatHelper.GetCommaNumber(donationReceiverAccount.NetWorth)}";
 
             await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
-            await _coinService.Update(donationAccount.UserId, donationAccount.NetWorth, donationAccount.Name);
+            await _coinService.Update(donationReceiverAccount.UserId, donationReceiverAccount.NetWorth, donationReceiverAccount.Name);
 
             await message.Channel.SendMessageAsync(output);
         }

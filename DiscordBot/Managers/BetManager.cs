@@ -131,25 +131,34 @@ namespace DiscordBot.Managers
                 coinAccount.Stats.MaxMoneyBetAtOnce = betAmount;
 
             coinAccount.Stats.TotalMoneyBet += betAmount;
+            coinAccount.Stats.GamesPlayed += 1;
         }
 
         public void UpdateResolveBetStats(CoinAccount coinAccount, double betAmount, double winnings)
         {
-            double netWinnings = winnings - betAmount;
+            double netWinnings = Math.Floor(winnings - betAmount);
+            //won
             if (netWinnings > 0)
             {
                 coinAccount.Stats.TotalMoneyWon += netWinnings;
                 coinAccount.Stats.BetsWon += 1;
+                coinAccount.Stats.CurrentWinStreak += 1;
+                if (coinAccount.Stats.CurrentWinStreak > coinAccount.Stats.MaxWinStreak)
+                    coinAccount.Stats.MaxWinStreak = coinAccount.Stats.CurrentWinStreak;
 
                 if (netWinnings > coinAccount.Stats.MaxMoneyWonAtOnce)
                     coinAccount.Stats.MaxMoneyWonAtOnce = netWinnings;
             }
 
+            //lost
             if (netWinnings < 0)
             {
                 double losings = netWinnings * -1;
                 coinAccount.Stats.TotalMoneyLost += losings;
                 coinAccount.Stats.BetsLost += 1;
+                coinAccount.Stats.CurrentLossStreak += 1;
+                if (coinAccount.Stats.CurrentLossStreak > coinAccount.Stats.MaxLossStreak)
+                    coinAccount.Stats.MaxLossStreak = coinAccount.Stats.CurrentLossStreak;
 
                 if (losings > coinAccount.Stats.MaxMoneyLostAtOnce)
                     coinAccount.Stats.MaxMoneyLostAtOnce = losings;
@@ -162,7 +171,7 @@ namespace DiscordBot.Managers
             double p = coinAccount.GetAmountRequiredForNextLevel();
             double moneyWon = coinAccount.MoneyWonToday;
             double m = 200;
-            double y = (m / p) * moneyWon;
+            double y = (m / p) * moneyWon * 20;
             double multiplier = y / 100; //0 at 0 moneyWon and 2 at p moneyWon
             if (multiplier > 2) multiplier = 2;
             return multiplier;
