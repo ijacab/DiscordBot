@@ -170,10 +170,10 @@ namespace DiscordBot.Managers
         {
             double p = coinAccount.GetAmountRequiredForNextLevel();
             double moneyWon = coinAccount.MoneyWonToday;
-            double m = 200;
-            double y = (m / p) * moneyWon * 5;
+            double m = 50;
+            double y = (m / p) * moneyWon;
             double multiplier = y / 100; //0 at 0 moneyWon and 2 at p moneyWon
-            if (multiplier > 2) multiplier = 2;
+            if (multiplier > 0.5) multiplier = 0.5;
             return multiplier;
         }
     }
