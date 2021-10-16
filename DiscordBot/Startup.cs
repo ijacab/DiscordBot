@@ -58,6 +58,7 @@ namespace DiscordBot
             services.AddSingleton<BlackjackManager>();
             services.AddScoped<DuckDuckGoService>();
             services.AddTransient<BetManager>();
+            services.AddTransient<LocalFileService>();
 
             services.AddHttpClient<GistService>(h =>
             {
