@@ -29,8 +29,7 @@ namespace DiscordBot.Managers
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             EnsureGameMoneyInputIsValid(betAmount, coinAccount, null);
 
-            //minus their input money - they will get it back when the game ends (if they don't lose)
-            coinAccount.NetWorth -= betAmount;
+            
 
             UpdateInitiateBetStats(coinAccount, betAmount);
 
@@ -50,8 +49,20 @@ namespace DiscordBot.Managers
                 }
             }
 
+            //minus their input money - they will get it back when the game ends (if they don't lose)
+            coinAccount.NetWorth -= betAmount;
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote: false);
             return (bonusGranted, firstGameOfTheDay);
+        }
+
+        public async Task CancelBet(ulong userId, string userName, double betAmount)
+        {
+            CoinAccount coinAccount = await _coinService.Get(userId, userName);
+            
+            //give back betted money
+            coinAccount.NetWorth += betAmount;
+
+            await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
         }
 
         public async Task<(double BonusWinnings, double TotalWinnings)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool isFirstGameOfTheDay)

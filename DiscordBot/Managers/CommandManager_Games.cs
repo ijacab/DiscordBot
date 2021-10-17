@@ -67,20 +67,29 @@ namespace DiscordBot.Managers
             bool wasBonusGranted = bet.WasBonusGranted;
             bool isFirstGameOfTheDay = bet.IsFirstGameOfTheDay;
 
-            var resultTuple = new Roulette().Play(inputBets);
+
             string resultString = "";
-            for (int i = 0; i < resultTuple.Item1.Count; i++)
+            List<RouletteBet> winningBets;
+            try
             {
-                string value = resultTuple.Item1[i];
-                string str = value == "-1" ? "00" : value;
+                var resultTuple = new Roulette().Play(inputBets);
+                for (int i = 0; i < resultTuple.Item1.Count; i++)
+                {
+                    string value = resultTuple.Item1[i];
+                    string str = value == "-1" ? "00" : value;
 
-                resultString += i == 0 ? $"**{str}**, " : $"{str}, ";
+                    resultString += i == 0 ? $"**{str}**, " : $"{str}, ";
+                }
+
+                resultString = resultString.TrimEnd(' ').TrimEnd(',');
+
+                 winningBets = resultTuple.Item2;
             }
-
-            resultString = resultString.TrimEnd(' ').TrimEnd(',');
-
-            List<RouletteBet> winningBets = resultTuple.Item2;
-
+            catch (Exception)
+            {
+                await _betManager.CancelBet(userId, message.Author.Username, inputMoney);
+                throw;
+            }
 
             double baseWinnings = 0;
             string output = $"Winning results were {resultString}.\n";
