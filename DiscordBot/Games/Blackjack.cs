@@ -45,7 +45,7 @@ namespace DiscordBot.Games
             var dealer = GetDealer();
 
             var totals = dealer.GetPossibleTotalValues();
-            int highestValidTotal = dealer.GetPossibleTotalValues().OrderByDescending(v => v).First(); //first, because we expect the dealer has been hit one card already at the start of the game
+            int highestValidTotal = totals.OrderByDescending(v => v).FirstOrDefault();
 
             while (highestValidTotal <= 16) //get the highest possible total and check if it is 16 or under, if so dealer needs to hit
             {

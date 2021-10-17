@@ -269,29 +269,38 @@ namespace DiscordBot.Games
             bool isGameEnded = AreAllPlayersInSameGameFinished(playerId);
             if (isGameEnded)
             {
-                string output = "`Blackjack game results:`";
-
-                var playersInGame = PlayDealerAndCalculateWinnings(playerId);
-                var dealer = playersInGame.First(p => p.IsDealer);
-
-                output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
-
-                var players = game.Players.Where(p => !p.IsDealer);
-                await _betManager.ResolveBet(players);
-                foreach (var player in players)
+                try
                 {
-                    CoinAccount account = await _coinService.Get(player.UserId, player.Username);
-                    string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
-                    output += $"\n{player.Username}: {player.GetFormattedCards()}" +
-                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
-                        $"\t{bonusLine}" +
-                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
+                    string output = "`Blackjack game results:`";
+
+                    var playersInGame = PlayDealerAndCalculateWinnings(playerId);
+                    Games.Remove(game);
+                    var dealer = playersInGame.First(p => p.IsDealer);
+
+                    output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
+
+                    var players = game.Players.Where(p => !p.IsDealer);
+                    await _betManager.ResolveBet(players);
+                    foreach (var player in players)
+                    {
+                        CoinAccount account = await _coinService.Get(player.UserId, player.Username);
+                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
+                        output += $"\n{player.Username}: {player.GetFormattedCards()}" +
+                            $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
+                            $"\t{bonusLine}" +
+                            $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
+                    }
+
+                    var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
+                    var distinctServerChannelMappings = serverChannelMappings.Distinct();
+
+                    await distinctServerChannelMappings.SendMessageToEachChannel(output, _client);
                 }
-
-                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
-                await distinctServerChannelMappings.SendMessageToEachChannel(output, _client);
+                catch (Exception)
+                {
+                    Games.Remove(game);
+                    throw;
+                }
             }
 
             return isGameEnded;
@@ -317,7 +326,6 @@ namespace DiscordBot.Games
                 player.BaseWinnings = game.GetWinnings(player);
             }
 
-            Games.Remove(game);
             return game.Players;
         }
     }
