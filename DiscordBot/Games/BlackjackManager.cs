@@ -82,14 +82,14 @@ namespace DiscordBot.Games
             {
                 Start(playerId);
 
-                //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
-                {
-                    if (TryGetExisitingGame(playerId, out var game))
-                    {
-                        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
-                    }
-                });
+                //timer on ending the game - NOT WORKING YET
+                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                //{
+                //    if (TryGetExisitingGame(playerId, out var game))
+                //    {
+                //        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
+                //    }
+                //});
 
                 var game = GetExisitingGame(playerId);
                 var players = game.Players.Where(p => !p.IsDealer);

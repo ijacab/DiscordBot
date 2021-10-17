@@ -29,8 +29,6 @@ namespace DiscordBot.Managers
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             EnsureGameMoneyInputIsValid(betAmount, coinAccount, null);
 
-            
-
             UpdateInitiateBetStats(coinAccount, betAmount);
 
             bool overFiftyPercentBet = false;

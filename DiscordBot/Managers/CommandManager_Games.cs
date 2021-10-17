@@ -24,40 +24,22 @@ namespace DiscordBot.Managers
 
             ulong userId = message.Author.Id;
 
-            CoinAccount account = await _coinService.Get(userId, message.Author.Username);
+            CoinAccount coinAccount = await _coinService.Get(userId, message.Author.Username);
 
             string[] inputs = args[0].Split(',');
             var inputBets = new List<RouletteBet>();
 
             int minPercentBetRequired = 10;
-            double tenPercentNw = account.NetWorth * ((double)minPercentBetRequired / 100);
-            try
+            double tenPercentNw = coinAccount.NetWorth * ((double)minPercentBetRequired / 100);
+            foreach (var input in inputs)
             {
+                //each 'input' looks like e.g. red-1000
+                string[] inputParams = input.Split('-');
 
-                foreach (var input in inputs)
-                {
-                    //each 'input' looks like e.g. red-1000
-                    string[] inputParams = input.Split('-');
+                if(!TryExtractBetAmount(inputParams, coinAccount, out double betAmount, betAmountIndex: 1))
+                    throw new BadSyntaxException();
 
-                    double value = 0;
-                    if (inputParams.Length == 1 || inputParams[1].StartsWith("min"))
-                        value = tenPercentNw;
-                    else if (inputParams[1].StartsWith("max"))
-                        value = account.NetWorth;
-                    else if (inputParams[1].EndsWith('%'))
-                    {
-                        double amountMultiple = Convert.ToDouble(inputParams[1].Substring(0, inputParams[1].Length - 1)) / 100;
-                        value = account.NetWorth * amountMultiple;
-                    }
-                    else
-                        value = Convert.ToDouble(inputParams[1]);
-
-                    inputBets.Add(new RouletteBet(userId, inputParams[0], value));
-                }
-            }
-            catch (Exception)
-            {
-                throw new BadSyntaxException();
+                inputBets.Add(new RouletteBet(userId, inputParams[0], betAmount));
             }
 
             double inputMoney = 0;
@@ -66,7 +48,6 @@ namespace DiscordBot.Managers
             var bet = await _betManager.InitiateBet(userId, message.Author.Username, inputMoney);
             bool wasBonusGranted = bet.WasBonusGranted;
             bool isFirstGameOfTheDay = bet.IsFirstGameOfTheDay;
-
 
             string resultString = "";
             List<RouletteBet> winningBets;
@@ -95,7 +76,7 @@ namespace DiscordBot.Managers
             string output = $"Winning results were {resultString}.\n";
             if (winningBets.Count == 0)
             {
-                output += $"{message.Author.Username} you did not make any successful bets. Your net worth is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.";
+                output += $"{message.Author.Username} you did not make any successful bets. Your net worth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}.";
                 var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
             }
             else
@@ -112,10 +93,8 @@ namespace DiscordBot.Managers
 
                 var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
                 output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)})\n";
-                output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(account.NetWorth)}`";
+                output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
             }
-
-
 
             if (wasBonusGranted)
                 output += $"\n\n*You will get a bonus $1000 + 10% net worth each hour for the rest of the day (UTC).*";
@@ -144,13 +123,8 @@ namespace DiscordBot.Managers
                 return;
             }
 
-            string input = args[0];
-
-            if (double.TryParse(input, out double inputMoney)) //'.bj 1000'
-            {
-                await _blackjackManager.CreateOrJoin(playerId, inputMoney, message); //will throw an exception if player already in a game, don't need to check
-            }
-
+            CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+            
             if (args[0].StartsWith("start"))//'.bj start'
             {
                 await _blackjackManager.Start(playerId, message);
@@ -163,8 +137,38 @@ namespace DiscordBot.Managers
             {
                 await _blackjackManager.Hit(playerId, message);
             }
+            else if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
+            {
+                await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
+            }
         }
 
+        private bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)
+        {
+            betAmount = 0;
+            try
+            {
+                int minPercentBetRequired = 10;
+                double tenPercentNw = coinAccount.NetWorth * ((double)minPercentBetRequired / 100);
 
+                if (args.Count() == betAmountIndex || args.ElementAt(betAmountIndex).StartsWith("min"))
+                    betAmount = tenPercentNw;
+                else if (args.ElementAt(betAmountIndex).StartsWith("max"))
+                    betAmount = coinAccount.NetWorth;
+                else if (args.ElementAt(betAmountIndex).EndsWith('%'))
+                {
+                    double amountMultiple = Convert.ToDouble(args.ElementAt(betAmountIndex).TrimEnd('%')) / 100;
+                    betAmount = coinAccount.NetWorth * amountMultiple;
+                }
+                else
+                    betAmount = Convert.ToDouble(args.ElementAt(betAmountIndex));
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
     }
 }
