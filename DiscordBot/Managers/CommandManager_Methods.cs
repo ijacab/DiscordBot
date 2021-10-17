@@ -304,7 +304,7 @@ namespace DiscordBot.Managers
             if (donationReceiverAccount.Stats.DonationAmountsFromDict.ContainsKey(userId))
                 donationReceiverAccount.Stats.DonationAmountsFromDict[userId] += donationAmount;
             else
-                donationReceiverAccount.Stats.DonationAmountsFromDict.Add(userIdToDonateTo, donationAmount);
+                donationReceiverAccount.Stats.DonationAmountsFromDict.Add(userId, donationAmount);
 
             string output = "";
             int chance = 12, multiplier = 6;

@@ -17,7 +17,7 @@ namespace DiscordBot.Games
         }
         public Tuple<List<string>, List<RouletteBet>> Play(List<RouletteBet> inputs)
         {
-            
+            EnsureValidCombinations(inputs);
             var result = new Random().Next(-1, 36 + 1);
 
             List<string> winningChoices = _outcomes[result].Split(',').ToList();

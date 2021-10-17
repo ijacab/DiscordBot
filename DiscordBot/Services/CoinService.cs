@@ -84,7 +84,7 @@ namespace DiscordBot.Services
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {
-                _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000 * a.PrestigeLevel); //add 1000 if it is the start of the day
+                _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000 * (a.PrestigeLevel + 1)); //add 1000 if it is the start of the day
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
