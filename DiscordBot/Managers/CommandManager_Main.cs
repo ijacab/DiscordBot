@@ -50,7 +50,7 @@ namespace DiscordBot.Managers
             //need to add new commands in here as they are created
             _commands = new List<Command>();
 
-            _commands.Add(new Command("imagesearch", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query" });
+            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query" });
             _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." });
 
             _commands.Add(new Command("hellotest", Test));

@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
 using System.IO;
 using Newtonsoft.Json;
+using Common.Services;
 
 namespace DiscordBot.Managers
 {
@@ -385,7 +386,7 @@ namespace DiscordBot.Managers
 
                 var msg = await message.Channel.SendMessageAsync(output);
 
-                if (searchQuery.Contains("safeoff"))
+                if (searchQuery.Contains("safeoff", StringComparison.OrdinalIgnoreCase))
                 {
                     //delete nsfw messages after delay
                     _ = Task.Delay(TimeSpan.FromSeconds(90)).ContinueWith(async t =>
@@ -408,7 +409,16 @@ namespace DiscordBot.Managers
 
             _appSettings.BlackListedWords.ForEach(bw =>
             {
-                if (message.Content.Contains(bw)) throw new BadInputException("No");
+                if (message.Content.Contains(bw)) 
+                {
+                    _appSettings.BlackListedIds.Add(message.Author.Id);
+                    string json = File.ReadAllText("appsettings.json");
+                    dynamic jsonObj = JsonConvert.DeserializeObject(json);
+                    jsonObj["AppSettings"]["BlackListedIds"] = JsonConvert.SerializeObject(_appSettings.BlackListedIds);
+                    string output = JsonConvert.SerializeObject(jsonObj, Formatting.Indented);
+                    File.WriteAllText("appsettings.json", output);
+                    throw new BadInputException("No"); 
+                }
             });
         }
 
