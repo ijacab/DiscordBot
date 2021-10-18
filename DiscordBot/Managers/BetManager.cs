@@ -63,7 +63,7 @@ namespace DiscordBot.Managers
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
         }
 
-        public async Task<(double BonusWinnings, double TotalWinnings)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool isFirstGameOfTheDay)
+        public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool isFirstGameOfTheDay)
         {
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
 
@@ -81,7 +81,7 @@ namespace DiscordBot.Managers
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
-            return (bonusWinnings, totalWinnings);
+            return (bonusWinnings, totalWinnings, netWinnings);
         }
 
         public async Task ResolveBet(IEnumerable<IPlayer> players)
