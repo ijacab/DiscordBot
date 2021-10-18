@@ -81,8 +81,8 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
             _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
 
-            _commands.Add(new Command("initiatebet", Start, hidden: true));
-            _commands.Add(new Command("resolvebet", Stop, hidden: true));
+            _commands.Add(new Command("initiatebet", InitiateBet, hidden: true));
+            _commands.Add(new Command("resolvebet", ResolveBet, hidden: true));
 
         }
 
