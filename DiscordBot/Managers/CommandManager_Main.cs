@@ -76,10 +76,13 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });
 
             _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = ".donate @person 1000" });
-            _commands.Add(new Command("time", Time));
+            _commands.Add(new Command("time", Time) { Syntax = "`.time utc`"});
 
             _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
             _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
+
+            _commands.Add(new Command("initiatebet", Start, hidden: true));
+            _commands.Add(new Command("resolvebet", Stop, hidden: true));
 
         }
 

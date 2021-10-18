@@ -90,12 +90,12 @@ namespace DiscordBot.Games.Models
             {
                 foreach (int total in possibleTotals)
                 {
-                    valueStr += $"*{total}*, ";
+                    valueStr += $"**{total}**, ";
                 }
             }
             valueStr = valueStr.TrimEnd(' ').TrimEnd(',');
 
-            cardsStr += $":\t{valueStr}";
+            cardsStr += $":\t\t{valueStr}";
             return cardsStr;
         }
 
