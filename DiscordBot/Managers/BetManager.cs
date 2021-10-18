@@ -118,6 +118,7 @@ namespace DiscordBot.Managers
                     updateRemote = true;
 
                 await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, player.Username, updateRemote: updateRemote);
+                i++;
             }
         }
 
