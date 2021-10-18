@@ -29,6 +29,23 @@ namespace DiscordBot.Games.Models
                     break;
             }
         }
+
+        public char GetSuitSymbol()
+        {
+            switch (Suit)
+            {
+                case Suit.Hearts:
+                    return '♡';
+                case Suit.Diamonds:
+                    return '♢';
+                case Suit.Clubs:
+                    return '♧';
+                case Suit.Spades:
+                    return '♤';
+                default:
+                    throw new Exception($"No symbol found for this suit.");
+            }
+        }
     }
 
     public enum Suit

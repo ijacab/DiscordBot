@@ -77,7 +77,7 @@ namespace DiscordBot.Games.Models
             string cardsStr = "";
             foreach (var card in Cards)
             {
-                cardsStr += $"{card.Name}{GetSuitSymbol(card.Suit)}, ";
+                cardsStr += $"{card.Name}{card.GetSuitSymbol()}, ";
             }
             cardsStr = cardsStr.TrimEnd(' ').TrimEnd(',');
 
@@ -99,22 +99,7 @@ namespace DiscordBot.Games.Models
             return cardsStr;
         }
 
-        private char GetSuitSymbol(Suit suit)
-        {
-            switch (suit)
-            {
-                case Suit.Hearts:
-                    return '♥';
-                case Suit.Diamonds:
-                    return '♦';
-                case Suit.Clubs:
-                    return '♣';
-                case Suit.Spades:
-                    return '♠';
-                default:
-                    throw new Exception($"No symbol found for this suit.");
-            }
-        }
+
 
     }
 }
