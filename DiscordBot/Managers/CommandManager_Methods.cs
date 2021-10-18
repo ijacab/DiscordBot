@@ -459,7 +459,7 @@ namespace DiscordBot.Managers
                 isFirstGameOfTheDay = bool.Parse(args[4]);
             }
             var betResults = await _betManager.ResolveBet(userId, userName, betAmount, baseWinnings, isFirstGameOfTheDay);
-            await message.Channel.SendMessageAsync($"TotalsWinnings:{betResults.TotalWinnings},IsFirstGameOfTheDay:{betResults.BonusWinnings}");
+            await message.Channel.SendMessageAsync($"TotalsWinnings:{betResults.TotalWinnings},BonusWinnings:{betResults.BonusWinnings}");
         }
     }
 }
