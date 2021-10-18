@@ -81,6 +81,7 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
             _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
 
+            //bot commands
             _commands.Add(new Command("initiatebet", InitiateBet, hidden: true));
             _commands.Add(new Command("resolvebet", ResolveBet, hidden: true));
 
@@ -97,7 +98,8 @@ namespace DiscordBot.Managers
                 }
             }
 
-            if (message.Author.IsBot) //This ignores all commands from bots
+            if (message.Author.IsBot && 
+                !(message.Content.StartsWith(".initiatebet") || message.Content.StartsWith(".resolvebet"))) //This ignores all non bot commands from bots
                 return;
 
             //custom commands
