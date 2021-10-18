@@ -119,7 +119,7 @@ namespace DiscordBot.Managers
             if (_blackjackManager.TryGetPlayer(playerId, out var player)
                 && player.IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} You are still in a game but your turn is over. Once it ends and bets are calculated you can join another game.");
+                await message.SendRichEmbedMessage($"You are still in a game but your turn is over. Once it ends and bets are calculated you can join another game.");
                 return;
             }
 

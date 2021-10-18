@@ -60,12 +60,12 @@ namespace DiscordBot.Games
                 //    if (!newGame.Started)
                 //        Start(playerId);
                 //});
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
+                await message.SendRichEmbedMessage($"Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
             else
             {
                 openGame.Join(player);
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
+                await message.SendRichEmbedMessage($"Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
             }
 
         }
@@ -74,7 +74,7 @@ namespace DiscordBot.Games
         {
             if (!TryGetPlayer(playerId, out _))
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
+                await message.SendRichEmbedMessage($"You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
                 return;
             }
 
@@ -96,7 +96,7 @@ namespace DiscordBot.Games
                 var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
                 var distinctServerChannelMappings = serverChannelMappings.Distinct();
 
-                await distinctServerChannelMappings.SendMessageToEachChannel($"Blackjack game started. No one else can join this game now.", _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack game started", $"No one else can join this game now.", _client);
 
                 foreach (var gamePlayer in players)
                 {
@@ -109,12 +109,12 @@ namespace DiscordBot.Games
                 if (await EndGameIfAllPlayersFinished(playerId, _client, message))
                     return;
 
-                await distinctServerChannelMappings.SendMessageToEachChannel(GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
-                await distinctServerChannelMappings.SendMessageToEachChannel("Type `.bj hit` or `.bj stay` to play.", _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("~","Type `.bj hit` or `.bj stay` to play.", _client);
             }
             else
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+                await message.SendRichEmbedMessage($"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
             }
         }
 
@@ -145,7 +145,7 @@ namespace DiscordBot.Games
 
             if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
-                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
         }
 
@@ -162,16 +162,16 @@ namespace DiscordBot.Games
         public async Task Stay(ulong playerId, SocketMessage message)
         {
             if (!TryGetPlayer(playerId, out _))
-                throw new BadInputException($"{message.Author.Mention} You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
+                throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
 
             if (!IsGameStarted(playerId))
-                throw new BadInputException($"{message.Author.Mention} Game hasn't started yet. Type `.bj start` to start the game.");
+                throw new BadInputException($"Game hasn't started yet. Type `.bj start` to start the game.");
 
             Stay(playerId);
 
             if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
-                await message.Channel.SendMessageAsync(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
         }
 
@@ -269,15 +269,14 @@ namespace DiscordBot.Games
             bool isGameEnded = AreAllPlayersInSameGameFinished(playerId);
             if (isGameEnded)
             {
+                string title = "Blackjack game results:";
                 try
                 {
-                    string output = "`Blackjack game results:`";
-
                     var playersInGame = PlayDealerAndCalculateWinnings(playerId);
                     Games.Remove(game);
                     var dealer = playersInGame.First(p => p.IsDealer);
 
-                    output += $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
+                    string output = $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
 
                     var players = game.Players.Where(p => !p.IsDealer);
                     await _betManager.ResolveBet(players);
@@ -294,7 +293,7 @@ namespace DiscordBot.Games
                     var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
                     var distinctServerChannelMappings = serverChannelMappings.Distinct();
 
-                    await distinctServerChannelMappings.SendMessageToEachChannel(output, _client);
+                    await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client);
                 }
                 catch (Exception)
                 {
