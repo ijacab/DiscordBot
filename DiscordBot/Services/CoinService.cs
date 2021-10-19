@@ -69,14 +69,7 @@ namespace DiscordBot.Services
 
         public async Task ClearAll()
         {
-            _coinAccounts.Accounts.ForEach(a => 
-            {
-                a.Stats.CurrentLossStreak = 0;
-                a.Stats.CurrentWinStreak = 0;
-                a.Stats.MaxLossStreak = 0;
-                a.Stats.MaxWinStreak = 0;
-            });
-            //_coinAccounts = new CoinAccounts();
+            _coinAccounts = new CoinAccounts();
             string content = JsonConvert.SerializeObject(_coinAccounts);
             await _fileService.UpdateContent(_fileName, content);
         }
