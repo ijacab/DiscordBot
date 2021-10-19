@@ -18,11 +18,10 @@ namespace DiscordBot.Services
         public CoinService(LocalFileService fileService)
         {
             _fileService = fileService;
-            GetAll().Wait();
+            _coinAccounts = _fileService.GetContent<CoinAccounts>(_fileName).Result;
         }
-        public async Task<CoinAccounts> GetAll()
+        public CoinAccounts GetAll()
         {
-            _coinAccounts = await _fileService.GetContent<CoinAccounts>(_fileName);
             return _coinAccounts;
         }
 

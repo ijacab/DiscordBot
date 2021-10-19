@@ -14,6 +14,8 @@ using static DiscordBot.Models.CoinAccounts;
 using System.IO;
 using Newtonsoft.Json;
 using Common.Services;
+using System.Reflection;
+using DiscordBot.Models;
 
 namespace DiscordBot.Managers
 {
@@ -190,7 +192,7 @@ namespace DiscordBot.Managers
 
         private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            var accounts = await _coinService.GetAll();
+            var accounts = _coinService.GetAll();
             string output = "`Leaderboard:`\n";
 
 
@@ -230,7 +232,7 @@ namespace DiscordBot.Managers
             }
             string fileName = fileNamePattern.Replace("*", i.ToString());
             string path = Path.Combine(Directory.GetCurrentDirectory(), fileName);
-            var accounts = await _coinService.GetAll();
+            var accounts = _coinService.GetAll();
             File.WriteAllText(path, JsonConvert.SerializeObject(accounts));
 
             await message.Channel.SendMessageAsync($"Season {i} archived.");
@@ -426,6 +428,51 @@ namespace DiscordBot.Managers
         {
             using var stream = await _faceService.Run();
             await message.Channel.SendFileAsync(stream: stream, "image.jpg");
+        }
+
+        private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var accounts = _coinService.GetAll().Accounts;
+            string title = "Stats";
+
+            var stats = accounts.Select(a => a.Stats);
+
+            Type type = typeof(CoinAccountStats);
+            PropertyInfo[] properties = type.GetProperties();
+
+            foreach (PropertyInfo property in properties)
+            {
+                var maxBetStat = stats.OrderByDescending(s => s.GetType().GetProperty(property.Name)).First();
+                var maxBetAccount = accounts.First(a => a.Stats == maxBetStat);
+
+                await message.Channel.SendMessageAsync($"{property.Name}: {property.GetValue(maxBetStat, null)}, {maxBetAccount.Name}");
+            }
+
+            //var maxBetStat = stats.OrderByDescending(s => s.MaxMoneyBetAtOnce).First();
+            //var maxBetAccount = accounts.Where(a => a.Stats == maxBetStat);
+
+            //var maxLossStat = stats.OrderByDescending(s => s.MaxMoneyLostAtOnce).First();
+            //var maxLossAccount = accounts.Where(a => a.Stats == maxLossStat);
+
+            //var maxWinStat = stats.OrderByDescending(s => s.MaxMoneyWonAtOnce).First();
+            //var maxWinAccount = accounts.Where(a => a.Stats == maxWinStat);
+
+            //var maxWinStreakStat = stats.OrderByDescending(s => s.MaxWinStreak).First();
+            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
+
+            //var maxDonationStat = stats.OrderByDescending(s => s.MaxMoneyDonatedAtOnce).First();
+            //var maxDonationAccount = accounts.Where(a => a.Stats == maxDonationStat);
+
+            //var maxDonationReceivedStat = stats.OrderByDescending(s => s.MaxMoneyReceivedFromDonationAtOnce).First();
+            //var maxDonationReceivedAccount = accounts.Where(a => a.Stats == maxDonationReceivedStat);
+
+            //var maxWinStreakStat = stats.OrderByDescending(s => s.).First();
+            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
+
+            //var maxWinStreakStat = stats.OrderByDescending(s => s.MaxWinStreak).First();
+            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
+
+
         }
     }
 }

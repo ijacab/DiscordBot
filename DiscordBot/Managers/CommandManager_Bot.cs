@@ -1,6 +1,8 @@
 ﻿using Discord.WebSocket;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -8,12 +10,10 @@ namespace DiscordBot.Managers
 {
     public partial class CommandManager
     {
-
+        private List<ulong> _permittedIdsForBotCommands = new List<ulong> { 664279429844959243, 166477511469957120 };
         public async Task InitiateBet(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            ulong jacanId = 664279429844959243;
-            ulong jacabId = 166477511469957120;
-            if (!(message.Author.Id == jacanId || message.Author.Id == jacabId))
+            if (!_permittedIdsForBotCommands.Contains(message.Author.Id))
                 return;
 
             ulong userId = ulong.Parse(args[0]);
@@ -25,9 +25,7 @@ namespace DiscordBot.Managers
 
         public async Task ResolveBet(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            ulong jacanId = 664279429844959243;
-            ulong jacabId = 166477511469957120;
-            if (!(message.Author.Id == jacanId || message.Author.Id == jacabId))
+            if (!_permittedIdsForBotCommands.Contains(message.Author.Id))
                 return;
 
             ulong userId = ulong.Parse(args[0]);
@@ -41,6 +39,33 @@ namespace DiscordBot.Managers
             }
             var betResults = await _betManager.ResolveBet(userId, userName, betAmount, baseWinnings, isFirstGameOfTheDay);
             await message.Channel.SendMessageAsync($"!TotalsWinnings:{betResults.TotalWinnings},BonusWinnings:{betResults.BonusWinnings},NetWinnings:{betResults.NetWinnings}");
+        }
+
+        public async Task GetLeaderboardJson(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (!_permittedIdsForBotCommands.Contains(message.Author.Id))
+                return;
+            var coinAccounts = _coinService.GetAll();
+            string json = JsonConvert.SerializeObject(coinAccounts, Formatting.None);
+
+            if (json.Length < 2000)
+            {
+                await message.Channel.SendMessageAsync(json);
+            }
+            else
+            {
+                string path = Path.Combine(Directory.GetCurrentDirectory(), $"lb_json_{DateTime.Now.ToString("yyyyMMddHHmmss")}_{Guid.NewGuid()}.json");
+                try
+                {
+                    File.WriteAllText(path, json);
+                    await message.Channel.SendFileAsync(path);
+                }
+                finally
+                {
+                    File.Delete(path);
+                }
+
+            }
         }
     }
 }

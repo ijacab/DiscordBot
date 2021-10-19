@@ -72,6 +72,7 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
             _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard", Hidden = true });
+            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats` | `.stats me`" });
             _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".leaderboard", RequiresAdmin = true, Hidden = true });
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });
 
@@ -84,6 +85,7 @@ namespace DiscordBot.Managers
             //bot commands
             _commands.Add(new Command("initiatebet", InitiateBet, hidden: true));
             _commands.Add(new Command("resolvebet", ResolveBet, hidden: true));
+            _commands.Add(new Command("lbjson", GetLeaderboardJson, hidden: true));
 
         }
 
