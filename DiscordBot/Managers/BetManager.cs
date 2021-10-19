@@ -156,6 +156,7 @@ namespace DiscordBot.Managers
                 coinAccount.Stats.TotalMoneyWon += netWinnings;
                 coinAccount.Stats.BetsWon += 1;
                 coinAccount.Stats.CurrentWinStreak += 1;
+                coinAccount.Stats.CurrentLossStreak = 0;
                 if (coinAccount.Stats.CurrentWinStreak > coinAccount.Stats.MaxWinStreak)
                     coinAccount.Stats.MaxWinStreak = coinAccount.Stats.CurrentWinStreak;
 
@@ -170,6 +171,7 @@ namespace DiscordBot.Managers
                 coinAccount.Stats.TotalMoneyLost += losings;
                 coinAccount.Stats.BetsLost += 1;
                 coinAccount.Stats.CurrentLossStreak += 1;
+                coinAccount.Stats.CurrentWinStreak = 0;
                 if (coinAccount.Stats.CurrentLossStreak > coinAccount.Stats.MaxLossStreak)
                     coinAccount.Stats.MaxLossStreak = coinAccount.Stats.CurrentLossStreak;
 
