@@ -450,7 +450,7 @@ namespace DiscordBot.Managers
                 {
                     // get value of property: public double Number
                      var value = property.GetValue(stats, null);
-                    output += $"{property.Name}: {value}";
+                    output += $"**{property.Name}:**\t {value}\n";
                 }
 
 
