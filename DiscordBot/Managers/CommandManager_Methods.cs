@@ -432,21 +432,32 @@ namespace DiscordBot.Managers
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            var accounts = _coinService.GetAll().Accounts;
-            string title = "Stats";
-
-            var stats = accounts.Select(a => a.Stats);
-
-            Type type = typeof(CoinAccountStats);
-            PropertyInfo[] properties = type.GetProperties();
-
-            foreach (PropertyInfo property in properties)
+            if (message.Author.Id == 66056020786425856)
+                return;
+            if (args[0].StartsWith("me"))
             {
-                var maxBetStat = stats.OrderByDescending(s => s.GetType().GetProperty(property.Name)).First();
-                var maxBetAccount = accounts.First(a => a.Stats == maxBetStat);
+                var accounts = _coinService.GetAll().Accounts;
 
-                await message.Channel.SendMessageAsync($"{property.Name}: {property.GetValue(maxBetStat, null)}, {maxBetAccount.Name}");
+                var account = accounts.First(a => a.UserId == message.Author.Id);
+                var stats = account.Stats;
+
+                string title = $"{account.Name} stats";
+
+                Type type = typeof(CoinAccountStats);
+                PropertyInfo[] properties = type.GetProperties();
+                string output = "";
+                foreach (PropertyInfo property in properties)
+                {
+                    // get value of property: public double Number
+                     var value = property.GetValue(stats, null);
+                    output += $"{property.Name}: {value}";
+                }
+
+
+                await message.SendRichEmbedMessage(title, output);
             }
+
+
 
             //var maxBetStat = stats.OrderByDescending(s => s.MaxMoneyBetAtOnce).First();
             //var maxBetAccount = accounts.Where(a => a.Stats == maxBetStat);
