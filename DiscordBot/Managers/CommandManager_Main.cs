@@ -72,7 +72,7 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
             _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard", Hidden = true });
-            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats` | `.stats me`" });
+            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me`" });
             _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".leaderboard", RequiresAdmin = true, Hidden = true });
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });
 
@@ -113,7 +113,11 @@ namespace DiscordBot.Managers
             }
 
             //filtering messages begin here
-            if (!message.Content.StartsWith('.') || message.Content == ".") //this is your prefix
+            if (!message.Content.StartsWith('.') 
+                || message.Content == "."
+                || message.Content == ".."
+                || message.Content == "..."
+                || message.Content == "....") //this is your prefix
                 return;
 
             //todo get rid of this after a short while

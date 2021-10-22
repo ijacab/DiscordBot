@@ -178,6 +178,9 @@ namespace DiscordBot.Managers
                 return;
             }
 
+            if (args.Count != 2)
+                throw new BadSyntaxException();
+
             if (int.TryParse(args[0], out int num1) == false)
                 throw new BadSyntaxException();
             if (int.TryParse(args[1], out int num2) == false)
@@ -432,8 +435,9 @@ namespace DiscordBot.Managers
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (message.Author.Id == 66056020786425856)
-                return;
+            if (args.Count() == 0)
+                throw new BadSyntaxException();
+
             if (args[0].StartsWith("me"))
             {
                 var accounts = _coinService.GetAll().Accounts;
@@ -443,14 +447,17 @@ namespace DiscordBot.Managers
 
                 string title = $"{account.Name} stats";
 
-                Type type = typeof(CoinAccountStats);
+                Type type = stats.GetType();
                 PropertyInfo[] properties = type.GetProperties();
                 string output = "";
                 foreach (PropertyInfo property in properties)
                 {
-                    // get value of property: public double Number
-                     var value = property.GetValue(stats, null);
-                    output += $"**{property.Name}:**\t {value}\n";
+                    if (property.PropertyType == typeof(Dictionary<ulong, double>))
+                        continue;
+
+                    var value = property.GetValue(stats, index: null);
+                    var strValue = property.PropertyType == typeof(double) ? FormatHelper.GetCommaNumber((double)value) : value.ToString();
+                    output += $"**{property.Name}:**\t {strValue}\n";
                 }
 
 
