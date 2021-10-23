@@ -49,36 +49,37 @@ namespace DiscordBot.Managers
 
             //need to add new commands in here as they are created
             _commands = new List<Command>();
-
-            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query" });
-            _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." });
-
-            _commands.Add(new Command("hellotest", Test));
-            _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = ".age" });
-
-            _commands.Add(new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = ".add \"key\" \"value\"" });
-            _commands.Add(new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = ".remove \"key\"" });
-            _commands.Add(new Command("clear", Clear, hidden: true, requiresAdmin: true));
-
             _commands.Add(new Command("help", Help));
-            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`"});
-            _commands.Add(new Command("roll", Roll) { Syntax = ".roll 1 100" });
 
-            _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
-            _commands.Add(new Command("r", GameRoulette) { Hidden = true, Syntax = ".roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100" });
+            _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
+            _commands.Add(new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
 
             _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money.Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
             _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
 
-            _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard" });
-            _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = ".leaderboard", Hidden = true });
+            _commands.Add(new Command("leaderboard", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = "`.leaderboard`" });
+            _commands.Add(new Command("lb", Leaderboard) { Description = "Shows the money leaderboard.", Syntax = "`.leaderboard`", Hidden = true });
             _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me`" });
-            _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".leaderboard", RequiresAdmin = true, Hidden = true });
-            _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = ".prestige" });
+            _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`" });
+            _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" });
 
-            _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = ".donate @person 1000" });
-            _commands.Add(new Command("time", Time) { Syntax = "`.time utc`"});
 
+            _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." });
+            _commands.Add(new Command("time", Time) { Syntax = "`.time utc`" });
+            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true }); ;
+
+            _commands.Add(new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" });
+            _commands.Add(new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" });
+            _commands.Add(new Command("clear", Clear, hidden: true, requiresAdmin: true));
+
+            _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = "`.age`" });
+
+
+            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`"});
+            _commands.Add(new Command("roll", Roll) { Syntax = "`.roll 1 100`" });
+
+            _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".archiveleaderboard", RequiresAdmin = true, Hidden = true });
+            
             _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
             _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
 

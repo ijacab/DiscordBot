@@ -78,7 +78,6 @@ namespace DiscordBot.Services
         {
             var hourDateString = DateTimeOffset.UtcNow.ToString("yyyyMMddHH");
             var dateString = hourDateString.Substring(0, 8);
-            if (_coinAccounts.TimesInterestPaidForList.Contains(hourDateString)) return;
 
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
@@ -86,6 +85,8 @@ namespace DiscordBot.Services
                 _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000 * (a.PrestigeLevel + 1)); //add 1000 if it is the start of the day
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
+
+            if (_coinAccounts.TimesInterestPaidForList.Contains(hourDateString)) return; //if already paid for the hour, exit
 
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDatePlayed == dateString);
             foreach (var account in accountsToAction)

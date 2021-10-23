@@ -60,12 +60,12 @@ namespace DiscordBot.Games
                 //    if (!newGame.Started)
                 //        Start(playerId);
                 //});
-                await message.SendRichEmbedMessage($"Blackjack game created and starting in 30 seconds... if anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
+                await message.SendRichEmbedMessage("Blackjack game created", $"If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.\nType `.bj start` to start the game.");
             }
             else
             {
                 openGame.Join(player);
-                await message.SendRichEmbedMessage($"Joined existing Blackjack game. It will start soon... If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.");
+                await message.SendRichEmbedMessage("Blackjack game joined", $"If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.\nType `.bj start` to start the game.");
             }
 
         }
@@ -74,7 +74,7 @@ namespace DiscordBot.Games
         {
             if (!TryGetPlayer(playerId, out _))
             {
-                await message.SendRichEmbedMessage($"You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
+                await message.SendRichEmbedMessage("Error", $"You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
                 return;
             }
 
@@ -110,11 +110,11 @@ namespace DiscordBot.Games
                     return;
 
                 await distinctServerChannelMappings.SendMessageToEachChannel("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
-                await distinctServerChannelMappings.SendMessageToEachChannel("~","Type `.bj hit` or `.bj stay` to play.", _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack","Type `.bj hit` or `.bj stay` to play.", _client);
             }
             else
             {
-                await message.SendRichEmbedMessage($"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+                await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
             }
         }
 
@@ -145,7 +145,7 @@ namespace DiscordBot.Games
 
             if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
-                await message.SendRichEmbedMessage(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
         }
 
@@ -171,7 +171,7 @@ namespace DiscordBot.Games
 
             if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
             {
-                await message.SendRichEmbedMessage(GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client));
             }
         }
 
