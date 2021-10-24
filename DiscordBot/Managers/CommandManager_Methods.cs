@@ -485,7 +485,7 @@ namespace DiscordBot.Managers
                     spacingToAdd = "\n";
                 }
 
-                output += $"{spacingToAdd}**{property.Name}:**\t {strValue}\n";
+                output += $"{spacingToAdd}**{property.Name.SplitCamelCaseWithSpace()}:**\t {strValue}\n";
 
                 lastPropertyName = property.Name.StartsWith("Total") ? "Total"
                     : property.Name.StartsWith("Max") ? "Max"
