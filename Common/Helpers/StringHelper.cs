@@ -17,7 +17,7 @@ namespace Common.Helpers
                  (?<=[^A-Z])(?=[A-Z]) |
                  (?<=[A-Za-z])(?=[^A-Za-z])", RegexOptions.IgnorePatternWhitespace);
 
-            return r.Replace(camelCaseString, " "));
+            return r.Replace(camelCaseString, " ");
         }
     }
 }
