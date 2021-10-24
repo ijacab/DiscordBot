@@ -183,7 +183,18 @@ namespace DiscordBot.Managers
             await message.SendRichEmbedMessage($"You rolled {rand}");
         }
 
-        private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args)
+        private async Task LeaderboardWithHints(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            await Leaderboard(client, message, args, showHints: true);
+        }
+
+
+        private async Task LeaderboardWithoutHints(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            await Leaderboard(client, message, args, showHints: false);
+        }
+
+        private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args, bool showHints = true)
         {
             var accounts = _coinService.GetAll();
             string output = "";
@@ -202,9 +213,12 @@ namespace DiscordBot.Managers
                     output += "   \\*";
                 output += "\n";
             }
-            output += "\n*Each day you will get $1000 x P level. If you bet over 50% in a single bet that day, and bet a minimum of P level bets you will also get an hourly bonus $1000 x P level + (up to) 6% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
-            output += "\n*The more money you win from playing in a day, the more money you make from further wins (via a bonus), up to a maxmium of 3x winnings bonus.*\n";
-            output += $"\n*Type .prestige to level up your account if you have enough money (it will reset your money to ${FormatHelper.GetCommaNumber(_startingAmount)}). People who are lower prestige than you cannot donate to you.*";
+            if (showHints)
+            {
+                output += "\n*Each day you will get $1000 x P level. If you bet over 50% in a single bet that day, and bet a minimum of P level bets you will also get an hourly bonus $1000 x P level + (up to) 6% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
+                output += "\n*The more money you win from playing in a day, the more money you make from further wins (via a bonus), up to a maxmium of 3x winnings bonus.*\n";
+                output += $"\n*Type .prestige to level up your account if you have enough money (it will reset your money to ${FormatHelper.GetCommaNumber(_startingAmount)}). People who are lower prestige than you cannot donate to you.*";
+            }
 
             await message.SendRichEmbedMessage("Leaderboard", output);
         }
