@@ -59,7 +59,7 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" });
             _commands.Add(new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true });
-            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me`" });
+            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" });
             _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`" });
             _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" });
 

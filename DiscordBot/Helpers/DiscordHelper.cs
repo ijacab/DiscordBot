@@ -1,9 +1,11 @@
 ﻿using Discord;
 using Discord.WebSocket;
+using DiscordBot.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Common.Helpers
@@ -96,6 +98,28 @@ namespace Common.Helpers
             }
 
             return embed;
+        }
+
+        public static bool TryGetUserId(string userMention, out ulong userId)
+        {
+            userId = 0;
+            try
+            {
+                var regex = new Regex(@"^<@(!)?(\d)*>$");
+                if (!regex.IsMatch(userMention))
+                    throw new BadSyntaxException();
+
+                userId = Convert.ToUInt64(userMention.TrimStart('<').TrimStart('@').TrimStart('!').TrimEnd('>'));
+
+                if (userId != 0)
+                    return true;
+                else
+                    return false;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
     }
 }

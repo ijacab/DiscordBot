@@ -261,13 +261,10 @@ namespace DiscordBot.Managers
 
         private async Task Donate(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            var regex = new Regex(@"^<@(!)?(\d)*>$");
-            if (args.Count != 2 || !regex.IsMatch(args[0]))
+            if (args.Count != 2 || !DiscordHelper.TryGetUserId(args[0], out ulong userIdToDonateTo))
                 throw new BadSyntaxException();
 
-
             ulong userId = message.Author.Id;
-            ulong userIdToDonateTo = Convert.ToUInt64(args[0].TrimStart('<').TrimStart('@').TrimStart('!').TrimEnd('>')); //strip off <@! from the start and > from the end
 
             if (userId == userIdToDonateTo)
                 throw new BadInputException("You can't **FUCKING** donate to yourself you stupid PIECE OF SHIT");
@@ -440,33 +437,64 @@ namespace DiscordBot.Managers
             if (args.Count() == 0)
                 throw new BadSyntaxException();
 
+            var accounts = _coinService.GetAll().Accounts;
+            CoinAccount account;
             if (args[0].StartsWith("me"))
             {
-                var accounts = _coinService.GetAll().Accounts;
+                account = accounts.FirstOrDefault(a => a.UserId == message.Author.Id);
+            }
+            else if (DiscordHelper.TryGetUserId(args[0], out ulong userId))
+            {
+                account = accounts.FirstOrDefault(a => a.UserId == userId);
+            }
+            else
+            {
+                throw new BadSyntaxException();
+            }
 
-                var account = accounts.First(a => a.UserId == message.Author.Id);
-                var stats = account.Stats;
+            if (account == null)
+                throw new BadInputException();
 
-                string title = $"{account.Name} stats";
+            var stats = account.Stats;
+            string lastPropertyName = string.Empty;
 
-                Type type = stats.GetType();
-                PropertyInfo[] properties = type.GetProperties();
-                string output = "";
-                foreach (PropertyInfo property in properties)
+            string title = $"{account.Name} stats";
+
+            Type type = stats.GetType();
+            PropertyInfo[] properties = type.GetProperties();
+            string output = "";
+            foreach (PropertyInfo property in properties)
+            {
+                if (property.PropertyType == typeof(Dictionary<ulong, double>))
+                    continue;
+
+                var value = property.GetValue(stats, index: null);
+                var strValue = property.PropertyType == typeof(double) ? FormatHelper.GetCommaNumber((double)value) : value.ToString();
+
+                string spacingToAdd = "";
+                if (lastPropertyName == "Streak" && !property.Name.EndsWith("Streak"))
                 {
-                    if (property.PropertyType == typeof(Dictionary<ulong, double>))
-                        continue;
-
-                    var value = property.GetValue(stats, index: null);
-                    var strValue = property.PropertyType == typeof(double) ? FormatHelper.GetCommaNumber((double)value) : value.ToString();
-                    output += $"**{property.Name}:**\t {strValue}\n";
+                    spacingToAdd = "\n";
+                }
+                else if (lastPropertyName == "Max" && !property.Name.StartsWith("Max"))
+                {
+                    spacingToAdd = "\n";
+                }
+                else if (lastPropertyName == "Total" && !property.Name.StartsWith("Total"))
+                {
+                    spacingToAdd = "\n";
                 }
 
+                output += $"{spacingToAdd}**{property.Name}:**\t {strValue}\n";
 
-                await message.SendRichEmbedMessage(title, output);
+                lastPropertyName = property.Name.StartsWith("Total") ? "Total"
+                    : property.Name.StartsWith("Max") ? "Max"
+                    : property.Name.EndsWith("Streak") ? "Streak"
+                    : string.Empty;
             }
 
 
+            await message.SendRichEmbedMessage(title, output);
 
             //var maxBetStat = stats.OrderByDescending(s => s.MaxMoneyBetAtOnce).First();
             //var maxBetAccount = accounts.Where(a => a.Stats == maxBetStat);

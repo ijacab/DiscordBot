@@ -32,19 +32,9 @@ namespace DiscordBot.Games.Models
 
         public Card Take()
         {
-            int randomIndex = -11111;
-            Card card;
-            try
-            {
-                randomIndex = new Random().Next(0, Cards.Count);
-                card = Cards[randomIndex];
-                Cards.RemoveAt(randomIndex);
-            }
-            catch (Exception ex)
-            {
-                card = null;
-                //throw new Exception($"Failed in Card Take method. Card count: {Cards.Count} RandomIndex: {randomIndex}\n{ex.Message}");
-            }
+            int index = new Random().Next(0, Cards.Count);
+            var card = Cards[index];
+            Cards.RemoveAt(index);
 
             return card;
         }
