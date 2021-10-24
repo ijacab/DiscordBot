@@ -78,6 +78,7 @@ namespace DiscordBot.Services
         {
             var hourDateString = DateTimeOffset.UtcNow.ToString("yyyyMMddHH");
             var dateString = hourDateString.Substring(0, 8);
+            if (_coinAccounts.TimesInterestPaidForList.Contains(hourDateString)) return; //if already paid for the hour, exit
 
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
@@ -86,7 +87,6 @@ namespace DiscordBot.Services
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
-            if (_coinAccounts.TimesInterestPaidForList.Contains(hourDateString)) return; //if already paid for the hour, exit
 
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDatePlayed == dateString);
             foreach (var account in accountsToAction)
