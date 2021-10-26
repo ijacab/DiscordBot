@@ -45,7 +45,7 @@ namespace DiscordBot.Managers
             _faceService = faceService;
             _blackjackManager = blackjackManager;
             _betManager = betManager;
-            _customMappings = new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
+            _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
 
             //need to add new commands in here as they are created
             _commands = new List<Command>();
