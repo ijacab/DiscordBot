@@ -82,14 +82,6 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync(info);
         }
 
-        private async Task Test(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            var users = await message.Channel.GetUsersAsync().Flatten().ToListAsync();
-            var user = users.First(u => u.Username == "Jacab");
-            await message.Channel.SendMessageAsync($"testing {user.Mention}");
-            await message.Channel.SendMessageAsync($@"Hello {message.Author.Mention}");
-        }
-
         private async Task AddReminder(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args[0] == "show")
@@ -215,7 +207,7 @@ namespace DiscordBot.Managers
             }
             if (showHints)
             {
-                output += "\n*Each day you will get $1000 x P level. If you bet over 50% in a single bet that day, and bet a minimum of P level bets you will also get an hourly bonus $1000 x P level + (up to) 6% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
+                output += $"\n*Each day you will get $1000 x P level. If you bet over 50% in a single bet that day, and bet a minimum of P level bets you will also get an hourly bonus $1000 x P level + (up to) {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
                 output += "\n*The more money you win from playing in a day, the more money you make from further wins (via a bonus), up to a maxmium of 3x winnings bonus.*\n";
                 output += $"\n*Type .prestige to level up your account if you have enough money (it will reset your money to ${FormatHelper.GetCommaNumber(_startingAmount)}). People who are lower prestige than you cannot donate to you.*";
             }

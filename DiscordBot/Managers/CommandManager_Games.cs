@@ -97,7 +97,7 @@ namespace DiscordBot.Managers
             }
 
             if (wasBonusGranted)
-                output += $"\n\n*You will get a bonus $1000 + 10% net worth each hour for the rest of the day (UTC).*";
+                output += $"\n\n*You will get a bonus $1000 + {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*";
 
             await message.Channel.SendMessageAsync(output);
 

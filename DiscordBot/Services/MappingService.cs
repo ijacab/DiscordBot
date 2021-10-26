@@ -1,5 +1,6 @@
 ﻿using Common.Services;
 using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -41,7 +42,7 @@ namespace DiscordBot.Services
 
         public async Task ClearAll()
         {
-            var content = JsonConvert.SerializeObject(new Dictionary<string, string>());
+            var content = JsonConvert.SerializeObject(new Dictionary<string, string>(StringComparer.InvariantCultureIgnoreCase));
             await _gistService.UpdateContent(_fileName, content);
         }
     }

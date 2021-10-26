@@ -101,7 +101,7 @@ namespace DiscordBot.Services
         {
             double p = account.GetAmountRequiredForNextLevel();
             double x = account.NetWorth;
-            double c = 6;
+            double c = Constants.InterestPercentage;
             double y = c - c * x / p;
             double multiplier = y / 100; //0.1 at 0 nw and 0 at p nw
             if (multiplier < 0) multiplier = 0;
