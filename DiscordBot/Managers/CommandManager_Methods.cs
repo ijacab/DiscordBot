@@ -201,7 +201,7 @@ namespace DiscordBot.Managers
                 string prestigeDisplay = prestige == 0 ? "" : $"**[P{prestige}]**";
                 output += $"{account.Name}: {prestigeDisplay} ${FormatHelper.GetCommaNumber(account.NetWorth)}";
 
-                if (account.MostRecentDatePlayed == DateTime.UtcNow.ToString("yyyyMMdd"))
+                if (account.MostRecentDateBonusMet == DateTime.UtcNow.ToString("yyyyMMdd"))
                     output += "   \\*";
                 output += "\n";
             }

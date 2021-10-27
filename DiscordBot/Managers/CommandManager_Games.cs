@@ -45,9 +45,7 @@ namespace DiscordBot.Managers
             double inputMoney = 0;
             inputBets.Where(b => b.RoulleteBetType != BetType.NotValid).ToList().ForEach(b => inputMoney += b.Amount);
 
-            var bet = await _betManager.InitiateBet(userId, message.Author.Username, inputMoney);
-            bool wasBonusGranted = bet.WasBonusGranted;
-            bool isFirstGameOfTheDay = bet.IsFirstGameOfTheDay;
+            await _betManager.InitiateBet(userId, message.Author.Username, inputMoney, 10);
 
             string resultString = "";
             List<RouletteBet> winningBets;
@@ -74,10 +72,11 @@ namespace DiscordBot.Managers
 
             double baseWinnings = 0;
             string output = $"Winning results were {resultString}.\n";
+            (double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted) betResolve;
             if (winningBets.Count == 0)
             {
                 output += $"{message.Author.Username} you did not make any successful bets. Your net worth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}.";
-                var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
+                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings);
             }
             else
             {
@@ -91,12 +90,12 @@ namespace DiscordBot.Managers
                         : $"{winningBet.RoulleteBetType}: ${FormatHelper.GetCommaNumber(winningBet.Amount)} -> ${FormatHelper.GetCommaNumber(amountBack)}\n";
                 }
 
-                var betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, isFirstGameOfTheDay);
+                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings);
                 output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)})\n";
                 output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
             }
 
-            if (wasBonusGranted)
+            if (betResolve.WasBonusGranted)
                 output += $"\n\n*You will get a bonus $1000 + {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*";
 
             await message.Channel.SendMessageAsync(output);
@@ -113,9 +112,6 @@ namespace DiscordBot.Managers
             //h|hit - blackjack hit action
             //start - start the game without waiting
 
-            if (args.Count != 1)
-                throw new BadSyntaxException();
-
             if (_blackjackManager.TryGetPlayer(playerId, out var player)
                 && player.IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
             {
@@ -124,7 +120,7 @@ namespace DiscordBot.Managers
             }
 
             CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
-            
+
             if (args[0].StartsWith("start"))//'.bj start'
             {
                 await _blackjackManager.Start(playerId, message);

@@ -23,34 +23,16 @@ namespace DiscordBot.Managers
         /// <summary>
         /// Resolves the bet and updates the user's account based on the result.
         /// </summary>
-        /// <returns>True if the hourly bonus was newly granted, otherwise false.</returns>
-        public async Task<(bool WasBonusGranted, bool IsFirstGameOfTheDay)> InitiateBet(ulong userId, string userName, double betAmount)
+        public async Task InitiateBet(ulong userId, string userName, double betAmount, int? minimumPercentBetRequired = null)
         {
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
-            EnsureGameMoneyInputIsValid(betAmount, coinAccount, null);
+            EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
 
             UpdateInitiateBetStats(coinAccount, betAmount);
-
-            bool overFiftyPercentBet = false;
-            if (betAmount >= (coinAccount.NetWorth * 0.5) - 1)
-                overFiftyPercentBet = true; //if bet made over 50% networth for that day they get the bonus
-
-            bool bonusGranted = false, firstGameOfTheDay = false;
-            var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            if (coinAccount.MostRecentDatePlayed != todayString)
-            {
-                firstGameOfTheDay = true;
-                if (overFiftyPercentBet)
-                {
-                    coinAccount.MostRecentDatePlayed = todayString;
-                    bonusGranted = true;
-                }
-            }
 
             //minus their input money - they will get it back when the game ends (if they don't lose)
             coinAccount.NetWorth -= betAmount;
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote: false);
-            return (bonusGranted, firstGameOfTheDay);
         }
 
         public async Task CancelBet(ulong userId, string userName, double betAmount)
@@ -63,66 +45,62 @@ namespace DiscordBot.Managers
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
         }
 
-        public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool isFirstGameOfTheDay)
+        public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
         {
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
+            double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
+            
+            bool overFiftyPercentBet = false;
+            if (betAmount >= netWorthBeforeBet - 1)
+                overFiftyPercentBet = true; //if bet made over 50% networth for that day they get the bonus
+
+            bool bonusGranted = false, firstGameOfTheDay = false;
+            var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
+            if (coinAccount.MostRecentDateBonusMet != todayString)
+            {
+                firstGameOfTheDay = true;
+                if (overFiftyPercentBet)
+                {
+                    coinAccount.MostRecentDateBonusMet = todayString;
+                    bonusGranted = true;
+                }
+            }
 
             double bonusWinnings = baseWinnings * CalculateBonusMultiplier(coinAccount);
             double totalWinnings = baseWinnings + bonusWinnings;
 
             double netWinnings = Math.Floor(baseWinnings - betAmount);
-            if (isFirstGameOfTheDay)
+            if (firstGameOfTheDay)
                 coinAccount.NetWinningsToday = netWinnings;
             else
                 coinAccount.NetWinningsToday += netWinnings;
 
             coinAccount.NetWorth += totalWinnings;
 
+            if(Math.Floor(coinAccount.NetWorth) == 0)
+                coinAccount.NetWinningsToday = 0;
+
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
 
-            await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
-            return (bonusWinnings, totalWinnings, netWinnings);
+            await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
+            return (bonusWinnings, totalWinnings, netWinnings, bonusGranted);
         }
 
         public async Task ResolveBet(IEnumerable<IPlayer> players)
         {
-
             int i = 1;
+            bool updateRemote = false;
             foreach (var player in players)
             {
-                CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
-
-                double bonusWinnings = player.BaseWinnings * CalculateBonusMultiplier(coinAccount);
-                player.BonusWinnings = bonusWinnings;
-                
-                double totalWinnings = player.BaseWinnings + bonusWinnings;
-
-                bool firstGameOfTheDay = false;
-                var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-
-                if (coinAccount.MostRecentDatePlayed != todayString)
-                    firstGameOfTheDay = true;
-
-                double netWinnings = Math.Floor(player.BaseWinnings - player.BetAmount);
-                if (firstGameOfTheDay)
-                    coinAccount.NetWinningsToday = netWinnings;
-                else
-                    coinAccount.NetWinningsToday += netWinnings;
-
-                coinAccount.NetWorth += totalWinnings;
-
-                UpdateResolveBetStats(coinAccount, player.BetAmount, player.BaseWinnings);
-
-                bool updateRemote = false;
                 if (i == players.Count())
                     updateRemote = true;
 
-                await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, player.Username, updateRemote: updateRemote);
+                await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
                 i++;
             }
         }
 
-        private void EnsureGameMoneyInputIsValid(double inputMoney, CoinAccount account, int? minimumPercentBetRequired = null)
+        private void EnsureGameMoneyInputIsValid(double inputMoney, CoinAccount account, int? minimumPercentBetRequired)
         {
             if (inputMoney <= 0)
                 throw new BadInputException($"You didn't place any valid bets FUCK HEAD");

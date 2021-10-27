@@ -40,7 +40,7 @@ namespace DiscordBot.Services
                 Name = name,
                 UserId = userId,
                 NetWorth = netWorth,
-                MostRecentDatePlayed = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
+                MostRecentDateBonusMet = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
             };
 
             _coinAccounts.Accounts.Add(coinAccount);
@@ -87,7 +87,7 @@ namespace DiscordBot.Services
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
-            var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDatePlayed == dateString);
+            var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDateBonusMet == dateString);
             foreach (var account in accountsToAction)
             {
                 account.NetWorth += CalculateAddedInterest(account); //add 1000 + 10% per hour if they are granted the bonus

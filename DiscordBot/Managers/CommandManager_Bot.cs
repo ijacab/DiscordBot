@@ -19,8 +19,7 @@ namespace DiscordBot.Managers
             ulong userId = ulong.Parse(args[0]);
             string userName = args[1];
             double betAmount = double.Parse(args[2]);
-            var bet = await _betManager.InitiateBet(userId, userName, betAmount);
-            await message.Channel.SendMessageAsync($"!WasBonusGranted:{bet.WasBonusGranted},IsFirstGameOfTheDay:{bet.IsFirstGameOfTheDay}");
+            await _betManager.InitiateBet(userId, userName, betAmount);
         }
 
         public async Task ResolveBet(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -32,13 +31,9 @@ namespace DiscordBot.Managers
             string userName = args[1];
             double betAmount = double.Parse(args[2]);
             double baseWinnings = double.Parse(args[3]);
-            bool isFirstGameOfTheDay = false;
-            if (args.Count > 4)
-            {
-                isFirstGameOfTheDay = bool.Parse(args[4]);
-            }
-            var betResults = await _betManager.ResolveBet(userId, userName, betAmount, baseWinnings, isFirstGameOfTheDay);
-            await message.Channel.SendMessageAsync($"!TotalsWinnings:{betResults.TotalWinnings},BonusWinnings:{betResults.BonusWinnings},NetWinnings:{betResults.NetWinnings}");
+
+            var betResults = await _betManager.ResolveBet(userId, userName, betAmount, baseWinnings);
+            await message.Channel.SendMessageAsync($"!TotalWinnings:{betResults.TotalWinnings},BonusWinnings:{betResults.BonusWinnings},NetWinnings:{betResults.NetWinnings},WasBonusGranted:{betResults.WasBonusGranted}");
         }
 
         public async Task GetLeaderboardJson(DiscordSocketClient client, SocketMessage message, List<string> args)

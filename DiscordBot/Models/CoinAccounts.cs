@@ -18,7 +18,7 @@ namespace DiscordBot.Models
             public ulong UserId { get; set; }
             public double NetWorth { get; set; }
             public double NetWinningsToday { get; set; } = 0;
-            public string MostRecentDatePlayed { get; set; }
+            public string MostRecentDateBonusMet { get; set; }
             public int PrestigeLevel { get; set; } = 0;
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
             public double GetAmountRequiredForNextLevel()

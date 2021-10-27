@@ -42,7 +42,7 @@ namespace DiscordBot.Games
                     throw new BadInputException("You are already in a game but it hasn't started yet. \nType `.bj start` to start or wait for the game to start automatically.");
             }
 
-            await _betManager.InitiateBet(playerId, message.Author.Username, inputMoney);
+            await _betManager.InitiateBet(playerId, message.Author.Username, inputMoney, 10);
 
             var channel = message.Channel as SocketGuildChannel;
             var guildId = channel.Guild.Id;
