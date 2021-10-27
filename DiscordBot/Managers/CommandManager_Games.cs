@@ -120,20 +120,26 @@ namespace DiscordBot.Managers
             }
 
             CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+            if (args.Count() > 0)
+            {
+                if (args[0].StartsWith("start"))//'.bj start'
+                {
+                    await _blackjackManager.Start(playerId, message);
+                    return;
+                }
+                else if (args[0].StartsWith("stay"))//'.bj stay'
+                {
+                    await _blackjackManager.Stay(playerId, message);
+                    return;
+                }
+                else if (args[0].StartsWith("hit"))//'.bj hit'
+                {
+                    await _blackjackManager.Hit(playerId, message);
+                    return;
+                }
+            }
 
-            if (args[0].StartsWith("start"))//'.bj start'
-            {
-                await _blackjackManager.Start(playerId, message);
-            }
-            else if (args[0].StartsWith("stay"))//'.bj stay'
-            {
-                await _blackjackManager.Stay(playerId, message);
-            }
-            else if (args[0].StartsWith("hit"))//'.bj hit'
-            {
-                await _blackjackManager.Hit(playerId, message);
-            }
-            else if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
+            if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
             {
                 await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
             }
