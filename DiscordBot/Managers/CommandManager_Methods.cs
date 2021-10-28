@@ -445,7 +445,7 @@ namespace DiscordBot.Managers
             }
 
             if (account == null)
-                throw new BadInputException();
+                throw new BadInputException($"Account not found.");
 
             var stats = account.Stats;
             string lastPropertyName = string.Empty;
