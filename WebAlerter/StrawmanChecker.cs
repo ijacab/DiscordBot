@@ -77,22 +77,21 @@ namespace WebAlerter
                         ? notifyTrade.Volume * notifyTrade.Price
                         : notifyTrade.Value;
 
-                    string output = $"Trade executed by {memberName}:\n" +
-                        $"`" +
+                    string title = $"Trade executed by {memberName}:";
+                    string output =
                         $"Date: {notifyTrade.Date.ToString("dd/MM/yyyy")}\n" +
                         $"Company: {notifyTrade.Company.Code}:{notifyTrade.Company.StockExchangeCode} ({notifyTrade.Company.Name})\n" +
                         $"Trade: {tradeType} ${tradeValue.ToString("0.##")}\n" +
                         $"Volume: {notifyTrade.Volume}\n" +
-                        $"Price: ${notifyTrade.Price}" +
-                        $"`";
+                        $"Price: ${notifyTrade.Price}";
 
                     if (notifyTrade.Pending)
-                        output = "**PENDING** " + output;
+                        title = "**PENDING** " + title;
 
                     if (notifyTrade.TradeType == TradeType.Dividend)
-                        output = "`DIVIDEND`\n" + output;
+                        title = "`DIVIDEND`\n" + title;
 
-                    await messageChannel.SendMessageAsync(output);
+                    await messageChannel.SendRichEmbedMessage(title, output);
                 }
             }
             catch (Exception ex)
