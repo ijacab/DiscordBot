@@ -51,7 +51,7 @@ namespace DiscordBot.Managers
             double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
             
             bool overFiftyPercentBet = false;
-            if (betAmount >= netWorthBeforeBet - 1)
+            if (betAmount >= (0.5 * netWorthBeforeBet) - 1)
                 overFiftyPercentBet = true; //if bet made over 50% networth for that day they get the bonus
 
             bool bonusGranted = false, firstGameOfTheDay = false;
