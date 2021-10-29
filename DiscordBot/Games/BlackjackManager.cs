@@ -282,12 +282,12 @@ namespace DiscordBot.Games
                     await _betManager.ResolveBet(players);
                     foreach (var player in players)
                     {
-                        CoinAccount account = await _coinService.Get(player.UserId, player.Username);
-                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
+                        CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
+                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus) `Daily Net Winnings: {FormatHelper.GetCommaNumber(coinAccount.NetWinningsToday)}`" : string.Empty;
                         output += $"\n{player.Username}: {player.GetFormattedCards()}" +
                             $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
                             $"\t{bonusLine}" +
-                            $"\n\t`Networth is now {FormatHelper.GetCommaNumber(account.NetWorth)}`";
+                            $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
                     }
 
                     var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
