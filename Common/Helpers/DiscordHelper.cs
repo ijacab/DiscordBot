@@ -121,5 +121,13 @@ namespace Common.Helpers
                 return false;
             }
         }
+
+        public static async Task<Task> DeleteAfterDelay(this IMessage message, int delayInSeconds = 90)
+        {
+            return Task.Delay(TimeSpan.FromSeconds(90)).ContinueWith(async t =>
+            {
+                await message.DeleteAsync();
+            });
+        }
     }
 }

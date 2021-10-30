@@ -385,10 +385,7 @@ namespace DiscordBot.Managers
                 if (searchQuery.Contains("safeoff", StringComparison.OrdinalIgnoreCase))
                 {
                     //delete nsfw messages after delay
-                    _ = Task.Delay(TimeSpan.FromSeconds(90)).ContinueWith(async t =>
-                    {
-                        await msg.DeleteAsync();
-                    });
+                    _ = msg.DeleteAfterDelay();
 
                 }
             }
