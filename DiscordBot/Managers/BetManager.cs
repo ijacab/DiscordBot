@@ -77,7 +77,8 @@ namespace DiscordBot.Managers
 
             coinAccount.NetWorth += totalWinnings;
 
-            if(Math.Floor(coinAccount.NetWorth) == 0)
+            if(coinAccount.NetWinningsToday < 0 
+                || Math.Floor(coinAccount.NetWorth) == 0)
                 coinAccount.NetWinningsToday = 0;
 
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
@@ -95,7 +96,8 @@ namespace DiscordBot.Managers
                 if (i == players.Count())
                     updateRemote = true;
 
-                await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
+                var resolveBet = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
+                player.BonusWinnings = resolveBet.BonusWinnings;
                 i++;
             }
         }

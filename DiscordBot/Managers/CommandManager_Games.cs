@@ -91,7 +91,7 @@ namespace DiscordBot.Managers
                 }
 
                 betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings);
-                output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)}) `Daily Net Winnings: {FormatHelper.GetCommaNumber(coinAccount.NetWinningsToday)}`\n";
+                output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)}) \n*Daily Net Winnings: {FormatHelper.GetCommaNumber(coinAccount.NetWinningsToday)}*\n";
                 output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
             }
 
