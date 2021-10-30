@@ -283,7 +283,7 @@ namespace DiscordBot.Games
                     foreach (var player in players)
                     {
                         CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
-                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)\n*Daily Net Winnings: {FormatHelper.GetCommaNumber(coinAccount.NetWinningsToday)}*" : string.Empty;
+                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
                         output += $"\n{player.Username}: {player.GetFormattedCards()}" +
                             $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
                             $"\t{bonusLine}" +

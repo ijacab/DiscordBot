@@ -97,7 +97,7 @@ namespace DiscordBot.Games.Models
 
             cardsStr += $":\t\t{valueStr}";
             if (IsFinishedPlaying)
-                cardsStr += "\t\t✓";
+                cardsStr += "\t\t~";
             return cardsStr;
         }
 
