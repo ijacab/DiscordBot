@@ -168,7 +168,7 @@ namespace DiscordBot.Managers
             double m = 1;
             double y = (m / p) * moneyWon * 8;
             double multiplier = y; 
-            if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.5 at max
+            if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
             return multiplier;
         }
     }
