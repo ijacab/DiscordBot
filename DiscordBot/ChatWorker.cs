@@ -24,7 +24,7 @@ namespace DiscordBot
                 _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
                 await _messageHandler.StartAsync();
 
-                while (true)
+                while (!stoppingToken.IsCancellationRequested)
                 {
                     await _messageHandler.RunBackgroundTasks();
                     await Task.Delay(TimeSpan.FromMinutes(1));

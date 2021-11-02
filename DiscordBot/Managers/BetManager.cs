@@ -166,9 +166,9 @@ namespace DiscordBot.Managers
             double p = coinAccount.GetAmountRequiredForNextLevel();
             double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
             double m = 1;
-            double y = (m / p) * moneyWon * 5;
-            double multiplier = y; //0 at 0 moneyWon and 2 at p moneyWon
-            if (multiplier > 1) multiplier = 1;
+            double y = (m / p) * moneyWon * 8;
+            double multiplier = y; 
+            if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.5 at max
             return multiplier;
         }
     }
