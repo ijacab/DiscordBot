@@ -164,6 +164,7 @@ namespace DiscordBot.Managers
         public double CalculateBonusMultiplier(CoinAccount coinAccount)
         {
             double p = coinAccount.GetAmountRequiredForNextLevel();
+            if (coinAccount.NetWorth > p) return 0;
             double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
             double m = 1;
             double y = (m / p) * moneyWon * 8;
