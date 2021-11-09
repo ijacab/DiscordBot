@@ -163,11 +163,11 @@ namespace DiscordBot.Managers
 
         public double CalculateBonusMultiplier(CoinAccount coinAccount)
         {
-            double p = coinAccount.GetAmountRequiredForNextLevel();
+            double p = coinAccount.GetAmountRequiredForNextLevel() / 2;
             if (coinAccount.NetWorth > p) return 0;
             double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
             double m = 1;
-            double y = (m / p) * moneyWon * 8;
+            double y = (m / p) * moneyWon * 14;
             double multiplier = y; 
             if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
             return multiplier;
