@@ -80,16 +80,16 @@ namespace DiscordBot.Games
 
             if (!IsGameStarted(playerId))
             {
-                Start(playerId);
+                Guid gameId = Start(playerId);
 
-                //timer on ending the game - NOT WORKING YET
-                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
-                //{
-                //    if (TryGetExisitingGame(playerId, out var game))
-                //    {
-                //        await EndGameIfAllPlayersFinished(playerId, _client, message, forceEnd: true);
-                //    }
-                //});
+                //timer on ending the game
+                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                {
+                    if (TryGetExisitingGame(gameId, out _))
+                    {
+                        await EndGameForced(gameId);
+                    }
+                });
 
                 var game = GetExisitingGame(playerId);
                 var players = game.Players.Where(p => !p.IsDealer);
@@ -110,7 +110,7 @@ namespace DiscordBot.Games
                     return;
 
                 await distinctServerChannelMappings.SendMessageToEachChannel("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
-                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack","Type `.bj hit` or `.bj stay` to play.", _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack", "Type `.bj hit` or `.bj stay` to play.", _client);
             }
             else
             {
@@ -185,9 +185,8 @@ namespace DiscordBot.Games
             game.Stay(player);
         }
 
-        public bool AreAllPlayersInSameGameFinished(ulong playerId)
+        public bool AreAllPlayersInSameGameFinished(Blackjack game)
         {
-            var game = GetExisitingGame(playerId);
             if (game.Players.Where(p => !p.IsDealer).Any(p => !p.IsFinishedPlaying))
                 return false;
             else
@@ -220,12 +219,37 @@ namespace DiscordBot.Games
             return game;
         }
 
+        public Blackjack GetExisitingGame(Guid gameGuid)
+        {
+            var game = Games.FirstOrDefault(g => g.GameGuid == gameGuid);
+            if (game == null) throw new BadInputException("Game does not exist.");
+            return game;
+        }
+
         public bool TryGetExisitingGame(ulong playerId, out Blackjack game)
         {
             game = null;
             try
             {
                 game = GetExisitingGame(playerId);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (game != null)
+                return true;
+            else
+                return false;
+        }
+
+        public bool TryGetExisitingGame(Guid gameGuid, out Blackjack game)
+        {
+            game = null;
+            try
+            {
+                game = GetExisitingGame(gameGuid);
             }
             catch (Exception)
             {
@@ -255,66 +279,71 @@ namespace DiscordBot.Games
         }
 
         /// <returns>True if game ended, false if not.</returns>
-        private async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, DiscordSocketClient client, SocketMessage message, bool forceEnd = false)
+        private async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, DiscordSocketClient client, SocketMessage message)
         {
             var game = GetExisitingGame(playerId);
-            if (forceEnd)
-            {
-                foreach (var player in game.Players)
-                {
-                    game.Stay(player);
-                }
-            }
 
-            bool isGameEnded = AreAllPlayersInSameGameFinished(playerId);
-            if (isGameEnded)
-            {
-                string title = "Blackjack game results:";
-                try
-                {
-                    var playersInGame = PlayDealerAndCalculateWinnings(playerId);
-                    Games.Remove(game);
-                    var dealer = playersInGame.First(p => p.IsDealer);
+            if(!AreAllPlayersInSameGameFinished(game))
+                return false;
 
-                    string output = $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
-
-                    var players = game.Players.Where(p => !p.IsDealer);
-                    await _betManager.ResolveBet(players);
-                    foreach (var player in players)
-                    {
-                        CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
-                        string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
-                        output += $"\n{player.Username}: {player.GetFormattedCards()}" +
-                            $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
-                            $"\t{bonusLine}" +
-                            $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
-                    }
-
-                    var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                    var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
-                    await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client);
-                }
-                catch (Exception)
-                {
-                    Games.Remove(game);
-                    throw;
-                }
-            }
-
-            return isGameEnded;
+            await EndGame(game);
+            return true;
         }
 
+        private async Task EndGameForced(Guid gameGuid)
+        {
+            var game = GetExisitingGame(gameGuid);
+            foreach (var player in game.Players)
+            {
+                game.Stay(player);
+            }
+
+            await EndGame(game);
+        }
+
+        private async Task EndGame(Blackjack game)
+        {
+            string title = "Blackjack game results:";
+            try
+            {
+                var playersInGame = PlayDealerAndCalculateWinnings(game);
+                Games.Remove(game);
+                var dealer = playersInGame.First(p => p.IsDealer);
+
+                string output = $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
+
+                var players = game.Players.Where(p => !p.IsDealer);
+                await _betManager.ResolveBet(players);
+                foreach (var player in players)
+                {
+                    CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
+                    string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
+                    output += $"\n{player.Username}: {player.GetFormattedCards()}" +
+                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
+                        $"\t{bonusLine}" +
+                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
+                }
+
+                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
+                var distinctServerChannelMappings = serverChannelMappings.Distinct();
+
+                await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client);
+            }
+            catch (Exception)
+            {
+                Games.Remove(game);
+                throw;
+            }
+        }
 
         /// <summary>
         /// Ends the game that the player is in and returns a list the players in the game.
         /// </summary>
-        private List<BlackjackPlayer> PlayDealerAndCalculateWinnings(ulong playerId)
+        private List<BlackjackPlayer> PlayDealerAndCalculateWinnings(Blackjack game)
         {
-            if (AreAllPlayersInSameGameFinished(playerId) == false)
+            if (AreAllPlayersInSameGameFinished(game) == false)
                 throw new Exception($"{nameof(BlackjackManager.PlayDealerAndCalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
 
-            var game = GetExisitingGame(playerId);
             game.EndDealerTurn();
 
             var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.UserId).ToList();

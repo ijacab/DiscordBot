@@ -237,6 +237,9 @@ namespace DiscordBot.Managers
 
         private async Task Prestige(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Hey **FUCK HEAD**! DON'T TRY TO CHEAT THE SYSTEM! You can't FUCKING prestige while you still have a bet in progress!");
+
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             double amountForNextLevel = account.GetAmountRequiredForNextLevel();
 

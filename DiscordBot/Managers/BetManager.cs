@@ -14,6 +14,7 @@ namespace DiscordBot.Managers
     public class BetManager
     {
         private readonly CoinService _coinService;
+        public List<ulong> InitiatedBetUserIds = new List<ulong>();
 
         public BetManager(CoinService coinService)
         {
@@ -25,6 +26,9 @@ namespace DiscordBot.Managers
         /// </summary>
         public async Task InitiateBet(ulong userId, string userName, double betAmount, int? minimumPercentBetRequired = null)
         {
+            if(InitiatedBetUserIds.Contains(userId))
+                throw new BadInputException("Can't initiate a bet while another is in progress");
+
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
 
@@ -33,6 +37,7 @@ namespace DiscordBot.Managers
             //minus their input money - they will get it back when the game ends (if they don't lose)
             coinAccount.NetWorth -= betAmount;
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote: false);
+            InitiatedBetUserIds.Add(userId);
         }
 
         public async Task CancelBet(ulong userId, string userName, double betAmount)
@@ -43,6 +48,7 @@ namespace DiscordBot.Managers
             coinAccount.NetWorth += betAmount;
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName);
+            InitiatedBetUserIds.Remove(userId);
         }
 
         public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
@@ -84,6 +90,7 @@ namespace DiscordBot.Managers
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
+            InitiatedBetUserIds.Remove(userId);
             return (bonusWinnings, totalWinnings, netWinnings, bonusGranted);
         }
 
