@@ -187,9 +187,10 @@ namespace DiscordBot.Managers
             double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
             double m = 1;
             double y = (m / p) * moneyWon * 14;
-            double multiplier = y; 
+            double multiplier = y;
+            if (multiplier == 0) return 0;
             if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
-            if (multiplier == 0) multiplier = 0.1;
+            if (multiplier < 0.1) multiplier = 0.1;
 
             double bonus = multiplier * baseWinnings;
             if (bonus > coinAccount.NetWorth * 0.1)
