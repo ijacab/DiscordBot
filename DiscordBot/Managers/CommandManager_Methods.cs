@@ -298,7 +298,7 @@ namespace DiscordBot.Managers
 
             //stats for donatee
             donationReceiverAccount.Stats.TotalMoneyReceivedFromDonations += donationAmount;
-            if (donationAmount > account.Stats.MaxMoneyReceivedFromDonationAtOnce)
+            if (donationAmount > donationReceiverAccount.Stats.MaxMoneyReceivedFromDonationAtOnce)
                 donationReceiverAccount.Stats.MaxMoneyReceivedFromDonationAtOnce = donationAmount;
 
             if (donationReceiverAccount.Stats.DonationAmountsFromDict.ContainsKey(userId))
