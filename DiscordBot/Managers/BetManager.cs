@@ -72,7 +72,7 @@ namespace DiscordBot.Managers
                 }
             }
 
-            double bonusWinnings = baseWinnings * CalculateBonusMultiplier(coinAccount);
+            double bonusWinnings = GetBonus(coinAccount, baseWinnings);
             double totalWinnings = baseWinnings + bonusWinnings;
 
             double netWinnings = Math.Floor(baseWinnings - betAmount);
@@ -168,7 +168,7 @@ namespace DiscordBot.Managers
         }
 
 
-        public double CalculateBonusMultiplier(CoinAccount coinAccount)
+        public double GetBonus(CoinAccount coinAccount, double baseWinnings)
         {
             double p = coinAccount.GetAmountRequiredForNextLevel() / 2;
             if (coinAccount.NetWorth > p) return 0;
@@ -177,7 +177,13 @@ namespace DiscordBot.Managers
             double y = (m / p) * moneyWon * 14;
             double multiplier = y; 
             if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
-            return multiplier;
+            if (multiplier == 0) multiplier = 0.1;
+
+            double bonus = multiplier * baseWinnings;
+            if (bonus > coinAccount.NetWorth * 0.1)
+                bonus = coinAccount.NetWorth * 0.1;
+
+            return bonus;
         }
     }
 }
