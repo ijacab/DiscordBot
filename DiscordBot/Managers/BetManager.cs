@@ -28,20 +28,32 @@ namespace DiscordBot.Managers
         {
             if(InitiatedBetUserIds.Contains(userId))
                 throw new BadInputException("Can't initiate a bet while another is in progress");
+            if (betAmount < 1)
+                throw new BadInputException("You need to bet at least a dollar to play bro... what do think this is? A casino for FUCKING poor people huh? FUCK HEAD FUCK OFF");
 
-            CoinAccount coinAccount = await _coinService.Get(userId, userName);
-            EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
+            try
+            {
+                CoinAccount coinAccount = await _coinService.Get(userId, userName);
+                EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
 
-            UpdateInitiateBetStats(coinAccount, betAmount);
+                UpdateInitiateBetStats(coinAccount, betAmount);
 
-            //minus their input money - they will get it back when the game ends (if they don't lose)
-            coinAccount.NetWorth -= betAmount;
-            await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote: false);
-            InitiatedBetUserIds.Add(userId);
+                //minus their input money - they will get it back when the game ends (if they don't lose)
+                coinAccount.NetWorth -= betAmount;
+                await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote: false);
+                InitiatedBetUserIds.Add(userId);
+            }
+            catch(Exception)
+            {
+                await CancelBet(userId, userName, betAmount);
+            }
         }
 
         public async Task CancelBet(ulong userId, string userName, double betAmount)
         {
+            if (!InitiatedBetUserIds.Contains(userId))
+                return;
+
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             
             //give back betted money

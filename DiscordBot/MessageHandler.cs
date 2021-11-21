@@ -78,7 +78,7 @@ namespace DiscordBot
                 {
                     message.Channel.SendMessageAsync($"HOLY FUCK! I just encountered an error... Check my FUCKING logs");
 
-                    var dmChannel = _client.GetUser(_adminId).GetOrCreateDMChannelAsync().GetAwaiter().GetResult();
+                    var dmChannel = _client.GetUser(Constants.CreatorId).GetOrCreateDMChannelAsync().GetAwaiter().GetResult();
                     dmChannel.SendMessageAsync($"Message by {message.Author.Username}.\nError in {nameof(MessageHandler)}: {ex.Message}\n\n{ex.StackTrace}").GetAwaiter().GetResult();
                 }
                 catch (Exception ex2)

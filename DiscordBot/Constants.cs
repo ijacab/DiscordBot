@@ -8,5 +8,6 @@ namespace DiscordBot
     {
         public const int InterestPercentage = 6;
         public const ulong BotId = 205386259026280448;
+        public const ulong CreatorId = 166477511469957120;
     }
 }

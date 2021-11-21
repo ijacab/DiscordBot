@@ -52,7 +52,24 @@ namespace DiscordBot
 
                 while (true)
                 {
-                    await _strawmanChecker.Run(_client);
+                    try
+                    {
+                        await _strawmanChecker.Run(_client);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Error while running strawman checks: {ex.Message}\n\n{ex.StackTrace}");
+
+                        try
+                        {
+                            var dmChannel = await _client.GetUser(Constants.CreatorId).GetOrCreateDMChannelAsync();
+                            await dmChannel.SendMessageAsync($"Error while running strawman checks: {ex.Message}\n\n{ex.StackTrace}");
+                        }
+                        catch (Exception ex2)
+                        {
+                            _logger.LogError(ex2, $"Error sending channel message about error: {ex.Message}");
+                        }
+                    }
                     await Task.Delay(TimeSpan.FromMinutes(15));
                 }
             }
