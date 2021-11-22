@@ -193,8 +193,9 @@ namespace DiscordBot.Managers
             if (multiplier < 0.1) multiplier = 0.1;
 
             double bonus = multiplier * baseWinnings;
-            if (bonus > coinAccount.NetWorth * 0.1)
-                bonus = coinAccount.NetWorth * 0.1;
+            double nw = coinAccount.NetWorth + baseWinnings;
+            if (bonus > nw * 0.1)
+                bonus = nw * 0.1;
 
             return bonus;
         }
