@@ -58,6 +58,9 @@ namespace DiscordBot.Managers
 
         public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
         {
+            if (!InitiatedBetUserIds.Contains(userId))
+                throw new Exception("Something's gone wrong here. Somehow it is trying to resolve bet which was not initiated.");
+
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
             
