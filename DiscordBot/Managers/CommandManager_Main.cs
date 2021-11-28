@@ -121,13 +121,6 @@ namespace DiscordBot.Managers
                 || message.Content == "....") //this is your prefix
                 return;
 
-            //todo get rid of this after a short while
-            if (message.Content.StartsWith(".game r"))
-            {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} this command has been changed to '.r'. You can use it like '.r firstColumn-min'");
-                return;
-            }
-
             try
             {
                 EnsureInputContainsOnlyValidCharacters(message.Content);
