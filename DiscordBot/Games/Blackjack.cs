@@ -22,7 +22,7 @@ namespace DiscordBot.Games
             var card = _deck.Take();
             player.Cards.Add(card);
             var playerValidTotals = player.GetPossibleTotalValues();
-            
+
             if (playerValidTotals.Count() == 0 || player.Cards.Count >= 5 || playerValidTotals.OrderByDescending(t => t).First() == 21)
                 player.IsFinishedPlaying = true;
         }
@@ -54,7 +54,7 @@ namespace DiscordBot.Games
 
                 if (totals.Any())
                     highestValidTotal = dealer.GetPossibleTotalValues().OrderByDescending(v => v).First();
-                else 
+                else
                     break;
             }
             Stay(dealer);
@@ -75,7 +75,11 @@ namespace DiscordBot.Games
                 case BlackjackResultType.WinFiveCard:
                     return player.BetAmount * 3.5;
                 case BlackjackResultType.WinFiveCardTwentyOne:
-                    return player.BetAmount * 6;
+                    return player.BetAmount * 20;
+                case BlackjackResultType.WinTwentyToTwentyOne:
+                    return player.BetAmount * 30;
+                case BlackjackResultType.WinFiveCardTwentyToTwentyOne:
+                    return player.BetAmount * 600;
                 default:
                     return 0;
             }
@@ -85,7 +89,7 @@ namespace DiscordBot.Games
         {
             var playerValidTotals = player.GetPossibleTotalValues();
 
-            if(!playerValidTotals.Any())
+            if (!playerValidTotals.Any())
                 return BlackjackResultType.Lose;
 
             var dealer = GetDealer();
@@ -94,8 +98,27 @@ namespace DiscordBot.Games
             int playerHighestTotal = playerValidTotals.OrderByDescending(t => t).First(); //we already checked above that player valid total count is not zero so we expect a result here
             int dealerHighestTotal = dealerValidTotals.OrderByDescending(t => t).FirstOrDefault(); //will return 0 if dealer has no valid results
 
+
+            if (player.Cards.Count >= 5 && playerHighestTotal == 21
+                && player.Cards.ElementAt(player.Cards.Count - 1).Values.Item1 == 1) //5 cards and 21 and last card was an ace so they went 20 -> 21
+            {
+                return BlackjackResultType.WinFiveCardTwentyToTwentyOne;
+            }
+
+            if (playerHighestTotal == 21
+                && player.Cards.ElementAt(player.Cards.Count - 1).Values.Item1 == 1) //21 and last card was an ace so they went 20 -> 21
+            {
+                return BlackjackResultType.WinTwentyToTwentyOne;
+            }
+
             if (player.Cards.Count >= 5 && playerHighestTotal == 21)
+            {
                 return BlackjackResultType.WinFiveCardTwentyOne;
+            }
+
+            if (playerHighestTotal == 21)
+                return BlackjackResultType.WinTwentyOne;
+
 
             if (player.Cards.Count >= 5)
                 return BlackjackResultType.WinFiveCard;
@@ -122,7 +145,9 @@ namespace DiscordBot.Games
             Draw,
             WinTwentyOne,
             WinFiveCard,
-            WinFiveCardTwentyOne
+            WinFiveCardTwentyOne,
+            WinTwentyToTwentyOne,
+            WinFiveCardTwentyToTwentyOne
         }
     }
 }
