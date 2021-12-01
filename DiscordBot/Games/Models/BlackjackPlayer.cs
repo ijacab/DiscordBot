@@ -33,8 +33,13 @@ namespace DiscordBot.Games.Models
         }
         public IEnumerable<int> GetPossibleTotalValues(bool returnOnlyNonBustValues = true)
         {
+            return BlackjackPlayer.GetPossibleTotalValues(Cards, returnOnlyNonBustValues);
+        }
+
+        public static IEnumerable<int> GetPossibleTotalValues(List<Card> cards, bool returnOnlyNonBustValues = true)
+        {
             var totals = new List<int>();
-            foreach (var card in Cards)
+            foreach (var card in cards)
             {
                 int defaultValue = 0;
 

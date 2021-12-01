@@ -100,13 +100,13 @@ namespace DiscordBot.Games
 
 
             if (player.Cards.Count >= 5 && playerHighestTotal == 21
-                && player.Cards.ElementAt(player.Cards.Count - 1).Values.Item1 == 1) //5 cards and 21 and last card was an ace so they went 20 -> 21
+               && BlackjackPlayer.GetPossibleTotalValues(player.Cards.Take(player.Cards.Count - 1).ToList()).OrderByDescending(t => t).First() == 20) //5 cards and 21 and last card was an ace so they went 20 -> 21
             {
                 return BlackjackResultType.WinFiveCardTwentyToTwentyOne;
             }
 
             if (playerHighestTotal == 21
-                && player.Cards.ElementAt(player.Cards.Count - 1).Values.Item1 == 1) //21 and last card was an ace so they went 20 -> 21
+                && BlackjackPlayer.GetPossibleTotalValues(player.Cards.Take(player.Cards.Count - 1).ToList()).OrderByDescending(t=>t).First() == 20) //21 and last card was an ace so they went 20 -> 21
             {
                 return BlackjackResultType.WinTwentyToTwentyOne;
             }
