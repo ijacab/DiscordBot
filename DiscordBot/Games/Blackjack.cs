@@ -77,9 +77,9 @@ namespace DiscordBot.Games
                 case BlackjackResultType.WinFiveCardTwentyOne:
                     return player.BetAmount * 20;
                 case BlackjackResultType.WinTwentyToTwentyOne:
-                    return player.BetAmount * 30;
+                    return player.BetAmount * 100;
                 case BlackjackResultType.WinFiveCardTwentyToTwentyOne:
-                    return player.BetAmount * 600;
+                    return player.BetAmount * 100000;
                 default:
                     return 0;
             }
