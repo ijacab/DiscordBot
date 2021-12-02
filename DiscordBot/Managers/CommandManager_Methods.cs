@@ -485,34 +485,25 @@ namespace DiscordBot.Managers
                     : string.Empty;
             }
 
-
             await message.SendRichEmbedMessage(title, output);
 
-            //var maxBetStat = stats.OrderByDescending(s => s.MaxMoneyBetAtOnce).First();
-            //var maxBetAccount = accounts.Where(a => a.Stats == maxBetStat);
+            string dictOutput = "";
+            foreach (PropertyInfo dictProperty in properties
+                .Where(p => p.PropertyType == typeof(Dictionary<ulong, double>)))
+            {
+                var dict = (Dictionary<ulong, double>)dictProperty.GetValue(stats, index: null);
+                var orderedDict = dict.OrderByDescending(kvp => kvp.Value).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-            //var maxLossStat = stats.OrderByDescending(s => s.MaxMoneyLostAtOnce).First();
-            //var maxLossAccount = accounts.Where(a => a.Stats == maxLossStat);
+                dictOutput += $"**{dictProperty.Name.SplitCamelCaseWithSpace()}:**\n";
+                foreach (var kvp in orderedDict)
+                {
+                    string userName = client.GetUser(kvp.Key).Username;
+                    dictOutput += $"{userName}: {FormatHelper.GetCommaNumber(kvp.Value)}\n";
+                }
+                dictOutput += "\n";
+            }
 
-            //var maxWinStat = stats.OrderByDescending(s => s.MaxMoneyWonAtOnce).First();
-            //var maxWinAccount = accounts.Where(a => a.Stats == maxWinStat);
-
-            //var maxWinStreakStat = stats.OrderByDescending(s => s.MaxWinStreak).First();
-            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
-
-            //var maxDonationStat = stats.OrderByDescending(s => s.MaxMoneyDonatedAtOnce).First();
-            //var maxDonationAccount = accounts.Where(a => a.Stats == maxDonationStat);
-
-            //var maxDonationReceivedStat = stats.OrderByDescending(s => s.MaxMoneyReceivedFromDonationAtOnce).First();
-            //var maxDonationReceivedAccount = accounts.Where(a => a.Stats == maxDonationReceivedStat);
-
-            //var maxWinStreakStat = stats.OrderByDescending(s => s.).First();
-            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
-
-            //var maxWinStreakStat = stats.OrderByDescending(s => s.MaxWinStreak).First();
-            //var maxWinStreakAccount = accounts.Where(a => a.Stats == maxWinStreakStat);
-
-
+            await message.SendRichEmbedMessage($"{account.Name} donation stats", dictOutput);
         }
     }
 }
