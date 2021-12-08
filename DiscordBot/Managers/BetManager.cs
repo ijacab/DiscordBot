@@ -186,7 +186,7 @@ namespace DiscordBot.Managers
             double multiplier = y;
             if (multiplier == 0) return 0;
             if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
-            if (multiplier < 0.1) multiplier = 0.1;
+            if (multiplier < 0.05) multiplier = 0.05;
 
             double bonus = multiplier * baseWinnings;
             double nw = coinAccount.NetWorth + baseWinnings;

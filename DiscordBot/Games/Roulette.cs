@@ -122,7 +122,7 @@ namespace DiscordBot.Games
                 && inputs.Exists(i => i.RoulleteBetType == BetType.ThirdColumn))
                 throw new BadInputException("Can't bet all 3 Columns at the same time");
 
-            if (inputs.Count > 18)
+            if (inputs.Count > 12)
                 throw new BadInputException("Can't bet more than 18 selections at once");
         }
     }
