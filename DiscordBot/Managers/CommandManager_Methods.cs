@@ -375,12 +375,12 @@ namespace DiscordBot.Managers
 
         public async Task ImageSearchDbz(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            await ImageSearch(message, new List<string> { "dragon", "ball", "z"});
+            await ImageSearch(message, new List<string> { "dragon", "ball", "z"}, isAlwaysOn: true);
         }
 
-        private async Task ImageSearch(SocketMessage message, List<string> args)
+        private async Task ImageSearch(SocketMessage message, List<string> args, bool isAlwaysOn = false)
         {
-            if (_imageSearchStopped)
+            if (_imageSearchStopped && !isAlwaysOn)
                 return;
 
             ThrowIfBlackListed(message);
