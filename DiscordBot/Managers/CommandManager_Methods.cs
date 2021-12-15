@@ -366,7 +366,19 @@ namespace DiscordBot.Managers
                 await message.Channel.SendMessageAsync($"UTC: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")}");
         }
 
+
+
         public async Task ImageSearch(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            await ImageSearch(message, args);
+        }
+
+        public async Task ImageSearchDbz(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            await ImageSearch(message, new List<string> { "dragon", "ball", "z"});
+        }
+
+        private async Task ImageSearch(SocketMessage message, List<string> args)
         {
             if (_imageSearchStopped)
                 return;
