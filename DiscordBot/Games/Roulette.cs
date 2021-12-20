@@ -23,7 +23,7 @@ namespace DiscordBot.Games
             List<string> winningChoices = _outcomes[result].Split(',').ToList();
             var winningInputs = inputs.Where(
                 input =>
-                    input.RoulleteBetType != BetType.NotValid //valid
+                    input.RoulleteBetType != BetType.NotValid //valid bet
                         && (winningChoices.Contains(input.RoulleteBetType.ToString()) //winning bet is the same bet type as the one chosen
                             || (input.RoulleteBetType == BetType.Number && input.BetNumberChoice == result) //or if it's a number then it is winning if the number is correct
                         )
