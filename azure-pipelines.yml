@@ -18,6 +18,11 @@ steps:
   continueOnError: true
   inputs:
     targetType: 'inline'
+    script: export PATH="$PATH:$(DOTNET_PATH)"
+- task: Bash@3
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
     script: env
 - task: Bash@3
   displayName: "make directory service directory if it doesn't exist and apply permissions"
