@@ -13,32 +13,35 @@ namespace Common.Helpers
     public static class DiscordHelper
     {
         private const int _fieldCharLimit = 1023;
-        public static async Task SendMessageToEachChannel(this IEnumerable<Tuple<ulong, ulong>> distinctServerChannelMappings, string title, string messageText, DiscordSocketClient client)
+        public static async Task<List<IUserMessage>> SendMessageToEachChannel(this IEnumerable<Tuple<ulong, ulong>> distinctServerChannelMappings, string title, string messageText, DiscordSocketClient client)
         {
+            var sentMessages = new List<IUserMessage>();
             foreach (var serverChannelMapping in distinctServerChannelMappings)
             {
                 ulong serverId = serverChannelMapping.Item1;
                 ulong channelId = serverChannelMapping.Item2;
                 var messageChannel = client.GetGuild(serverId).GetTextChannel(channelId);
-                await messageChannel.SendRichEmbedMessage(title, messageText);
+                var sentMessage = await messageChannel.SendRichEmbedMessage(title, messageText);
+                sentMessages.Add(sentMessage);
             }
+            return sentMessages;
         }
 
-        public static async Task SendRichEmbedMessage(this IMessage message, string title, string messageContent)
+        public static async Task<IUserMessage> SendRichEmbedMessage(this IMessage message, string title, string messageContent)
         {
             var embed = GetEmbedBuilder(title, messageContent);
-            await message.Channel.SendMessageAsync(embed: embed.Build());
+            return await message.Channel.SendMessageAsync(embed: embed.Build());
         }
 
-        public static async Task SendRichEmbedMessage(this IMessage message, string messageContent)
+        public static async Task<IUserMessage> SendRichEmbedMessage(this IMessage message, string messageContent)
         {
-            await SendRichEmbedMessage(message, "~", messageContent);
+            return await SendRichEmbedMessage(message, "~", messageContent);
         }
 
-        public static async Task SendRichEmbedMessage(this SocketTextChannel channel, string title, string messageContent)
+        public static async Task<IUserMessage> SendRichEmbedMessage(this SocketTextChannel channel, string title, string messageContent)
         {
             var embed = GetEmbedBuilder(title, messageContent);
-            await channel.SendMessageAsync(embed: embed.Build());
+            return await channel.SendMessageAsync(embed: embed.Build());
         }
 
         private static EmbedBuilder GetEmbedBuilder(string title, string messageContent)

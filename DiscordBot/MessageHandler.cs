@@ -15,18 +15,21 @@ namespace DiscordBot
         private readonly DiscordSocketClient _client;
         private readonly ILogger<MessageHandler> _logger;
         private readonly CommandManager _commandManager;
-        private const ulong _adminId = 166477511469957120;
+        //private readonly ReactionManager _reactionManager;
 
-        public MessageHandler(ILogger<MessageHandler> logger, CommandManager commandManager, DiscordSocketClient client)
+        public MessageHandler(ILogger<MessageHandler> logger, CommandManager commandManager, //ReactionManager reactionManager, 
+            DiscordSocketClient client)
         {
             _logger = logger;
             _commandManager = commandManager;
+            //_reactionManager = reactionManager;
             _client = client;
         }
 
         public async Task StartAsync()
         {
-            _client.MessageReceived += CommandHandler;
+            _client.MessageReceived += MessageEvent;
+            _client.ReactionAdded += ReactionEvent;
             _client.Log += Log;
             _client.Ready += DownloadChannels;
 
@@ -64,7 +67,7 @@ namespace DiscordBot
             await _client.DownloadUsersAsync(guilds);
         }
 
-        private Task CommandHandler(SocketMessage message)
+        private Task MessageEvent(SocketMessage message)
         {
             try
             {
@@ -88,6 +91,18 @@ namespace DiscordBot
             }
 
             return Task.CompletedTask;
+        }
+
+        public async Task ReactionEvent(Cacheable<IUserMessage, ulong> cachedMessage, ISocketMessageChannel originChannel, SocketReaction reaction)
+        {
+            try
+            {
+                //await _reactionManager.RunCommand(_client, cachedMessage, originChannel, reaction);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error while running reaction command in {nameof(MessageHandler)}: {ex.Message}");
+            }
         }
 
         public async Task RunBackgroundTasks()

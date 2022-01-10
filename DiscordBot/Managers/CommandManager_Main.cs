@@ -22,6 +22,7 @@ namespace DiscordBot.Managers
         private readonly CoinService _coinService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
+        private readonly GameManager _gameManager;
         private readonly BlackjackManager _blackjackManager;
         private readonly BetManager _betManager;
         private Dictionary<string, string> _customMappings;
@@ -34,7 +35,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager)
+            GameManager gameManager)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -43,19 +44,18 @@ namespace DiscordBot.Managers
             _coinService = coinService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
-            _blackjackManager = blackjackManager;
-            _betManager = betManager;
+            _gameManager = gameManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
 
             //need to add new commands in here as they are created
             _commands = new List<Command>();
             _commands.Add(new Command("help", Help));
 
-            _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
-            _commands.Add(new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
+            _commands.Add(new Command("roulette", _gameManager.GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
+            _commands.Add(new Command("r", _gameManager.GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
 
-            _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
-            _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
+            _commands.Add(new Command("blackjack", _gameManager.GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
+            _commands.Add(new Command("bj", _gameManager.GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
 
             _commands.Add(new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" });
             _commands.Add(new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true });

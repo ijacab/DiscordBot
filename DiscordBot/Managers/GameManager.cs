@@ -10,14 +10,25 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using DiscordBot.Services;
 using static DiscordBot.Models.CoinAccounts;
-using static DiscordBot.Games.Blackjack;
 
 namespace DiscordBot.Managers
 {
-    public partial class CommandManager
+    public class GameManager
     {
-        private async Task GameRoulette(DiscordSocketClient client, SocketMessage message, List<string> args)
+        private readonly CoinService _coinService;
+        private readonly BlackjackManager _blackjackManager;
+        private readonly BetManager _betManager;
+
+        public GameManager(CoinService coinService, BlackjackManager blackjackManager, BetManager betManager)
+        {
+            _coinService = coinService;
+            _blackjackManager = blackjackManager;
+            _betManager = betManager;
+        }
+
+        public async Task GameRoulette(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count != 1)
                 throw new BadSyntaxException();
@@ -102,7 +113,7 @@ namespace DiscordBot.Managers
 
         }
 
-        private async Task GameBlackjack(DiscordSocketClient client, SocketMessage message, List<string> args)
+        public async Task GameBlackjack(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             var playerId = message.Author.Id;
 
@@ -124,24 +135,24 @@ namespace DiscordBot.Managers
             {
                 if (args[0].StartsWith("start"))//'.bj start'
                 {
-                    await _blackjackManager.Start(playerId, message);
+                    var msgs = await _blackjackManager.Start(playerId, message);
                     return;
                 }
                 else if (args[0].StartsWith("stay"))//'.bj stay'
                 {
-                    await _blackjackManager.Stay(playerId, message);
+                    var msg = await _blackjackManager.Stay(playerId, message);
                     return;
                 }
                 else if (args[0].StartsWith("hit"))//'.bj hit'
                 {
-                    await _blackjackManager.Hit(playerId, message);
+                    var msg = await _blackjackManager.Hit(playerId, message);
                     return;
                 }
             }
 
             if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
             {
-                await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
+                var msg = await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
             }
         }
 
