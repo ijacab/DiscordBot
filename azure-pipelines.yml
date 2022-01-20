@@ -16,6 +16,13 @@ variables:
 steps:
 - task: Bash@3
   continueOnError: true
+  displayName: export PATH="$PATH:$(DOTNET_PATH)"
+  inputs:
+    targetType: 'inline'
+    script: export PATH="$PATH:$(DOTNET_PATH)"
+- task: Bash@3
+  continueOnError: true
+  displayName: Display env variables
   inputs:
     targetType: 'inline'
     script: env
