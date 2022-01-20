@@ -4,6 +4,7 @@ After=graphical.target
 Requires=graphical.target
 
 [Service]
+Type=idle
 EnvironmentFile=/srv/DiscordBot/DiscordBot/DiscordBotEnv.conf
 # will set the Current Working Directory (CWD). Worker service will have issues without this setting
 WorkingDirectory=/srv/DiscordBot/DiscordBot
