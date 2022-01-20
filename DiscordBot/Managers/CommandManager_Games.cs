@@ -124,7 +124,19 @@ namespace DiscordBot.Managers
             {
                 if (args[0].StartsWith("start"))//'.bj start'
                 {
-                    await _blackjackManager.Start(playerId, message);
+                    try
+                    {
+                        await _blackjackManager.Start(playerId, message);
+                    }
+                    catch (NotInGameException)
+                    {
+                        if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount)) //'.bj 1000'
+                        {
+                            await _blackjackManager.CreateOrJoin(playerId, minBetAmount, message); //will throw an exception if player already in a game, don't need to check
+                            await _blackjackManager.Start(playerId, message);
+                        }
+                    }
+
                     return;
                 }
                 else if (args[0].StartsWith("stay"))//'.bj stay'

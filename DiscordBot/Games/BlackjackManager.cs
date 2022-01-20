@@ -74,8 +74,7 @@ namespace DiscordBot.Games
         {
             if (!TryGetPlayer(playerId, out _))
             {
-                await message.SendRichEmbedMessage("Error", $"You have not joined any games FUCK FACE, you can't start someone else's game. Type `.bj betAmount` to join/create a game.");
-                return;
+                throw new NotInGameException();
             }
 
             if (!IsGameStarted(playerId))
