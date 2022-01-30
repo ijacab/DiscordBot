@@ -16,6 +16,8 @@ using Newtonsoft.Json;
 using Common.Services;
 using System.Reflection;
 using DiscordBot.Models;
+using DiscordBot.Text;
+using DiscordBot.Games.Models.BattleArena;
 
 namespace DiscordBot.Managers
 {
@@ -375,7 +377,7 @@ namespace DiscordBot.Managers
 
         public async Task ImageSearchDbz(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            await ImageSearch(message, new List<string> { "dragon", "ball", "z"}, isAlwaysOn: true);
+            await ImageSearch(message, new List<string> { "dragon", "ball", "z" }, isAlwaysOn: true);
         }
 
         private async Task ImageSearch(SocketMessage message, List<string> args, bool isAlwaysOn = false)
@@ -434,6 +436,33 @@ namespace DiscordBot.Managers
         {
             using var stream = await _faceService.Run();
             await message.Channel.SendFileAsync(stream: stream, "image.jpg");
+        }
+
+        public async Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            bool save = false; //feature flag
+
+            using var faceStream = await _faceService.Run();
+
+            string dirName = "card_images";
+            string cardName = NameGenerator.GetGeneratedName(2);
+
+            var battlePerson = new BattlePerson(cardName);
+
+            string fileName = $"{battlePerson.Name}.jpg";
+
+            if (save)
+            {
+                if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
+
+                using var fileStream = File.Create(Path.Combine(dirName, fileName));
+                faceStream.Position = 0;
+                faceStream.CopyTo(fileStream);
+                fileStream.Close();
+            }
+
+            var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
+            await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
         }
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)

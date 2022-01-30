@@ -66,8 +66,10 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." });
             _commands.Add(new Command("time", Time) { Syntax = "`.time utc`" });
-            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true }); ;
-            _commands.Add(new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" }); ;
+            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true });
+            _commands.Add(new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" });
+
+            _commands.Add(new Command("cardpull", CardPull) { Description = "Gets a face card" });
 
             _commands.Add(new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" });
             _commands.Add(new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" });

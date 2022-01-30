@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Common.Helpers
@@ -18,6 +19,11 @@ namespace Common.Helpers
                  (?<=[A-Za-z])(?=[^A-Za-z])", RegexOptions.IgnorePatternWhitespace);
 
             return r.Replace(camelCaseString, " ");
+        }
+
+        public static string ToTitleCase(this string str)
+        {
+            return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(str.ToLower());
         }
     }
 }

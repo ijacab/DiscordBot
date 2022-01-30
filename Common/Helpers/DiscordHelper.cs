@@ -41,7 +41,7 @@ namespace Common.Helpers
             await channel.SendMessageAsync(embed: embed.Build());
         }
 
-        private static EmbedBuilder GetEmbedBuilder(string title, string messageContent)
+        public static EmbedBuilder GetEmbedBuilder(string title, string messageContent)
         {
             var embed = new EmbedBuilder();
             // Or with methods
