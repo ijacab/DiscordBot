@@ -78,13 +78,14 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = "`.age`" });
 
 
-            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`"});
+            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`" });
             _commands.Add(new Command("roll", Roll) { Syntax = "`.roll 1 100`" });
 
             _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".archiveleaderboard", RequiresAdmin = true, Hidden = true });
-            
+
             _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
             _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
+            _commands.Add(new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true));
 
             //bot commands
             _commands.Add(new Command("initiatebet", InitiateBet, hidden: true));
@@ -104,7 +105,7 @@ namespace DiscordBot.Managers
                 }
             }
 
-            if (message.Author.IsBot && 
+            if (message.Author.IsBot &&
                 !(message.Content.StartsWith(".initiatebet") || message.Content.StartsWith(".resolvebet"))) //This ignores all non bot commands from bots
                 return;
 
@@ -117,7 +118,7 @@ namespace DiscordBot.Managers
             }
 
             //filtering messages begin here
-            if (!message.Content.StartsWith('.') 
+            if (!message.Content.StartsWith('.')
                 || message.Content == "."
                 || message.Content == ".."
                 || message.Content == "..."

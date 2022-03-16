@@ -546,5 +546,13 @@ namespace DiscordBot.Managers
 
             await message.SendRichEmbedMessage($"{account.Name} donation stats", dictOutput);
         }
+
+        private async Task GetFreeSpace(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            string path = AppContext.BaseDirectory;
+            var drive = new DriveInfo(path);
+            double freeGB = drive.AvailableFreeSpace / 1024 / 1024 / 1024;
+            await message.Channel.SendMessageAsync($"Free space: {freeGB:#.##} GB");
+        }
     }
 }
