@@ -440,29 +440,63 @@ namespace DiscordBot.Managers
 
         public async Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            bool save = false; //feature flag
+            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
+            const string dirName = "card_images";
+
+            string cardName = NameGenerator.GetGeneratedName(2);
+            var battlePerson = new BattlePerson(cardName);
+
+            if (args.Count > 1 && args[0].StartsWith("keep"))
+            {
+                if (!ulong.TryParse(args[1].Substring(0, args[1].IndexOf("_")), out ulong userId)
+                    || userId != message.Author.Id)
+                {
+                    await message.SendRichEmbedMessage($"You are not the owner of this card. FUCK OFF");
+                    return;
+                }
+
+                string prefixToKeep = args[1];
+                string sourceFileName = $"{args[1]}_unsaved.jpg";
+                string targetFileName = $"{args[1]}.jpg";
+                if (File.Exists(Path.Combine(dirName, sourceFileName)))
+                {
+                    
+                    File.Copy(Path.Combine(dirName, sourceFileName), Path.Combine(dirName, targetFileName));
+                    File.Delete(Path.Combine(dirName, sourceFileName));
+                    battlePerson.FilePath = Path.Combine(dirName, targetFileName);
+
+                    coinAccount.BattlePerson = battlePerson;
+                    await _coinService.Update();
+                }
+                else
+                {
+                    await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
+                    return;
+                }
+
+            }
 
             using var faceStream = await _faceService.Run();
 
-            string dirName = "card_images";
-            string cardName = NameGenerator.GetGeneratedName(2);
+            string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ","")}_{DateTimeOffset.Now.Ticks}";
+            string fileName = $"{prefix}_unsaved.jpg";
 
-            var battlePerson = new BattlePerson(cardName);
+            if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
 
-            string fileName = $"{battlePerson.Name}.jpg";
+            using var fileStream = File.Create(Path.Combine(dirName, fileName));
+            faceStream.Position = 0;
+            faceStream.CopyTo(fileStream);
+            fileStream.Close();
 
-            if (save)
+            _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t =>
             {
-                if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
-
-                using var fileStream = File.Create(Path.Combine(dirName, fileName));
-                faceStream.Position = 0;
-                faceStream.CopyTo(fileStream);
-                fileStream.Close();
-            }
+                if (File.Exists(fileName))
+                    File.Delete(fileName);
+            });
 
             var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
-            await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
+            await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed, 
+                text: $"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):\n.cardpull keep {prefix}");
         }
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -552,7 +586,7 @@ namespace DiscordBot.Managers
             string path = AppContext.BaseDirectory;
             var drive = new DriveInfo(path);
             double freeGB = drive.AvailableFreeSpace / 1024 / 1024 / 1024;
-            await message.Channel.SendMessageAsync($"Free space: {freeGB:#.##} GB");
+            await message.Channel.SendMessageAsync($"Free space: {freeGB} GB");
         }
     }
 }

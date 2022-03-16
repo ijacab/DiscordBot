@@ -12,58 +12,53 @@ namespace DiscordBot.Games.Models.BattleArena
         public const double MaxCritChancePercent = 100;
         public const double MaxCritMultipler = 10;
 
-        public int Level { get; set; }
         public int Wins { get; set; }
         public int Losses { get; set; }
+        public int Draws { get; set; }
 
-        public double Attack { get; }
-        public double AttackBonusPerLevel { get; }
-        public double TotalAttack
+        [JsonProperty]
+        private double Attack { get; }
+        [JsonProperty]
+        private double AttackBonusPerLevel { get; }
+        public double GetTotalAttack(int level)
         {
-            get
-            {
-                double totalAttack = Attack + (AttackBonusPerLevel * Level);
-                return totalAttack > MaxAttack ? MaxAttack : totalAttack;
-            }
+            double totalAttack = Attack + (AttackBonusPerLevel * level);
+            return totalAttack > MaxAttack ? MaxAttack : totalAttack;
         }
 
-        public double Defense { get; }
-        public double DefenseBonusPerLevel { get; }
-        public double TotalDefense
+        [JsonProperty]
+        private double Defense { get; }
+        [JsonProperty]
+        private double DefenseBonusPerLevel { get; }
+        public double GetTotalDefense(int level)
         {
-            get
-            {
-                double totalDefense = Defense + (DefenseBonusPerLevel * Level);
-                return totalDefense > MaxDefense ? MaxDefense : totalDefense;
-            }
+            double totalDefense = Defense + (DefenseBonusPerLevel * level);
+            return totalDefense > MaxDefense ? MaxDefense : totalDefense;
         }
 
-        public double CritChancePercent { get; }
-        public double CritChancePercentBonusPerLevel { get; }
-        public double TotalCritChancePercent
+        [JsonProperty]
+        private double CritChancePercent { get; }
+        [JsonProperty]
+        private double CritChancePercentBonusPerLevel { get; }
+        public double GetTotalCritChancePercent(int level)
         {
-            get
-            {
-                double totalCritChancePercent = CritChancePercent + (CritChancePercentBonusPerLevel * Level);
-                return totalCritChancePercent > MaxCritChancePercent ? MaxCritChancePercent : totalCritChancePercent;
-            }
+            double totalCritChancePercent = CritChancePercent + (CritChancePercentBonusPerLevel * level);
+            return totalCritChancePercent > MaxCritChancePercent ? MaxCritChancePercent : totalCritChancePercent;
         }
 
-        public double CritMultiplier { get; }
-        public double CritMultiplierBonusPerLevel { get; }
-        public double TotalCritMultiplier
+        [JsonProperty]
+        private double CritMultiplier { get; }
+        [JsonProperty]
+        private double CritMultiplierBonusPerLevel { get; }
+        public double GetTotalCritMultiplier(int level)
         {
-            get
-            {
-                double totalCritMultiplier = CritMultiplier + (CritMultiplierBonusPerLevel * Level);
-                return totalCritMultiplier > MaxCritMultipler ? MaxCritMultipler : totalCritMultiplier;
-            }
+            double totalCritMultiplier = CritMultiplier + (CritMultiplierBonusPerLevel * level);
+            return totalCritMultiplier > MaxCritMultipler ? MaxCritMultipler : totalCritMultiplier;
+
         }
 
-
-
-        public BattleStats(double attack, double attackPerLevel, 
-            double defense, double defensePerLevel, 
+        public BattleStats(double attack, double attackPerLevel,
+            double defense, double defensePerLevel,
             double critChancePercent, double critChancePercentPerLevel,
             double critMultiplier, double critMultiplierPerLevel)
         {

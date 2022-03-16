@@ -67,6 +67,12 @@ namespace DiscordBot.Services
             return bonusGranted;
         }
 
+        public async Task Update()
+        {
+            string content = JsonConvert.SerializeObject(_coinAccounts);
+            await _fileService.UpdateContent(_fileName, content);
+        }
+
         public async Task ClearAll()
         {
             _coinAccounts = new CoinAccounts();

@@ -1,4 +1,5 @@
 ﻿using Discord.WebSocket;
+using DiscordBot.Games.Models.BattleArena;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -21,6 +22,7 @@ namespace DiscordBot.Models
             public string MostRecentDateBonusMet { get; set; }
             public int PrestigeLevel { get; set; } = 0;
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
+            public BattlePerson BattlePerson { get; set; }
             public double GetAmountRequiredForNextLevel()
             {
                 const int baseAmount = 100000;
