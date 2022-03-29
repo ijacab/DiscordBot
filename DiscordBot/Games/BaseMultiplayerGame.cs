@@ -5,23 +5,33 @@ using System.Linq;
 
 namespace DiscordBot.Games
 {
-    public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer
+    public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer, new()
     {
-        public Guid GameGuid { get; set; } = Guid.NewGuid();
+        public Guid GameGuid { get; } = Guid.NewGuid();
         public List<TPlayer> Players { get; protected set; }
         public bool Started = false;
+        public bool GameNeedsDealer = false;
 
-        public void Create(params TPlayer[] players)
+        public BaseMultiplayerGame()
         {
-            Players = new List<TPlayer>();
-            Players.AddRange(players);
         }
-        public void Join(TPlayer player)
+
+        public abstract double GetWinnings(TPlayer player);
+
+        public void Join(params TPlayer[] players)
         {
-            Players.Add(player);
+            if (Players == null)
+                Players = new List<TPlayer>();
+
+            if (GameNeedsDealer && !Players.Any(p => p.IsDealer))
+                Players.Add(new TPlayer() { IsDealer = true });
+
+            Players.AddRange(players);
         }
         public Guid Start()
         {
+            if (!Players.Any()) throw new Exception($"No players in the game {nameof(BaseMultiplayerGame<TPlayer>)}:${GameGuid}, it cannot start!");
+
             Started = true;
             return GameGuid;
         }
@@ -33,5 +43,7 @@ namespace DiscordBot.Games
         {
             return Players.First(p => p.IsDealer);
         }
+
+
     }
 }

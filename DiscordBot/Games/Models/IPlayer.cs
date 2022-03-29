@@ -15,5 +15,6 @@ namespace DiscordBot.Games.Models
         public double BonusWinnings { get; set; }
         public double TotalWinnings { get { return BaseWinnings + BonusWinnings; } }
         public bool IsDealer { get; set; }
+        public bool IsFinishedPlaying { get; set; }
     }
 }

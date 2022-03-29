@@ -13,123 +13,54 @@ using static DiscordBot.Models.CoinAccounts;
 
 namespace DiscordBot.Games
 {
-    public class BlackjackManager //should be singleton
+    public class BlackjackManager : BaseMultiplayerManager<Blackjack, BlackjackPlayer> //should be singleton
     {
-        public List<Blackjack> Games = new List<Blackjack>();
-        private const int _secondsToForceStartAfter = 30;
-        private const int _secondsToForceEndAfter = 90;
-
-        private readonly BetManager _betManager;
-        private readonly DiscordSocketClient _client;
-        private readonly CoinService _coinService;
+        public override string GameName => "Blackjack";
+        public override string BaseCommand => "bj";
+        public override string[] PlayCommands => new string[] { "hit", "stay" };
 
         public BlackjackManager(DiscordSocketClient client, BetManager betManager, CoinService coinService)
+            : base(client, betManager, coinService)
         {
-            _betManager = betManager;
-            _client = client;
-            _coinService = coinService;
         }
 
-        /// <returns>True if new game created, false if joining existing game.</returns>
-        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
+        protected override void PostStartActions(Blackjack game, IEnumerable<BlackjackPlayer> players)
         {
-            if (TryGetPlayer(playerId, out _))
+            foreach (var gamePlayer in players)
             {
-                var joinedGame = GetExisitingGame(playerId); //get the game that the player is in
-                if (joinedGame.Started)
-                    throw new BadInputException("You are already in a game. Can only play 1 game at once. \nType `.bj hit` or `.bj stay`.");
-                else
-                    throw new BadInputException("You are already in a game but it hasn't started yet. \nType `.bj start` to start or wait for the game to start automatically.");
+                Hit(gamePlayer.UserId);
+                Hit(gamePlayer.UserId);
             }
-
-            await _betManager.InitiateBet(playerId, message.Author.Username, inputMoney, 10);
-
-            var channel = message.Channel as SocketGuildChannel;
-            var guildId = channel.Guild.Id;
-            var player = new BlackjackPlayer(playerId, message.Channel.Id, guildId, inputMoney, message.Author.Username);
-
-            var openGame = Games.FirstOrDefault(g => g.Started == false);
-            if (openGame == null) //if no open games found, create new game
-            {
-                var newGame = new Blackjack(player);
-                Games.Add(newGame);
-
-                //timer on starting the game
-                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceStartAfter)).ContinueWith(t =>
-                //{
-                //    if (!newGame.Started)
-                //        Start(playerId);
-                //});
-                await message.SendRichEmbedMessage("Blackjack game created", $"If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.\nType `.bj start` to start the game.");
-            }
-            else
-            {
-                openGame.Join(player);
-                await message.SendRichEmbedMessage("Blackjack game joined", $"If anyone else wants to join they need to type `.bj betAmount` to join where 'betAmount' is the amount you want to bet. For example `.bj 1000`.\nType `.bj start` to start the game.");
-            }
-
+            var dealer = game.GetDealer();
+            game.Hit(dealer);
         }
 
-        public async Task Start(ulong playerId, SocketMessage message)
+        protected override void PreEndActions(Blackjack game)
         {
-            if (!TryGetPlayer(playerId, out _))
+            foreach (var player in game.Players)
             {
-                throw new NotInGameException();
-            }
-
-            if (!IsGameStarted(playerId))
-            {
-                Guid gameId = Start(playerId);
-
-                //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
-                {
-                    if (TryGetExisitingGame(gameId, out _))
-                    {
-                        await EndGameForced(gameId);
-                    }
-                });
-
-                var game = GetExisitingGame(playerId);
-                var players = game.Players.Where(p => !p.IsDealer);
-                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
-                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack game started", $"No one else can join this game now.", _client);
-
-                foreach (var gamePlayer in players)
-                {
-                    Hit(gamePlayer.UserId);
-                    Hit(gamePlayer.UserId);
-                }
-                var dealer = game.GetDealer();
-                game.Hit(dealer);
-
-                if (await EndGameIfAllPlayersFinished(playerId, _client, message))
-                    return;
-
-                await distinctServerChannelMappings.SendMessageToEachChannel("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client), _client);
-                await distinctServerChannelMappings.SendMessageToEachChannel("Blackjack", "Type `.bj hit` or `.bj stay` to play.", _client);
-            }
-            else
-            {
-                await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+                game.Stay(player);
             }
         }
-
-        /// <summary>
-        /// Starts game and returns the game Guid.
-        /// </summary>
-        private Guid Start(ulong playerId)
+        
+        protected override void DealerEndGameActions(Blackjack game)
         {
-            var game = GetExisitingGame(playerId);
-            return game.Start();
+            game.EndDealerTurn();
         }
 
-        public bool IsGameStarted(ulong playerId)
+        protected override string GetStartMessage(ulong playerId, DiscordSocketClient client)
         {
-            var game = GetExisitingGame(playerId);
-            return game.Started;
+            return GameBlackjackGetFormattedPlayerStanding(playerId, _client);
+        }
+
+        protected override string GetEndMessage(BlackjackPlayer player, string networthMessage)
+        {
+            return $"\n{player.Username}: {player.GetFormattedCards()}\n\t{networthMessage}";
+        }
+
+        protected override string GetDealerEndMessage(BlackjackPlayer dealer)
+        {
+            return $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
         }
 
         public async Task Hit(ulong playerId, SocketMessage message)
@@ -184,83 +115,6 @@ namespace DiscordBot.Games
             game.Stay(player);
         }
 
-        public bool AreAllPlayersInSameGameFinished(Blackjack game)
-        {
-            if (game.Players.Where(p => !p.IsDealer).Any(p => !p.IsFinishedPlaying))
-                return false;
-            else
-                return true;
-        }
-
-        public bool TryGetPlayer(ulong playerId, out BlackjackPlayer player)
-        {
-            player = null;
-            try
-            {
-                var game = GetExisitingGame(playerId);
-                player = game.GetPlayer(playerId);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-
-            if (player != null)
-                return true;
-            else
-                return false;
-        }
-
-        public Blackjack GetExisitingGame(ulong playerId)
-        {
-            var game = Games.FirstOrDefault(g => g.Players.Select(p => p.UserId).Contains(playerId));
-            if (game == null) throw new BadInputException("You are not in a game yet. Type '.bj \\*betAmount\\*' to create/join an open game.");
-            return game;
-        }
-
-        public Blackjack GetExisitingGame(Guid gameGuid)
-        {
-            var game = Games.FirstOrDefault(g => g.GameGuid == gameGuid);
-            if (game == null) throw new BadInputException("Game does not exist.");
-            return game;
-        }
-
-        public bool TryGetExisitingGame(ulong playerId, out Blackjack game)
-        {
-            game = null;
-            try
-            {
-                game = GetExisitingGame(playerId);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-
-            if (game != null)
-                return true;
-            else
-                return false;
-        }
-
-        public bool TryGetExisitingGame(Guid gameGuid, out Blackjack game)
-        {
-            game = null;
-            try
-            {
-                game = GetExisitingGame(gameGuid);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-
-            if (game != null)
-                return true;
-            else
-                return false;
-        }
-
         private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
         {
             string output = "";
@@ -277,83 +131,6 @@ namespace DiscordBot.Games
             return output;
         }
 
-        /// <returns>True if game ended, false if not.</returns>
-        private async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, DiscordSocketClient client, SocketMessage message)
-        {
-            var game = GetExisitingGame(playerId);
 
-            if(!AreAllPlayersInSameGameFinished(game))
-                return false;
-
-            await EndGame(game);
-            return true;
-        }
-
-        private async Task EndGameForced(Guid gameGuid)
-        {
-            var game = GetExisitingGame(gameGuid);
-            foreach (var player in game.Players)
-            {
-                game.Stay(player);
-            }
-
-            await EndGame(game);
-        }
-
-        private async Task EndGame(Blackjack game)
-        {
-            string title = "Blackjack game results:";
-            try
-            {
-                var playersInGame = PlayDealerAndCalculateWinnings(game);
-                Games.Remove(game);
-                var dealer = playersInGame.First(p => p.IsDealer);
-
-                string output = $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
-
-                var players = game.Players.Where(p => !p.IsDealer);
-                await _betManager.ResolveBet(players);
-                foreach (var player in players)
-                {
-                    CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
-                    string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
-                    output += $"\n{player.Username}: {player.GetFormattedCards()}" +
-                        $"\n\t${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
-                        $"\t{bonusLine}" +
-                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
-                }
-
-                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
-                await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client);
-            }
-            catch (Exception)
-            {
-                Games.Remove(game);
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// Ends the game that the player is in and returns a list the players in the game.
-        /// </summary>
-        private List<BlackjackPlayer> PlayDealerAndCalculateWinnings(Blackjack game)
-        {
-            if (AreAllPlayersInSameGameFinished(game) == false)
-                throw new Exception($"{nameof(BlackjackManager.PlayDealerAndCalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
-
-            game.EndDealerTurn();
-
-            var playerIdsInGame = game.Players.Where(p => !p.IsDealer).Select(p => p.UserId).ToList();
-
-            foreach (ulong playerIdInGame in playerIdsInGame)
-            {
-                TryGetPlayer(playerIdInGame, out var player);
-                player.BaseWinnings = game.GetWinnings(player);
-            }
-
-            return game.Players;
-        }
     }
 }

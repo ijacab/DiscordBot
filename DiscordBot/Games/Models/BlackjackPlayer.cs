@@ -5,22 +5,13 @@ using System.Text;
 
 namespace DiscordBot.Games.Models
 {
-    public class BlackjackPlayer : IPlayer
+    public class BlackjackPlayer : BasePlayer
     {
-        public bool IsDealer { get; set; } = false;
-        public ulong UserId { get; set; }
-        public string Username { get; set; }
-        public ulong ChannelId { get; set; }
-        public ulong ServerId { get; set; }
-
         public List<Card> Cards { get; set; } = new List<Card>();
-        public double BetAmount { get; set; }
-        public double BaseWinnings { get; set; }
-        public double BonusWinnings { get; set; }
-        public bool IsFinishedPlaying { get; set; } = false;
-        
+
 
         public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount, string username)
+            : base(userId, channelId, serverId, betAmount, username)
         {
             UserId = userId;
             ChannelId = channelId;
@@ -28,9 +19,10 @@ namespace DiscordBot.Games.Models
             BetAmount = betAmount;
             Username = username;
         }
-        public BlackjackPlayer()
+        public BlackjackPlayer() : base()
         {
         }
+
         public IEnumerable<int> GetPossibleTotalValues(bool returnOnlyNonBustValues = true)
         {
             return BlackjackPlayer.GetPossibleTotalValues(Cards, returnOnlyNonBustValues);

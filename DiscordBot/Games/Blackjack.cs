@@ -8,14 +8,12 @@ namespace DiscordBot.Games
 {
     public class Blackjack : BaseMultiplayerGame<BlackjackPlayer>
     {
-        private readonly CardDeck _deck;
-        public Blackjack(BlackjackPlayer startingPlayer)
-        {
-            _deck = new CardDeck(6);
-            var dealer = new BlackjackPlayer() { IsDealer = true };
-            Create(startingPlayer, dealer);
-        }
+        private readonly CardDeck _deck = new CardDeck(6);
 
+        public Blackjack()
+        {
+            GameNeedsDealer = true;
+        }
 
         public void Hit(BlackjackPlayer player)
         {
@@ -60,7 +58,7 @@ namespace DiscordBot.Games
             Stay(dealer);
         }
 
-        public double GetWinnings(BlackjackPlayer player)
+        public override double GetWinnings(BlackjackPlayer player)
         {
             BlackjackResultType result = Resolve(player);
 

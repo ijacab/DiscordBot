@@ -481,7 +481,7 @@ namespace DiscordBot.Managers
             string fileName = $"{prefix}_unsaved.jpg";
 
             if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
-
+            
             using var faceStream = await faceTask;
             using var fileStream = File.Create(Path.Combine(dirName, fileName));
             faceStream.Position = 0;

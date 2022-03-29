@@ -1,5 +1,4 @@
-﻿using Discord;
-using Discord.WebSocket;
+﻿using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
 using DiscordBot.Games.Models;
@@ -7,11 +6,8 @@ using Common.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
-using static DiscordBot.Games.Blackjack;
 
 namespace DiscordBot.Managers
 {
