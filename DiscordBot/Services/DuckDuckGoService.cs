@@ -42,7 +42,7 @@ namespace DiscordBot.Services
             var config = Configuration.Default.WithDefaultLoader();
             var browsingContext = BrowsingContext.New(config);
             var document = await browsingContext.OpenAsync(r => r.Content(content));
-            var vqdScript = document?.Head.GetElementsByTagName("script").Where(x => x.TextContent.Contains("vqd=")).SingleOrDefault();
+            var vqdScript = document?.Head.GetElementsByTagName("script").Where(x => x.TextContent.Contains("vqd='")).SingleOrDefault();
             var vqdScriptContent = vqdScript?.TextContent;
             var vqdStart = vqdScriptContent?.Substring(vqdScriptContent.IndexOf("vqd="));
             var remainingVqdScriptContentArray = vqdStart?.Split(';', StringSplitOptions.RemoveEmptyEntries);
