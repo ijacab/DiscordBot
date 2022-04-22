@@ -10,7 +10,9 @@ namespace DiscordBot.Games
         public Guid GameGuid { get; } = Guid.NewGuid();
         public List<TPlayer> Players { get; protected set; }
         public bool Started = false;
+        public bool Ended = false;
         public bool GameNeedsDealer = false;
+        public int MinimumRequiredPlayers = 1;
 
         public BaseMultiplayerGame()
         {
@@ -30,7 +32,7 @@ namespace DiscordBot.Games
         }
         public Guid Start()
         {
-            if (!Players.Any()) throw new Exception($"No players in the game {nameof(BaseMultiplayerGame<TPlayer>)}:${GameGuid}, it cannot start!");
+            if (Players.Count() < MinimumRequiredPlayers) throw new Exception($"Not enough players in the game ${GameGuid}, it cannot start! Need at least {MinimumRequiredPlayers} players.");
 
             Started = true;
             return GameGuid;

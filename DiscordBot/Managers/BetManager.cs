@@ -56,10 +56,11 @@ namespace DiscordBot.Managers
             InitiatedBetUserIds.Remove(userId);
         }
 
-        public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
+        public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> 
+            ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
         {
             if (!InitiatedBetUserIds.Contains(userId))
-                throw new Exception("Something's gone wrong here. Somehow it is trying to resolve bet which was not initiated.");
+                throw new Exception("Something's gone wrong here. Somehow it is trying to resolve a bet which was not initiated.");
 
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
@@ -111,8 +112,8 @@ namespace DiscordBot.Managers
                 if (i == players.Count())
                     updateRemote = true;
 
-                var resolveBet = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
-                player.BonusWinnings = resolveBet.BonusWinnings;
+                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
+                player.BonusWinnings = BonusWinnings; //this gets used outside of the method
                 i++;
             }
         }

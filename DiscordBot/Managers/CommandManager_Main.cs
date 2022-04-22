@@ -1,7 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
-using DiscordBot.Games;
+using DiscordBot.Games.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.Extensions.Logging;

@@ -8,10 +8,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using static DiscordBot.Games.Blackjack;
 using static DiscordBot.Models.CoinAccounts;
 
-namespace DiscordBot.Games
+namespace DiscordBot.Games.Managers
 {
     //should be singleton
     public abstract class BaseMultiplayerManager<TGame, TPlayer>
@@ -122,9 +121,9 @@ namespace DiscordBot.Games
                 //timer on ending the game
                 _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
                 {
-                    if (TryGetExisitingGame(gameId, out _))
+                    if (TryGetExisitingGame(gameId, out var game))
                     {
-                        await EndGameForced(gameId);
+                        await EndGame(game);
                     }
                 });
 
@@ -142,7 +141,7 @@ namespace DiscordBot.Games
 
                 string startMsg = GetStartMessage(playerId, _client);
 
-                if(!string.IsNullOrWhiteSpace(startMsg))
+                if (!string.IsNullOrWhiteSpace(startMsg))
                     await distinctServerChannelMappings.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
 
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
@@ -213,24 +212,6 @@ namespace DiscordBot.Games
             return game;
         }
 
-        public bool TryGetExisitingGame(ulong playerId, out TGame game)
-        {
-            game = null;
-            try
-            {
-                game = GetExisitingGame(playerId);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-
-            if (game != null)
-                return true;
-            else
-                return false;
-        }
-
         public bool TryGetExisitingGame(Guid gameGuid, out TGame game)
         {
             game = null;
@@ -263,21 +244,12 @@ namespace DiscordBot.Games
             return true;
         }
 
-
-
-        private async Task EndGameForced(Guid gameGuid)
-        {
-            var game = GetExisitingGame(gameGuid);
-
-            PreEndActions(game);
-
-            await EndGame(game);
-        }
-
         private async Task EndGame(TGame game)
         {
             if (AreAllPlayersInSameGameFinished(game) == false)
                 throw new Exception($"{nameof(BaseMultiplayerManager<TGame, TPlayer>.CalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
+
+            PreEndActions(game);
 
             string title = $"{GameName} game results:";
             try

@@ -50,7 +50,7 @@ namespace DiscordBot.Services
             return coinAccount;
         }
 
-        public async Task<bool> Update(ulong userId, double netWorth, string name, bool updateRemote = true)
+        public async Task Update(ulong userId, double netWorth, string name, bool updateRemote = true)
         {
             bool bonusGranted = false;
             var account = _coinAccounts.Accounts.First(a => a.UserId == userId);
@@ -63,8 +63,6 @@ namespace DiscordBot.Services
                 string content = JsonConvert.SerializeObject(_coinAccounts);
                 await _fileService.UpdateContent(_fileName, content);
             }
-
-            return bonusGranted;
         }
 
         public async Task Update()
