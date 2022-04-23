@@ -22,8 +22,8 @@ namespace DiscordBot.Games.Managers
         public abstract string[] PlayCommands { get; }
 
         public List<TGame> Games = new List<TGame>();
-        protected const int _secondsToForceStartAfter = 30;
-        protected const int _secondsToForceEndAfter = 90;
+        protected int SecondsToForceStartAfter = 30;
+        protected int SecondsToForceEndAfter = 90;
 
         protected readonly BetManager _betManager;
         protected readonly DiscordSocketClient _client;
@@ -119,10 +119,11 @@ namespace DiscordBot.Games.Managers
                 Guid gameId = Start(playerId);
 
                 //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceEndAfter)).ContinueWith(async t =>
                 {
                     if (TryGetExisitingGame(gameId, out var game))
                     {
+                        game.Players.ForEach(p => p.IsFinishedPlaying = true);
                         await EndGame(game);
                     }
                 });
@@ -149,7 +150,7 @@ namespace DiscordBot.Games.Managers
             }
             else
             {
-                string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}"; //move these props to the manager actually
+                string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
                 await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
             }
         }

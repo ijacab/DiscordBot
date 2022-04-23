@@ -11,6 +11,8 @@ namespace DiscordBot.Games
     public class BattleArena : BaseMultiplayerGame<BattleArenaPlayer>
     {
         private const int MaxDice = 3;
+        internal List<BattleArenaPlayer> PlayersWaitingToAttack;
+
         public List<BattleArenaPlayer> DeathOrderList = new List<BattleArenaPlayer>();
         public List<BattleArenaPlayer> PlayerRanking => Players.OrderByDescending(p => p.HitPoints).ToList();
         
@@ -18,6 +20,7 @@ namespace DiscordBot.Games
         public BattleArena()
         {
             MinimumRequiredPlayers = 2;
+            PlayersWaitingToAttack = new List<BattleArenaPlayer>(Players);
         }
 
         public override double GetWinnings(BattleArenaPlayer player)

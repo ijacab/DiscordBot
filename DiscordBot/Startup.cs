@@ -4,6 +4,7 @@ using Common.Services;
 using Discord;
 using Discord.WebSocket;
 using DiscordBot.Games;
+using DiscordBot.Games.Managers;
 using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -56,6 +57,7 @@ namespace DiscordBot
             services.AddSingleton<MessageHandler>();
             services.AddTransient<StrawmanChecker>();
             services.AddSingleton<BlackjackManager>();
+            services.AddSingleton<BattleArenaManager>();
             services.AddScoped<DuckDuckGoService>();
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();

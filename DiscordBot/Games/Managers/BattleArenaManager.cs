@@ -1,9 +1,10 @@
-﻿using Common.Helpers;
+﻿ using Common.Helpers;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
 using DiscordBot.Managers;
 using DiscordBot.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,9 +18,12 @@ namespace DiscordBot.Games.Managers
         public override string BaseCommand => "fo";
         public override string[] PlayCommands => new string[] { "roll `numberOfDice`" };
 
+        private const int SecondsToForceAttackAfter = 30;
+
         public BattleArenaManager(DiscordSocketClient client, BetManager betManager, CoinService coinService)
             : base(client, betManager, coinService)
         {
+            SecondsToForceEndAfter = 200;
         }
 
         protected override void PostStartActions(BattleArena game, IEnumerable<BattleArenaPlayer> players)
@@ -87,6 +91,7 @@ namespace DiscordBot.Games.Managers
         public async Task Roll(ulong playerId, int numberOfDice, SocketMessage message, DiscordSocketClient client)
         {
             var game = GetExisitingGame(playerId);
+
             TryGetPlayer(playerId, out var player);
 
             var diceResults = game.RollDice(numberOfDice, player);
@@ -97,6 +102,21 @@ namespace DiscordBot.Games.Managers
             }
             await EndGameIfAllPlayersFinished(playerId, client, message);
             await message.SendRichEmbedMessage($"{player.Username}'s dice rolls", output);
+
+            game.PlayersWaitingToAttack.Remove(player);
+            if(game.PlayersWaitingToAttack.Count == 0)
+            {
+                game.PlayersWaitingToAttack = new List<BattleArenaPlayer>(game.Players);
+            }
+            else if(game.PlayersWaitingToAttack.Count == 1)
+            {
+                //timer on ending the game
+                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceAttackAfter)).ContinueWith(async t =>
+                {
+                    var playerToForceAttack = game.PlayersWaitingToAttack.First();
+                    await Roll(playerToForceAttack.UserId, 3, message, client);
+                });
+            }
         }
 
     }
