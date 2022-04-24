@@ -1,4 +1,5 @@
-﻿using DiscordBot.Games.Models;
+﻿using DiscordBot.Exceptions;
+using DiscordBot.Games.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +9,7 @@ namespace DiscordBot.Games
     public abstract class BaseMultiplayerGame<TPlayer> where TPlayer : IPlayer, new()
     {
         public Guid GameGuid { get; } = Guid.NewGuid();
-        public List<TPlayer> Players { get; protected set; }
+        public List<TPlayer> Players { get; protected set; } = new List<TPlayer>();
         public bool Started = false;
         public bool Ended = false;
         public bool GameNeedsDealer = false;
@@ -22,9 +23,6 @@ namespace DiscordBot.Games
 
         public void Join(params TPlayer[] players)
         {
-            if (Players == null)
-                Players = new List<TPlayer>();
-
             if (GameNeedsDealer && !Players.Any(p => p.IsDealer))
                 Players.Add(new TPlayer() { IsDealer = true });
 
@@ -32,7 +30,7 @@ namespace DiscordBot.Games
         }
         public Guid Start()
         {
-            if (Players.Count() < MinimumRequiredPlayers) throw new Exception($"Not enough players in the game ${GameGuid}, it cannot start! Need at least {MinimumRequiredPlayers} players.");
+            if (Players.Count() < MinimumRequiredPlayers) throw new BadInputException($"Not enough players in the game {GameGuid}, it cannot start! Need at least {MinimumRequiredPlayers} players.");
 
             Started = true;
             return GameGuid;
