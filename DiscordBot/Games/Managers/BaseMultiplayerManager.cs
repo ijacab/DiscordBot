@@ -58,6 +58,7 @@ namespace DiscordBot.Games.Managers
         /// <returns>True if new game created, false if joining existing game.</returns>
         public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
         {
+            //try to get the player
             if (TryGetPlayer(playerId, out _))
             {
                 var joinedGame = GetExisitingGame(playerId); //get the game that the player is in
