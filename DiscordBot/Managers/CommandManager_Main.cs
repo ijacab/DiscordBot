@@ -1,7 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
-using DiscordBot.Games;
+using DiscordBot.Games.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.Extensions.Logging;
@@ -24,6 +24,7 @@ namespace DiscordBot.Managers
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
         private readonly BetManager _betManager;
+        private readonly BattleArenaManager _battleArenaManager;
         private Dictionary<string, string> _customMappings;
         private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
         private int _argCharLimit = 950;
@@ -34,7 +35,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager)
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -45,6 +46,7 @@ namespace DiscordBot.Managers
             _faceService = faceService;
             _blackjackManager = blackjackManager;
             _betManager = betManager;
+            _battleArenaManager = battleArenaManager;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
 
             //need to add new commands in here as they are created
@@ -56,6 +58,10 @@ namespace DiscordBot.Managers
 
             _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
             _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
+
+            _commands.Add(new Command("faceoff", GameBlackjack) { Description = "Plays a multiplayer faceoff game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
+            _commands.Add(new Command("fo", GameBlackjack) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
+
 
             _commands.Add(new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" });
             _commands.Add(new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true });

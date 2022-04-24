@@ -4,6 +4,7 @@ using Common.Services;
 using Discord;
 using Discord.WebSocket;
 using DiscordBot.Games;
+using DiscordBot.Games.Managers;
 using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -31,14 +32,6 @@ namespace DiscordBot
             var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
             services.AddSingleton<AppSettings>(appSettings);
 
-            services.AddTransient<GistSettings>(sp =>
-            {
-                var settings = new GistSettings();
-                settings.UserName = EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_USERNAME");
-                settings.Id = EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_GIST_ID");
-                return settings;
-            });
-
             services.AddSingleton<DiscordSocketClient>(sp => 
                 {
                     var config = new DiscordSocketConfig()
@@ -56,40 +49,19 @@ namespace DiscordBot
             services.AddSingleton<MessageHandler>();
             services.AddTransient<StrawmanChecker>();
             services.AddSingleton<BlackjackManager>();
+            services.AddSingleton<BattleArenaManager>();
             services.AddScoped<DuckDuckGoService>();
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();
 
-            services.AddHttpClient<GistService>(h =>
-            {
-                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot");
-                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
-            });
-
-            services.AddHttpClient<StrawmanChecker>(h =>
-            {
-                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
-                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariableOrThrow("GITHUB_PAT_TOKEN")}");
-            });
-
-            services.AddHttpClient<FaceService>(h =>
-            {
-                h.BaseAddress = new Uri(@"https://thispersondoesnotexist.com");
-                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
-            });
-
-            services.AddHostedService<ChatWorker>();
-            services.AddHostedService<WebAlerterWorker>();
             services.AddControllers();
             services.AddCors(options =>
-                             {
-                                 options.AddPolicy("CorsPolicy",
-                                     builder => builder.AllowAnyOrigin()
-                                     .AllowAnyMethod()
-                                     .AllowAnyHeader());
-                             });
+            {
+                options.AddPolicy("CorsPolicy",
+                    builder => builder.AllowAnyOrigin()
+                    .AllowAnyMethod()
+                    .AllowAnyHeader());
+            });
 
 
             services.Configure<ForwardedHeadersOptions>(options =>
@@ -101,13 +73,45 @@ namespace DiscordBot
 
 
             });
+
+            services.AddTransient<GistSettings>(sp =>
+            {
+                var settings = new GistSettings();
+                settings.UserName = EnvironmentHelper.GetEnvironmentVariable("GITHUB_USERNAME", false);
+                settings.Id = EnvironmentHelper.GetEnvironmentVariable("GITHUB_GIST_ID", false);
+                return settings;
+            });
+
+            services.AddHttpClient<GistService>(h =>
+            {
+                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot");
+                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariable("GITHUB_PAT_TOKEN", false)}");
+            });
+
+            services.AddHttpClient<StrawmanChecker>(h =>
+            {
+                h.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
+                h.DefaultRequestHeaders.Add("Authorization", $"token { EnvironmentHelper.GetEnvironmentVariable("GITHUB_PAT_TOKEN", false)}");
+            });
+
+            services.AddHttpClient<FaceService>(h =>
+            {
+                h.BaseAddress = new Uri(@"https://thispersondoesnotexist.com");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
+            });
+
+            services.AddHostedService<ChatWorker>();
+            services.AddHostedService<WebAlerterWorker>();
+
         }
 
         public void Configure(IApplicationBuilder app)
         {
             app.UseForwardedHeaders();
 
-            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("IS_HEROKU")))
+            if (!string.IsNullOrEmpty(EnvironmentHelper.GetEnvironmentVariable("IS_HEROKU", false)))
             {
                 Console.WriteLine("Use https redirection");
                 app.UseHttpsRedirection();

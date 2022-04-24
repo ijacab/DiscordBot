@@ -8,13 +8,9 @@ namespace DiscordBot.Games.Models.BattleArena
     public class BattleStats
     {
         public const double MaxAttack = 100;
-        public const double MaxDefense = 100;
+        public const double MaxDefense = 75;
         public const double MaxCritChancePercent = 100;
-        public const double MaxCritMultipler = 10;
-
-        public int Wins { get; set; }
-        public int Losses { get; set; }
-        public int Draws { get; set; }
+        public const double MaxCritMultipler = 2;
 
         [JsonProperty]
         private double Attack { get; }
@@ -36,15 +32,15 @@ namespace DiscordBot.Games.Models.BattleArena
             return totalDefense > MaxDefense ? MaxDefense : totalDefense;
         }
 
-        [JsonProperty]
-        private double CritChancePercent { get; }
-        [JsonProperty]
-        private double CritChancePercentBonusPerLevel { get; }
-        public double GetTotalCritChancePercent(int level)
-        {
-            double totalCritChancePercent = CritChancePercent + (CritChancePercentBonusPerLevel * level);
-            return totalCritChancePercent > MaxCritChancePercent ? MaxCritChancePercent : totalCritChancePercent;
-        }
+        //[JsonProperty]
+        //private double CritChancePercent { get; }
+        //[JsonProperty]
+        //private double CritChancePercentBonusPerLevel { get; }
+        //public double GetTotalCritChancePercent(int level)
+        //{
+        //    double totalCritChancePercent = CritChancePercent + (CritChancePercentBonusPerLevel * level);
+        //    return totalCritChancePercent > MaxCritChancePercent ? MaxCritChancePercent : totalCritChancePercent;
+        //}
 
         [JsonProperty]
         private double CritMultiplier { get; }
@@ -66,8 +62,8 @@ namespace DiscordBot.Games.Models.BattleArena
             AttackBonusPerLevel = attackPerLevel;
             Defense = defense;
             DefenseBonusPerLevel = defensePerLevel;
-            CritChancePercent = critChancePercent;
-            CritChancePercentBonusPerLevel = critChancePercentPerLevel;
+            //CritChancePercent = critChancePercent;
+            //CritChancePercentBonusPerLevel = critChancePercentPerLevel;
             CritMultiplier = critMultiplier;
             CritMultiplierBonusPerLevel = critMultiplierPerLevel;
         }

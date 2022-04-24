@@ -13,16 +13,15 @@ namespace DiscordBot.Games.Models.BattleArena
 
         public string Name { get; }
         public int Level { get; set; }
-        public string FilePath { get; set; } 
+        public string FilePath { get; set; }
 
         //battle stats
         public double Attack => _battleStats.GetTotalAttack(Level);
         public double Defense => _battleStats.GetTotalDefense(Level);
         public double CritMultiplier => _battleStats.GetTotalCritMultiplier(Level);
-        public double CritChancePercent => _battleStats.GetTotalCritChancePercent(Level);
-        public int Wins => _battleStats.Wins;
-        public int Losses => _battleStats.Losses;
-        public int Draws => _battleStats.Draws;
+        //public double CritChancePercent => _battleStats.GetTotalCritChancePercent(Level);
+        public int Wins { get; set; }
+        public int Losses { get; set; }
 
         //other stats
         public double BonusBetRewardPercent => _otherStats.GetTotalBonusBetRewardPercent(Level);

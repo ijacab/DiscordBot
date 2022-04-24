@@ -460,7 +460,10 @@ namespace DiscordBot.Managers
                 string sourceFileName = $"{args[1]}_unsaved.jpg";
                 string targetFileName = $"{args[1]}.jpg";
                 if (File.Exists(Path.Combine(dirName, sourceFileName)))
-                {   
+                {
+                    if (File.Exists(coinAccount.BattlePerson.FilePath))
+                        File.Delete(coinAccount.BattlePerson.FilePath);
+
                     File.Copy(Path.Combine(dirName, sourceFileName), Path.Combine(dirName, targetFileName));
                     File.Delete(Path.Combine(dirName, sourceFileName));
                     battlePerson.FilePath = Path.Combine(dirName, targetFileName);
@@ -472,33 +475,35 @@ namespace DiscordBot.Managers
                 else
                 {
                     await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
-                    return;
                 }
 
             }
-
-            string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ","")}_{DateTimeOffset.Now.Ticks}";
-            string fileName = $"{prefix}_unsaved.jpg";
-
-            if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
-            
-            using var faceStream = await faceTask;
-            using var fileStream = File.Create(Path.Combine(dirName, fileName));
-            faceStream.Position = 0;
-            faceStream.CopyTo(fileStream);
-            fileStream.Close();
-
-            faceStream.Position = 0; //reset position again so we can send the stream to the channel
-
-            _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t =>
+            else
             {
-                if (File.Exists(fileName))
-                    File.Delete(fileName);
-            });
 
-            var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
-            await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
-            await message.SendRichEmbedMessage($"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):", $".cardpull keep {prefix}");
+                string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
+                string fileName = $"{prefix}_unsaved.jpg";
+
+                if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
+
+                using var faceStream = await faceTask;
+                using var fileStream = File.Create(Path.Combine(dirName, fileName));
+                faceStream.Position = 0;
+                faceStream.CopyTo(fileStream);
+                fileStream.Close();
+
+                faceStream.Position = 0; //reset position again so we can send the stream to the channel
+
+                _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t =>
+                {
+                    if (File.Exists(fileName))
+                        File.Delete(fileName);
+                });
+
+                var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
+                await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
+                await message.SendRichEmbedMessage($"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):", $".cardpull keep {prefix}");
+            }
         }
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)

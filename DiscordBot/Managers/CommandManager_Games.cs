@@ -32,7 +32,7 @@ namespace DiscordBot.Managers
                 //each 'input' looks like e.g. red-1000
                 string[] inputParams = input.Split('-');
 
-                if(!TryExtractBetAmount(inputParams, coinAccount, out double betAmount, betAmountIndex: 1))
+                if (!TryExtractBetAmount(inputParams, coinAccount, out double betAmount, betAmountIndex: 1))
                     throw new BadSyntaxException();
 
                 inputBets.Add(new RouletteBet(userId, inputParams[0], betAmount));
@@ -58,7 +58,7 @@ namespace DiscordBot.Managers
 
                 resultString = resultString.TrimEnd(' ').TrimEnd(',');
 
-                 winningBets = resultTuple.Item2;
+                winningBets = resultTuple.Item2;
             }
             catch (Exception)
             {
@@ -150,6 +150,60 @@ namespace DiscordBot.Managers
             if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
             {
                 await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
+            }
+        }
+
+        private async Task GameFaceOff(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var playerId = message.Author.Id;
+
+            //args valid inputs:
+            //1000|any numbers - create or join game with 1000 as your bet
+            //r|roll - blackjack stay action
+            //start - start the game without waiting
+
+            if (_battleArenaManager.TryGetPlayer(playerId, out var player)
+                && player.IsFinishedPlaying) //IsFinishedPlaying will be set to true if player is in a game but it has not finished. 
+            {
+                await message.SendRichEmbedMessage($"You are still in a game but your turn is over. Once it ends and bets are calculated you can join another game.");
+                return;
+            }
+
+            CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+            if (args.Count() > 0)
+            {
+                if (args[0].StartsWith("start"))
+                {
+                    try
+                    {
+                        await _battleArenaManager.Start(playerId, message);
+                    }
+                    catch (NotInGameException)
+                    {
+                        if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount))
+                        {
+                            await _battleArenaManager.CreateOrJoin(playerId, minBetAmount, message); //will throw an exception if player already in a game, don't need to check
+                            await _battleArenaManager.Start(playerId, message);
+                        }
+                    }
+
+                    return;
+                }
+                else if (args[0].StartsWith("r"))//'.fo roll'
+                {
+                    if (!int.TryParse(args[1], out int numberOfDice))
+                    {
+                        numberOfDice = 3;
+                    }
+
+                    await _battleArenaManager.Roll(playerId, numberOfDice, message, client);
+                    return;
+                }
+            }
+
+            if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.fo 1000'
+            {
+                await _battleArenaManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
             }
         }
 

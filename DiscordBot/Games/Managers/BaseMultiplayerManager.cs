@@ -8,10 +8,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using static DiscordBot.Games.Blackjack;
 using static DiscordBot.Models.CoinAccounts;
 
-namespace DiscordBot.Games
+namespace DiscordBot.Games.Managers
 {
     //should be singleton
     public abstract class BaseMultiplayerManager<TGame, TPlayer>
@@ -23,8 +22,8 @@ namespace DiscordBot.Games
         public abstract string[] PlayCommands { get; }
 
         public List<TGame> Games = new List<TGame>();
-        protected const int _secondsToForceStartAfter = 30;
-        protected const int _secondsToForceEndAfter = 90;
+        protected int SecondsToForceStartAfter = 30;
+        protected int SecondsToForceEndAfter = 90;
 
         protected readonly BetManager _betManager;
         protected readonly DiscordSocketClient _client;
@@ -120,11 +119,12 @@ namespace DiscordBot.Games
                 Guid gameId = Start(playerId);
 
                 //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceEndAfter)).ContinueWith(async t =>
+                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceEndAfter)).ContinueWith(async t =>
                 {
-                    if (TryGetExisitingGame(gameId, out _))
+                    if (TryGetExisitingGame(gameId, out var game))
                     {
-                        await EndGameForced(gameId);
+                        game.Players.ForEach(p => p.IsFinishedPlaying = true);
+                        await EndGame(game);
                     }
                 });
 
@@ -142,7 +142,7 @@ namespace DiscordBot.Games
 
                 string startMsg = GetStartMessage(playerId, _client);
 
-                if(!string.IsNullOrWhiteSpace(startMsg))
+                if (!string.IsNullOrWhiteSpace(startMsg))
                     await distinctServerChannelMappings.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
 
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
@@ -150,7 +150,7 @@ namespace DiscordBot.Games
             }
             else
             {
-                string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}"; //move these props to the manager actually
+                string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
                 await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
             }
         }
@@ -213,24 +213,6 @@ namespace DiscordBot.Games
             return game;
         }
 
-        public bool TryGetExisitingGame(ulong playerId, out TGame game)
-        {
-            game = null;
-            try
-            {
-                game = GetExisitingGame(playerId);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-
-            if (game != null)
-                return true;
-            else
-                return false;
-        }
-
         public bool TryGetExisitingGame(Guid gameGuid, out TGame game)
         {
             game = null;
@@ -263,21 +245,12 @@ namespace DiscordBot.Games
             return true;
         }
 
-
-
-        private async Task EndGameForced(Guid gameGuid)
-        {
-            var game = GetExisitingGame(gameGuid);
-
-            PreEndActions(game);
-
-            await EndGame(game);
-        }
-
         private async Task EndGame(TGame game)
         {
             if (AreAllPlayersInSameGameFinished(game) == false)
                 throw new Exception($"{nameof(BaseMultiplayerManager<TGame, TPlayer>.CalculateWinnings)}: Something went wrong. All players should have finished the game before this method is called, but they have not.");
+
+            PreEndActions(game);
 
             string title = $"{GameName} game results:";
             try

@@ -4,14 +4,11 @@ using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
 using DiscordBot.Managers;
 using DiscordBot.Services;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using static DiscordBot.Games.Blackjack;
-using static DiscordBot.Models.CoinAccounts;
 
-namespace DiscordBot.Games
+namespace DiscordBot.Games.Managers
 {
     public class BlackjackManager : BaseMultiplayerManager<Blackjack, BlackjackPlayer> //should be singleton
     {
