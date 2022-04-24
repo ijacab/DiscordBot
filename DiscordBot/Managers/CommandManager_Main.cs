@@ -59,8 +59,8 @@ namespace DiscordBot.Managers
             _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
             _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
 
-            _commands.Add(new Command("faceoff", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
-            _commands.Add(new Command("fo", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
+            _commands.Add(new Command("faceoff", GameBlackjack) { Description = "Plays a multiplayer faceoff game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
+            _commands.Add(new Command("fo", GameBlackjack) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
 
 
             _commands.Add(new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" });

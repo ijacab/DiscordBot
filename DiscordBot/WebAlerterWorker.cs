@@ -27,7 +27,7 @@ namespace DiscordBot
 
         public async Task StartDiscordClient()
         {
-            string token = EnvironmentHelper.GetEnvironmentVariableOrThrow("DiscordBotToken");
+            string token = EnvironmentHelper.GetEnvironmentVariable("DiscordBotToken");
 
             if (_client.LoginState == LoginState.LoggedOut)
             {

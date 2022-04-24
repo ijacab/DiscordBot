@@ -120,8 +120,8 @@ namespace WebAlerter
 
         private async Task<StrawmanTradesCollection> GetMemberTradesCollection(string memberName)
         {
-            string su = Decode(EnvironmentHelper.GetEnvironmentVariableOrThrow("S_U"));
-            string sp = Decode(EnvironmentHelper.GetEnvironmentVariableOrThrow("S_P"));
+            string su = Decode(EnvironmentHelper.GetEnvironmentVariable("S_U"));
+            string sp = Decode(EnvironmentHelper.GetEnvironmentVariable("S_P"));
 
             var collection = new StrawmanTradesCollection()
             {
