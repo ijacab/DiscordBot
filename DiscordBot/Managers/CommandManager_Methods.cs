@@ -461,7 +461,7 @@ namespace DiscordBot.Managers
                 string targetFileName = $"{args[1]}.jpg";
                 if (File.Exists(Path.Combine(dirName, sourceFileName)))
                 {
-                    if (File.Exists(coinAccount.BattlePerson.FilePath))
+                    if (coinAccount.BattlePerson != null && File.Exists(coinAccount.BattlePerson.FilePath))
                         File.Delete(coinAccount.BattlePerson.FilePath);
 
                     File.Copy(Path.Combine(dirName, sourceFileName), Path.Combine(dirName, targetFileName));
