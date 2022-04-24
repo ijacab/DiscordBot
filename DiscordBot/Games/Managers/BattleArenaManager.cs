@@ -16,7 +16,7 @@ namespace DiscordBot.Games.Managers
     {
         public override string GameName => "Face Off";
         public override string BaseCommand => "fo";
-        public override string[] PlayCommands => new string[] { "roll `numberOfDice`" };
+        public override string[] PlayCommands => new string[] { "roll numberOfDice" };
 
         private const int SecondsToForceAttackAfter = 30;
 

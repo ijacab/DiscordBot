@@ -170,6 +170,13 @@ namespace DiscordBot.Managers
             }
 
             CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+
+            if(coinAccount.BattlePerson == null)
+            {
+                await message.SendRichEmbedMessage("Missing Battle Person", $"You can't fight without a card. Type `.cardpull` to get one.");
+                return;
+            }
+
             if (args.Count() > 0)
             {
                 if (args[0].StartsWith("start"))
