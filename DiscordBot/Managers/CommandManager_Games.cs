@@ -203,7 +203,7 @@ namespace DiscordBot.Managers
                         numberOfDice = 3;
                     }
 
-                    await _battleArenaManager.Roll(playerId, numberOfDice, message, client);
+                    await _battleArenaManager.Roll(player, numberOfDice, message, client);
                     return;
                 }
             }
