@@ -10,7 +10,7 @@ namespace DiscordBot.Games.Models
     {
         public double HitPoints { get; set; } = 100;
         public bool IsDead => HitPoints <= 0;
-        public BattlePerson BattlePerson { get; set; }
+        public bool HasRolled = false;
 
         public string GetFormattedStanding()
         {

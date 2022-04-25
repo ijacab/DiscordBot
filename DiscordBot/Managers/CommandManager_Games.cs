@@ -41,7 +41,7 @@ namespace DiscordBot.Managers
             double inputMoney = 0;
             inputBets.Where(b => b.RoulleteBetType != BetType.NotValid).ToList().ForEach(b => inputMoney += b.Amount);
 
-            await _betManager.InitiateBet(userId, message.Author.Username, inputMoney, 10);
+            await _betManager.InitiateBet(coinAccount, inputMoney, 10);
 
             string resultString = "";
             List<RouletteBet> winningBets;

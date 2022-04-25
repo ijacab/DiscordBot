@@ -45,9 +45,9 @@ namespace DiscordBot.Games.Managers
             game.EndDealerTurn();
         }
 
-        protected override string GetStartMessage(ulong playerId, DiscordSocketClient client)
+        protected override string GetStartMessage(BlackjackPlayer player)
         {
-            return GameBlackjackGetFormattedPlayerStanding(playerId, _client);
+            return GameBlackjackGetFormattedPlayerStanding(player);
         }
 
         protected override string GetEndMessage(BlackjackPlayer player, string networthMessage)
@@ -62,7 +62,7 @@ namespace DiscordBot.Games.Managers
 
         public async Task Hit(ulong playerId, SocketMessage message)
         {
-            if (!TryGetPlayer(playerId, out _))
+            if (!TryGetPlayer(playerId, out var player))
                 throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
 
             if (!IsGameStarted(playerId))
@@ -70,9 +70,9 @@ namespace DiscordBot.Games.Managers
 
             Hit(playerId);
 
-            if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
+            if (!await EndGameIfAllPlayersFinished(playerId, message))
             {
-                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(player));
             }
         }
 
@@ -88,7 +88,7 @@ namespace DiscordBot.Games.Managers
 
         public async Task Stay(ulong playerId, SocketMessage message)
         {
-            if (!TryGetPlayer(playerId, out _))
+            if (!TryGetPlayer(playerId, out var player))
                 throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
 
             if (!IsGameStarted(playerId))
@@ -96,9 +96,9 @@ namespace DiscordBot.Games.Managers
 
             Stay(playerId);
 
-            if (!await EndGameIfAllPlayersFinished(playerId, _client, message))
+            if (!await EndGameIfAllPlayersFinished(playerId, message))
             {
-                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(playerId, _client));
+                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(player));
             }
         }
 
@@ -112,17 +112,17 @@ namespace DiscordBot.Games.Managers
             game.Stay(player);
         }
 
-        private string GameBlackjackGetFormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
+        private string GameBlackjackGetFormattedPlayerStanding(BlackjackPlayer player)
         {
             string output = "";
-            var game = GetExisitingGame(playerId);
+            var game = GetExisitingGame(player.UserId);
 
             var dealer = game.GetDealer();
             output += $"**Dealer**: {dealer.GetFormattedCards()}\n\n";
 
-            foreach (var player in game.Players.Where(p => !p.IsDealer))
+            foreach (var bjPlayers in game.Players.Where(p => !p.IsDealer))
             {
-                output += $"{client.GetUser(player.UserId).Username}: {player.GetFormattedCards()}\n";
+                output += $"{bjPlayers.Username}: {bjPlayers.GetFormattedCards()}\n";
             }
 
             return output;

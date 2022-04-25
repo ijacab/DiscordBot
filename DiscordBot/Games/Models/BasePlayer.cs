@@ -1,7 +1,9 @@
-﻿using System;
+﻿using DiscordBot.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using static DiscordBot.Models.CoinAccounts;
 
 namespace DiscordBot.Games.Models
 {
@@ -16,20 +18,10 @@ namespace DiscordBot.Games.Models
         public double BonusWinnings { get; set; }
         public bool IsDealer { get; set; } = false;
         public bool IsFinishedPlaying { get; set; } = false;
+        public CoinAccount CoinAccount { get; set; }
 
         public BasePlayer()
         {
         }
-
-        public BasePlayer(ulong userId, ulong channelId, ulong serverId, double betAmount, string username)
-        {
-            UserId = userId;
-            ChannelId = channelId;
-            ServerId = serverId;
-            BetAmount = betAmount;
-            Username = username;
-        }
-
-
     }
 }

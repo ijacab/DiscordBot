@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using static DiscordBot.Models.CoinAccounts;
 
 namespace DiscordBot.Games.Models
 {
@@ -16,5 +17,6 @@ namespace DiscordBot.Games.Models
         public double TotalWinnings { get { return BaseWinnings + BonusWinnings; } }
         public bool IsDealer { get; set; }
         public bool IsFinishedPlaying { get; set; }
+        public CoinAccount CoinAccount { get; set; }
     }
 }

@@ -36,7 +36,7 @@ namespace DiscordBot.Games.Managers
             _coinService = coinService;
         }
 
-        protected abstract string GetStartMessage(ulong playerId, DiscordSocketClient client);
+        protected abstract string GetStartMessage(TPlayer player);
         protected abstract string GetEndMessage(TPlayer player, string networthMessage);
         protected virtual string GetDealerEndMessage(TPlayer dealer)
         {
@@ -71,7 +71,9 @@ namespace DiscordBot.Games.Managers
                     throw new BadInputException($"You are already in a game but it hasn't started yet. \nType `.{BaseCommand} start` to start or wait for the game to start automatically.");
             }
 
-            await _betManager.InitiateBet(playerId, message.Author.Username, inputMoney, 10);
+
+            CoinAccount coinAcc = await _coinService.Get(playerId, message.Author.Username);
+            await _betManager.InitiateBet(coinAcc, inputMoney, 10);
 
             var channel = message.Channel as SocketGuildChannel;
             var guildId = channel.Guild.Id;
@@ -81,7 +83,8 @@ namespace DiscordBot.Games.Managers
                 ChannelId = message.Channel.Id,
                 ServerId = guildId,
                 BetAmount = inputMoney,
-                Username = message.Author.Username
+                Username = message.Author.Username,
+                CoinAccount = coinAcc
             };
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
@@ -110,7 +113,7 @@ namespace DiscordBot.Games.Managers
 
         public async Task Start(ulong playerId, SocketMessage message)
         {
-            if (!TryGetPlayer(playerId, out _))
+            if (!TryGetPlayer(playerId, out var player))
             {
                 throw new NotInGameException();
             }
@@ -138,10 +141,10 @@ namespace DiscordBot.Games.Managers
                 //normally nothing, but can be overridden in child classes
                 PostStartActions(game, players);
 
-                if (await EndGameIfAllPlayersFinished(playerId, _client, message))
+                if (await EndGameIfAllPlayersFinished(playerId, message))
                     return;
 
-                string startMsg = GetStartMessage(playerId, _client);
+                string startMsg = GetStartMessage(player);
 
                 if (!string.IsNullOrWhiteSpace(startMsg))
                     await distinctServerChannelMappings.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
@@ -235,7 +238,7 @@ namespace DiscordBot.Games.Managers
 
 
         /// <returns>True if game ended, false if not.</returns>
-        protected async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, DiscordSocketClient client, SocketMessage message)
+        protected async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, SocketMessage message)
         {
             var game = GetExisitingGame(playerId);
 

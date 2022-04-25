@@ -8,17 +8,6 @@ namespace DiscordBot.Games.Models
     public class BlackjackPlayer : BasePlayer
     {
         public List<Card> Cards { get; set; } = new List<Card>();
-
-
-        public BlackjackPlayer(ulong userId, ulong channelId, ulong serverId, double betAmount, string username)
-            : base(userId, channelId, serverId, betAmount, username)
-        {
-            UserId = userId;
-            ChannelId = channelId;
-            ServerId = serverId;
-            BetAmount = betAmount;
-            Username = username;
-        }
         public BlackjackPlayer() : base()
         {
         }

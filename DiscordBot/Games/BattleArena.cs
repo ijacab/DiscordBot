@@ -67,17 +67,17 @@ namespace DiscordBot.Games
                     case AttackType.Attack:
                         foreach (var enemy in enemies)
                         {
-                            enemy.HitPoints -= player.BattlePerson.Attack * ((100 - enemy.BattlePerson.Defense) / 100);
+                            enemy.HitPoints -= player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100);
                             UpdateDeathStatus(enemy, out _);
                         }
                         break;
                     case AttackType.AttackSelf:
-                        player.HitPoints -= player.BattlePerson.Attack; //no defense when attacking self
+                        player.HitPoints -= player.CoinAccount.BattlePerson.Attack; //no defense when attacking self
                         break;
                     case AttackType.CritAttack:
                         foreach (var enemy in enemies)
                         {
-                            enemy.HitPoints -= player.BattlePerson.Attack * ((100 - enemy.BattlePerson.Defense) / 100) * (1 + player.BattlePerson.CritMultiplier);
+                            enemy.HitPoints -= player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100) * (1 + player.CoinAccount.BattlePerson.CritMultiplier);
                             UpdateDeathStatus(enemy, out _);
                         }
                         break;
@@ -88,6 +88,7 @@ namespace DiscordBot.Games
                     break;
             }
 
+            player.HasRolled = true;
             return results;
         }
 

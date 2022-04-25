@@ -65,9 +65,9 @@ namespace DiscordBot.Games.Managers
         }
 
 
-        protected override string GetStartMessage(ulong playerId, DiscordSocketClient client)
+        protected override string GetStartMessage(BattleArenaPlayer player)
         {
-            return FormattedPlayerStanding(playerId, _client);
+            return FormattedPlayerStanding(player);
         }
 
         protected override string GetEndMessage(BattleArenaPlayer player, string networthMessage)
@@ -75,33 +75,32 @@ namespace DiscordBot.Games.Managers
             return $"\n{player.Username}: {player.HitPoints}\n\t{networthMessage}";
         }
 
-        private string FormattedPlayerStanding(ulong playerId, DiscordSocketClient client)
+        private string FormattedPlayerStanding(BattleArenaPlayer player)
         {
             string output = "";
-            var game = GetExisitingGame(playerId);
+            var game = GetExisitingGame(player.UserId);
 
-            foreach (var player in game.Players.Where(p => !p.IsDealer))
+            foreach (var baPlayer in game.Players.Where(p => !p.IsDealer))
             {
-                output += $"{client.GetUser(player.UserId).Username}: {player.HitPoints}\n";
+                output += $"{baPlayer.Username}: {baPlayer.HitPoints}\n";
             }
 
             return output;
         }
 
-        public async Task Roll(ulong playerId, int numberOfDice, SocketMessage message, DiscordSocketClient client)
+        public async Task Roll(BattleArenaPlayer player, int numberOfDice, SocketMessage message, DiscordSocketClient client)
         {
-            var game = GetExisitingGame(playerId);
-
-            TryGetPlayer(playerId, out var player);
+            var game = GetExisitingGame(player.UserId);
 
             var diceResults = game.RollDice(numberOfDice, player);
             string output = "";
             foreach (var diceResult in diceResults)
             {
-                output += $"Rolled a {diceResult.DiceRoll}. *{diceResult.AttackType.ToString().SplitCamelCaseWithSpace()}*\n";
+                output += $"Rolled a {diceResult.DiceRoll}\t (*{diceResult.AttackType.ToString().SplitCamelCaseWithSpace()}*)\n";
             }
-            await EndGameIfAllPlayersFinished(playerId, client, message);
+            await EndGameIfAllPlayersFinished(player.UserId, message);
             await message.SendRichEmbedMessage($"{player.Username}'s dice rolls", output);
+            await message.SendRichEmbedMessage($"Player standings", FormattedPlayerStanding(player));
 
             game.PlayersWaitingToAttack.Remove(player);
             if(game.PlayersWaitingToAttack.Count == 0)
@@ -114,7 +113,7 @@ namespace DiscordBot.Games.Managers
                 _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceAttackAfter)).ContinueWith(async t =>
                 {
                     var playerToForceAttack = game.PlayersWaitingToAttack.First();
-                    await Roll(playerToForceAttack.UserId, 3, message, client);
+                    await Roll(playerToForceAttack, 3, message, client);
                 });
             }
         }
