@@ -11,16 +11,19 @@ namespace DiscordBot.Games
     public class BattleArena : BaseMultiplayerGame<BattleArenaPlayer>
     {
         private const int MaxDice = 3;
-        internal List<BattleArenaPlayer> PlayersWaitingToAttack;
+        internal Dictionary<BattleArenaPlayer, IEnumerable<(int DiceRoll, AttackType AttackType)>> CurrentPlayerAttacks;
+        public bool IsReadyToResolve => CurrentPlayerAttacks.Count == Players.Count;
 
-        public List<BattleArenaPlayer> DeathOrderList = new List<BattleArenaPlayer>();
+        public List<BattleArenaPlayer> DeathOrderList { get; set; } = new List<BattleArenaPlayer>();
         public List<BattleArenaPlayer> PlayerRanking => Players.OrderByDescending(p => p.HitPoints).ToList();
-        
+
+
+
 
         public BattleArena()
         {
             MinimumRequiredPlayers = 2;
-            PlayersWaitingToAttack = new List<BattleArenaPlayer>(Players);
+            CurrentPlayerAttacks = new Dictionary<BattleArenaPlayer, IEnumerable<(int DiceRoll, AttackType AttackType)>>();
         }
 
         public override double GetWinnings(BattleArenaPlayer player)
@@ -30,7 +33,7 @@ namespace DiscordBot.Games
 
             if (PlayerRanking.IndexOf(player) == 0) //if the player has the highest HP
                 return player.BetAmount * 2;
-            else 
+            else
                 return 0;
         }
 
@@ -42,67 +45,124 @@ namespace DiscordBot.Games
             return randomOrderList;
         }
 
-        public IEnumerable<(int DiceRoll, AttackType AttackType)> RollDice(int numberOfDice, BattleArenaPlayer player)
+        public void RollDice(int numberOfDice, BattleArenaPlayer player)
         {
             if (numberOfDice > MaxDice)
                 numberOfDice = MaxDice;
 
             var diceRolls = DiceRoller.RollDice(numberOfDice, 6);
             var results = new List<(int diceRoll, AttackType attackType)>();
-
-            foreach (int diceRoll in diceRolls)
+            diceRolls.ForEach((dr) =>
             {
-                AttackType atkType = GetAttackType(diceRoll);
-                results.Add((diceRoll, atkType));
-
-                var enemies = Players.Where(p => p != player && !p.IsDead);
-                if (enemies.Count() == 0)
-                {
-                    Ended = true;
-                    break;
-                }
-
-                switch (atkType)
-                {
-                    case AttackType.Attack:
-                        foreach (var enemy in enemies)
-                        {
-                            enemy.HitPoints -= player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100);
-                            UpdateDeathStatus(enemy, out _);
-                        }
-                        break;
-                    case AttackType.AttackSelf:
-                        player.HitPoints -= player.CoinAccount.BattlePerson.Attack; //no defense when attacking self
-                        break;
-                    case AttackType.CritAttack:
-                        foreach (var enemy in enemies)
-                        {
-                            enemy.HitPoints -= player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100) * (1 + player.CoinAccount.BattlePerson.CritMultiplier);
-                            UpdateDeathStatus(enemy, out _);
-                        }
-                        break;
-                }
-
-                UpdateDeathStatus(player, out bool wasInserted);
-                if (wasInserted)
-                    break;
-            }
-
-            player.HasRolled = true;
-            return results;
+                AttackType atkType = GetAttackType(dr);
+                results.Add((dr, atkType));
+            });
+            player.HasAttacked = true;
+            CurrentPlayerAttacks.Add(player, results);
         }
 
-        private void UpdateDeathStatus(BattleArenaPlayer player, out bool wasInserted)
+        public IEnumerable<AttackInfo> ResolveRolls()
         {
-            wasInserted = false;
-            if(player.IsDead)
+            if (!IsReadyToResolve)
+                throw new Exception($"Method {nameof(ResolveRolls)} cannot be called unless all players have attacked. Something went wrong here in game {GameGuid}");
+
+            var attackInfos = new List<AttackInfo>();
+            foreach (var player in GetPlayerOrder())
+            {
+                if (player.IsDead)
+                    continue;
+
+                var diceResults = CurrentPlayerAttacks[player];
+
+                foreach (var diceResult in diceResults)
+                {
+                    var enemies = Players.Where(p => p != player && !p.IsDead);
+                    if (enemies.Count() == 0)
+                    {
+                        Ended = true;
+                        break;
+                    }
+
+                    double attackDmg;
+                    switch (diceResult.AttackType)
+                    {
+                        case AttackType.Attack:
+                            var attackInfo1 = new AttackInfo()
+                            {
+                                PlayerAttacking = player,
+                                AttackType = diceResult.AttackType,
+                                DiceRoll = diceResult.DiceRoll
+                            };
+
+                            foreach (var enemy in enemies)
+                            {
+                                attackDmg = player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100);
+                                enemy.HitPoints -= attackDmg;
+                                attackInfo1.Attacks.Add(new Attack()
+                                {
+                                    PlayerAttacked = enemy,
+                                    AttackDamage = attackDmg
+                                });
+                                UpdateDeathStatus(enemy);
+                            }
+
+                            attackInfos.Add(attackInfo1);
+                            break;
+                        case AttackType.AttackSelf:
+                            attackDmg = player.CoinAccount.BattlePerson.Attack;
+                            var attackInfo2 = new AttackInfo()
+                            {
+                                PlayerAttacking = player,
+                                AttackType = diceResult.AttackType,
+                                DiceRoll = diceResult.DiceRoll,
+                                Attacks = new List<Attack>() { new Attack() { PlayerAttacked = player, AttackDamage = attackDmg } }
+                            };
+                            player.HitPoints -= attackDmg; //no defense when attacking self
+                            attackInfos.Add(attackInfo2);
+                            break;
+                        case AttackType.CritAttack:
+                            var attackInfo3 = new AttackInfo()
+                            {
+                                PlayerAttacking = player,
+                                AttackType = diceResult.AttackType,
+                                DiceRoll = diceResult.DiceRoll
+                            };
+
+                            foreach (var enemy in enemies)
+                            {
+                                attackDmg = player.CoinAccount.BattlePerson.Attack * ((100 - enemy.CoinAccount.BattlePerson.Defense) / 100) * (1 + player.CoinAccount.BattlePerson.CritMultiplier);
+                                enemy.HitPoints -= attackDmg;
+                                attackInfo3.Attacks.Add(new Attack()
+                                {
+                                    PlayerAttacked = enemy,
+                                    AttackDamage = attackDmg
+                                });
+                                UpdateDeathStatus(enemy);
+                            }
+                            attackInfos.Add(attackInfo3);
+                            break;
+                    }
+
+                    UpdateDeathStatus(player);
+                    if (player.IsDead)
+                        break;
+                }
+            }
+
+            CurrentPlayerAttacks.Clear();
+            Players.ForEach(p => p.HasAttacked = false);
+            return attackInfos;
+        }
+
+        private void UpdateDeathStatus(BattleArenaPlayer player)
+        {
+            if (player.IsDead)
             {
                 player.IsFinishedPlaying = true;
 
                 if (!DeathOrderList.Contains(player))
                 {
                     DeathOrderList.Add(player);
-                    wasInserted = true;
                 }
             }
         }

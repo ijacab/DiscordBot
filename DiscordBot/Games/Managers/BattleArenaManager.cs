@@ -90,31 +90,47 @@ namespace DiscordBot.Games.Managers
 
         public async Task Roll(BattleArenaPlayer player, int numberOfDice, SocketMessage message, DiscordSocketClient client)
         {
+            if (player.HasAttacked == true)
+                return;
+
             var game = GetExisitingGame(player.UserId);
 
-            var diceResults = game.RollDice(numberOfDice, player);
-            string output = "";
-            foreach (var diceResult in diceResults)
+            game.RollDice(numberOfDice, player);
+            if (!game.IsReadyToResolve)
             {
-                output += $"Rolled a {diceResult.DiceRoll}\t (*{diceResult.AttackType.ToString().SplitCamelCaseWithSpace()}*)\n";
-            }
-            await EndGameIfAllPlayersFinished(player.UserId, message);
-            await message.SendRichEmbedMessage($"{player.Username}'s dice rolls", output);
-            await message.SendRichEmbedMessage($"Player standings", FormattedPlayerStanding(player));
+                await message.SendRichEmbedMessage($"{player.Username} has rolled", "Waiting on the other players to roll before resolving.");
 
-            game.PlayersWaitingToAttack.Remove(player);
-            if(game.PlayersWaitingToAttack.Count == 0)
-            {
-                game.PlayersWaitingToAttack = new List<BattleArenaPlayer>(game.Players);
-            }
-            else if(game.PlayersWaitingToAttack.Count == 1)
-            {
-                //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceAttackAfter)).ContinueWith(async t =>
+                if (game.CurrentPlayerAttacks.Count == game.Players.Count - 1)
                 {
-                    var playerToForceAttack = game.PlayersWaitingToAttack.First();
-                    await Roll(playerToForceAttack, 3, message, client);
-                });
+                    //timer on force rolling
+                    _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceAttackAfter)).ContinueWith(async t =>
+                    {
+                        var playersThatHaveAttacked = game.CurrentPlayerAttacks.Keys.ToList();
+                        var playersToForceAttack = game.Players.Except(playersThatHaveAttacked);
+                        if (playersToForceAttack.Count() != 1)
+                            throw new Exception($"{nameof(Roll)}: Something has gone wrong here. {nameof(playersToForceAttack)} should one have 1 item but has {playersToForceAttack.Count()} items.");
+
+                        await Roll(playersToForceAttack.First(), 3, message, client);
+                    });
+                }
+            }
+            else
+            {
+                
+                string output = "";
+                var attackInfos = game.ResolveRolls();
+                foreach (var attackInfo in attackInfos)
+                {
+                    output += $"{attackInfo.PlayerAttacking.Username} rolled a {attackInfo.DiceRoll}\t (**{attackInfo.AttackType.ToString().SplitCamelCaseWithSpace()}**)\n";
+                    foreach (var attack in attackInfo.Attacks) 
+                    {
+                        output += $"\t{attack.PlayerAttacked} took {attack.AttackDamage} dmg\n";
+                    }
+                    output += '\n';
+                }
+                await message.SendRichEmbedMessage($"Attacks", output);
+                await message.SendRichEmbedMessage($"Player standings", FormattedPlayerStanding(player));
+                await EndGameIfAllPlayersFinished(player.UserId, message);
             }
         }
 
