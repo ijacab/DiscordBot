@@ -485,7 +485,7 @@ namespace DiscordBot.Managers
 
                 var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
                 await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
-                await message.Channel.SendMessageAsync($"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):", $".cardpull keep {prefix}");
+                await message.Channel.SendMessageAsync($"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):");
                 await message.Channel.SendMessageAsync($".cardpull keep {prefix}");
             }
         }
