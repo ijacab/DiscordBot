@@ -45,7 +45,8 @@ namespace DiscordBot.Services
             var vqdScript = document?.Head.GetElementsByTagName("script").Where(x => x.TextContent.Contains("vqd='")).SingleOrDefault();
             var vqdScriptContent = vqdScript?.TextContent;
             var vqdStart = vqdScriptContent?.Substring(vqdScriptContent.IndexOf("vqd="));
-            var remainingVqdScriptContentArray = vqdStart?.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            var remainingVqdScriptContentArray = vqdStart?.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+            remainingVqdScriptContentArray.RemoveAll(x => !x.Contains('='));
             var vqdDict = remainingVqdScriptContentArray?.Select(x => x.Split('=')).ToDictionary(x => x[0], x => x[1]);
 
             var vqd = vqdDict != null ? vqdDict.TryGetValue("vqd", out var v) ? new string(v.Where(c => c != '\'').ToArray()) : null : null;
