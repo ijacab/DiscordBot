@@ -43,6 +43,7 @@ namespace DiscordBot.Services
                 //fileText = StringHelper.MakeJsonSafe(fileText);
                 await _gistService.UpdateContent(_fileName, fileText);
 
+                convoText = CleanUpOutput(convoText);
                 return convoText;
             }
             else
@@ -73,11 +74,8 @@ namespace DiscordBot.Services
                 string errors = process.StandardError.ReadToEnd();
                 string cutoffText = @"No meta.pkl found, assuming GPT-2 encodings...";
                 output = output.Substring(output.IndexOf(cutoffText) + cutoffText.Length);
-                output = output.Replace(":", ": ");
-                output = output.Replace("\n\n", "\n");
-                output = output.Replace("\r\n\r\n", "\r\n");
-                if (output.StartsWith("\r\n"))
-                    output = output.Substring(2);
+                
+                output = CleanUpOutput(output);
 
                 process.Refresh();
                 process.Close();
@@ -85,6 +83,17 @@ namespace DiscordBot.Services
 
                 return output;
             }
+        }
+
+        private string CleanUpOutput(string output)
+        {
+            output = output.Replace(":", ": ");
+            output = output.Replace("\n\n", "\n");
+            output = output.Replace("\r\n\r\n", "\r\n");
+            if (output.StartsWith("\r\n"))
+                output = output.Substring(2);
+
+            return output;
         }
     }
 }
