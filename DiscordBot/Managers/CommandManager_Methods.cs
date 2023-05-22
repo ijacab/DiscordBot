@@ -603,5 +603,16 @@ namespace DiscordBot.Managers
             double freeGB = drive.AvailableFreeSpace / 1024 / 1024 / 1024;
             await message.Channel.SendMessageAsync($"Free space: {freeGB} GB");
         }
+
+        private async Task Convo(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            string? context = null;
+
+            if (args.Count > 0)
+                context = $"{message.Author.Username}:{args[0]}";
+
+            string convo = await _gptService.GetConvo(context);
+            await message.Channel.SendMessageAsync(convo);
+        }
     }
 }

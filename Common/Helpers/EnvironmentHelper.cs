@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Common.Exceptions;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -15,7 +16,7 @@ namespace Common.Helpers
             if (string.IsNullOrEmpty(envVarValue))
             {
                 if(throwIfNotFound)
-                    throw new Exception($"No environment variable found for {environmentVariableName}");
+                    throw new EnvironmentVariableMissingException($"No environment variable found for {environmentVariableName}");
             }
 
             return envVarValue;
