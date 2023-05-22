@@ -5,7 +5,42 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="_nanogpt\bench.py" />
+    <None Remove="_nanogpt\configurator.py" />
+    <None Remove="_nanogpt\model.py" />
+    <None Remove="_nanogpt\sample.py" />
+    <None Remove="_nanogpt\scaling_laws.ipynb" />
+    <None Remove="_nanogpt\train.py" />
+    <None Remove="_nanogpt\transformer_sizing.ipynb" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="_nanogpt\bench.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\configurator.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\model.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\sample.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\scaling_laws.ipynb">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\train.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="_nanogpt\transformer_sizing.ipynb">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Discord.Net" Version="2.4.0" />
+    <PackageReference Include="morelinq" Version="3.4.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
   </ItemGroup>
 

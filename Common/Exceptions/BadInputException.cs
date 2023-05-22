@@ -6,7 +6,7 @@ namespace DiscordBot.Exceptions
 {
     public class BadInputException :Exception
     {
-        public BadInputException() : base("INTPU CONRTAIN FUCKY CHARACTER ---  I NOT LIKE THIS I NOT ALLOW THIS")
+        public BadInputException() : base("Only letters/digits/spaces are allowed")
         {
         }
 

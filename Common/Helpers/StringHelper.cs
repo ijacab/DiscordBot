@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Common.Helpers
@@ -44,6 +45,19 @@ namespace Common.Helpers
             }
             output.TrimEnd(separator);
             return output;
+        }
+
+        public static string MakeJsonSafe(String s)
+        {
+            var jsonEscaped = s.Replace("\\", "\\\\")
+                               .Replace("\"", "\\\"")
+                               .Replace("\b", "\\b")
+                               .Replace("\f", "\\f")
+                               .Replace("\n", "\\n")
+                               .Replace("\r", "\\r")
+                               .Replace("\t", "\\t");
+            var nonAsciiEscaped = jsonEscaped.Select((c) => c >= 127 ? "\\u" + ((int)c).ToString("X").PadLeft(4, '0') : c.ToString());
+            return string.Join("", jsonEscaped);
         }
     }
 }

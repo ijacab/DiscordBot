@@ -53,6 +53,7 @@ namespace DiscordBot
             services.AddScoped<DuckDuckGoService>();
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();
+            services.AddSingleton<GPTService>();
 
             services.AddControllers();
             services.AddCors(options =>
