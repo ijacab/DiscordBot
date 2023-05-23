@@ -14,6 +14,7 @@ namespace DiscordBot.Services
         private const string _fileName = "convos.txt";
         private const string _convoEndString = "_---------------_";
         private readonly GistService _gistService;
+        private const string _endOfTextStr = "<|endoftext|>";
 
         public GPTService(GistService gistService)
         {
@@ -92,6 +93,8 @@ namespace DiscordBot.Services
             output = output.Replace("\r\n\r\n", "\r\n");
             if (output.StartsWith("\r\n"))
                 output = output.Substring(2);
+
+            output.Replace(_endOfTextStr, "");
 
             return output;
         }
