@@ -12,9 +12,8 @@ namespace DiscordBot.Services
     public class GPTService
     {
         private const string _fileName = "convos.txt";
-        private const string _convoEndString = "_---------------_";
+        private const string _convoEndString = "_---------------_<|endoftext|>";
         private readonly GistService _gistService;
-        private const string _endOfTextStr = "<|endoftext|>";
 
         public GPTService(GistService gistService)
         {
@@ -41,7 +40,7 @@ namespace DiscordBot.Services
                 }
 
                 string convoText = sb.ToString();
-                fileText = fileText.Substring(fileText.IndexOf(_convoEndString) + _convoEndString.Length + 1);
+                fileText = fileText[sb.Length..];
                 //fileText = StringHelper.MakeJsonSafe(fileText);
                 await _gistService.UpdateContent(_fileName, fileText);
 
@@ -93,9 +92,9 @@ namespace DiscordBot.Services
             output = output.Replace("\n\n", "\n");
             output = output.Replace("\r\n\r\n", "\r\n");
             if (output.StartsWith("\r\n"))
-                output = output.Substring(2);
+                output = output[2..];
 
-            output.Replace(_endOfTextStr, "");
+            output.Replace(_convoEndString, "");
 
             return output;
         }
