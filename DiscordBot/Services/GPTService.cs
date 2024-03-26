@@ -32,7 +32,7 @@ namespace DiscordBot.Services
                 StringBuilder sb = new StringBuilder();
                 foreach (var line in fileText.Split(new string[] { "\n" }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    if (line == _convoEndString 
+                    if (line.StartsWith(_convoEndString)
                         || sb.Length + line.Length > 1900) //discord char limit is 2000
                         break;
 
@@ -40,7 +40,7 @@ namespace DiscordBot.Services
                 }
 
                 string convoText = sb.ToString();
-                fileText = fileText[sb.Length..];
+                fileText = fileText[(sb.Length + _convoEndString.Length + 1)..];
                 //fileText = StringHelper.MakeJsonSafe(fileText);
                 await _gistService.UpdateContent(_fileName, fileText);
 
