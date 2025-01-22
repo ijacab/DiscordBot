@@ -13,6 +13,7 @@ namespace DiscordBot
 
         public ChatWorker(ILogger<ChatWorker> logger, MessageHandler messageHandler)
         {
+        //comment
             _logger = logger;
             _messageHandler = messageHandler;
         }
