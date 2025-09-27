@@ -17,7 +17,7 @@ SyslogIdentifier=DiscordBot
 # If you pick a different user, make sure dotnet and all permissions are set correctly to run the app
 # To update permissions, use 'chown yourusername -R /srv/Worker' to take ownership of the folder and files,
 #       Use 'chmod +x /srv/Worker/Worker' to allow execution of the executable file
-User=pi
+User=asus
 
 # ensure the service restarts after crashing
 Restart=always
