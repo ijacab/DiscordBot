@@ -48,7 +48,7 @@ steps:
     command: 'publish'
     publishWebProjects: false
     projects: 'DiscordBot/DiscordBot.sln'
-    arguments: '--configuration $(buildConfiguration) -r linux-arm --self-contained true -o /srv/DiscordBot /p:useapphost=true'
+    arguments: '--configuration $(buildConfiguration) -r linux-arm64 --self-contained true -o /srv/DiscordBot /p:useapphost=true'
     zipAfterPublish: false
 
 - task: Bash@3
