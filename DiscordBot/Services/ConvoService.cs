@@ -36,15 +36,12 @@ namespace DiscordBot.Services
             var history = string.Join("\n", formattedMessages);
 
             var systemPrompt =
-@"Produce ONLY 10 new lines of conversation based on the conversation provided.
-Each line MUST be in the format ""username: message"".
-Eash line MUST be no longer than 10 words.
+@"Output ONLY chat lines in the format ""username: message"".
 Do NOT add explanations, commentary, or code.
-Do NOT describe what you are doing.
-Output nothing EXCEPT the chat lines.
+Look at the below conversation messages as context:
 ";
 
-            var fullPrompt = $"{systemPrompt}\n\nConversation:\n{history}\n\n";
+            var fullPrompt = $"{systemPrompt}\n\n{history}\n\n";
 
             var payload = new
             {
