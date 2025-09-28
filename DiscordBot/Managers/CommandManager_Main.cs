@@ -28,6 +28,7 @@ namespace DiscordBot.Managers
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
         private Dictionary<string, string> _customMappings;
+        private ulong _botId = 205386259026280448;
         private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
         private int _argCharLimit = 950;
         private int _messageCharLimit = 2000;

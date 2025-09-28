@@ -620,13 +620,15 @@ namespace DiscordBot.Managers
             var channel = message.Channel as IMessageChannel;
             if (channel == null)
                 return;
-
+            
             // Fetch the last 11 messages (to have 10 + the triggering one)
-            var messages = await channel.GetMessagesAsync(limit: 11).FlattenAsync();
+            var messages = await channel.GetMessagesAsync(limit: 30)
+                .FlattenAsync();
 
             // Exclude the triggering message
             var filtered = messages
-                .Where(m => m.Id != message.Id && !string.IsNullOrWhiteSpace(m.Content));
+                .Where(m => m.Id != message.Id && !string.IsNullOrWhiteSpace(m.Content))
+                .Where(f => !f.Author.IsBot);
 
             // Order oldest → newest
             var ordered = filtered.OrderBy(m => m.Timestamp);
