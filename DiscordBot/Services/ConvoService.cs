@@ -9,6 +9,7 @@ using DiscordBot.Models.ConvoService;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using Microsoft.VisualBasic;
+using System.Linq;
 
 namespace DiscordBot.Services
 {
@@ -35,15 +36,15 @@ namespace DiscordBot.Services
             var history = string.Join("\n", formattedMessages);
 
             var systemPrompt =
-@"You are continuing a Discord-style chat log.
-Each line is in the format ""username: message"". A line should not be more than 10 words.
-Imitate the style of the usernames shown in the history.
-You can pick the usernames randomly. You do not have to use all of them.
-Produce between 2 to 10 new lines of conversation.
-Make them playful, weird, and wacky — exaggerate quirks in how people talk.
-Do not explain, just continue the chat log.";
+@"Produce ONLY 10 new lines of conversation based on the conversation provided.
+Each line MUST be in the format ""username: message"".
+Eash line MUST be no longer than 10 words.
+Do NOT add explanations, commentary, or code.
+Do NOT describe what you are doing.
+Output nothing EXCEPT the chat lines.
+";
 
-            var fullPrompt = $"{systemPrompt}\n\nConversation so far:\n{history}\n\nContinue with some new lines:";
+            var fullPrompt = $"{systemPrompt}\n\nConversation:\n{history}\n\n";
 
             var payload = new
             {
@@ -81,6 +82,16 @@ Do not explain, just continue the chat log.";
             }
 
             var finalText = sb.ToString();
+
+            // Remove any leading explanation lines that don't match "username: message"
+            var finalLines = finalText
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Where(l => l.Contains(":")) // keep only lines with a colon (username: message)
+                .ToList();
+
+            finalText = string.Join("\n", finalLines);
+
+
             if (finalText.Length > 1000)
                 finalText = finalText[..1000];
 
