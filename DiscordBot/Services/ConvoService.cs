@@ -36,7 +36,7 @@ namespace DiscordBot.Services
 
             var systemPrompt =
 @"You are continuing a Discord-style chat log.
-Each line is in the format ""username: message"".
+Each line is in the format ""username: message"". A line should not be more than 10 words.
 Imitate the style of the usernames shown in the history.
 You can pick the usernames randomly. You do not have to use all of them.
 Produce between 2 to 10 new lines of conversation.
@@ -52,7 +52,8 @@ Do not explain, just continue the chat log.";
                 options = new { 
                     temperature = llmOptions.Temperature, 
                     num_predict = llmOptions.NumPredict,
-                    top_p = llmOptions.TopP
+                    top_p = llmOptions.TopP,
+                    stop = new[] { "\n\n" } // stop after a blank line
                 }
             };
 
@@ -63,9 +64,28 @@ Do not explain, just continue the chat log.";
             var resp = await _http.PostAsync("api/generate", content, _cts.Token);
             resp.EnsureSuccessStatusCode();
 
-            var result = await resp.Content.ReadAsStringAsync();
-            _logger.LogInformation("Generated response: {Response}", result);
-            return result;
+            var resultJson = await resp.Content.ReadAsStringAsync();
+            _logger.LogInformation("Generated response: {Response}", resultJson);
+            // The API returns a stream of JSON objects, one per line.
+            // Split by newlines and parse each.
+            var lines = resultJson.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var sb = new StringBuilder();
+
+            foreach (var line in lines)
+            {
+                var obj = JsonConvert.DeserializeObject<Dictionary<string, object>>(line);
+                if (obj != null && obj.TryGetValue("response", out var chunk))
+                {
+                    sb.Append(chunk.ToString());
+                }
+            }
+
+            var finalText = sb.ToString();
+            if (finalText.Length > 1000)
+                finalText = finalText[..1000];
+
+            _logger.LogInformation("Generated text: {Text}", finalText);
+            return finalText;
         }
 
         public void Stop()
