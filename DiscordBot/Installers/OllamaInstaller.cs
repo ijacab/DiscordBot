@@ -2,6 +2,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 namespace DiscordBot.Installers
 {
@@ -79,6 +80,7 @@ WantedBy=multi-user.target
 
             _logger.LogInformation("Starting Ollama service...");
             await RunCommand("sudo", "systemctl start ollama");
+            await VerifyOllamaServerAsync();
         }
 
         private async Task EnsureSmollmModelAsync()
@@ -124,5 +126,30 @@ WantedBy=multi-user.target
             if (!string.IsNullOrEmpty(stderr))
                 _logger.LogError(stderr.Trim());
         }
+
+        private async Task VerifyOllamaServerAsync()
+        {
+            using var client = new HttpClient();
+            var timeout = TimeSpan.FromMinutes(3);
+            var start = DateTime.UtcNow;
+
+            while (DateTime.UtcNow - start < timeout)
+            {
+                try
+                {
+                    var resp = await client.GetStringAsync("http://localhost:11434/api/tags");
+                    _logger.LogInformation("✅ Ollama server is responding: " + resp);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Ollama server not ready yet: " + ex.Message);
+                    await Task.Delay(2000); // wait 2 seconds before retry
+                }
+            }
+
+            throw new Exception("❌ Ollama server not responding after 3 minutes.");
+        }
+
     }
 }
