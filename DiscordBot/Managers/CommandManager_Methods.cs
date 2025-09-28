@@ -604,14 +604,44 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"Free space: {freeGB} GB");
         }
 
+        //private async Task Convo(DiscordSocketClient client, SocketMessage message, List<string> args)
+        //{
+        //    string? context = null;
+
+        //    if (args.Count > 0)
+        //        context = $"{message.Author.Username}:{args[0]}";
+
+        //    string convo = await _gptService.GetConvo(context);
+        //    await message.Channel.SendMessageAsync(convo);
+        //}
+
         private async Task Convo(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            string? context = null;
+            var channel = message.Channel as IMessageChannel;
+            if (channel == null)
+                return;
 
-            if (args.Count > 0)
-                context = $"{message.Author.Username}:{args[0]}";
+            // Fetch the last 11 messages (to have 10 + the triggering one)
+            var messages = await channel.GetMessagesAsync(limit: 11).FlattenAsync();
 
-            string convo = await _gptService.GetConvo(context);
+            // Exclude the triggering message
+            var filtered = messages
+                .Where(m => m.Id != message.Id && !string.IsNullOrWhiteSpace(m.Content));
+
+            // Order oldest → newest
+            var ordered = filtered.OrderBy(m => m.Timestamp);
+
+            // Take the last 10 (in case there were more than 11 returned)
+            var lastTen = ordered.TakeLast(10);
+
+            // Format as "username: message"
+            List<string> formattedMessages = lastTen
+                .Select(m => $"{m.Author.Username}: {m.Content}")
+                .ToList();
+
+            // Call your convo service
+            string convo = await _convoService.ProduceConvo(formattedMessages);
+
             await message.Channel.SendMessageAsync(convo);
         }
     }

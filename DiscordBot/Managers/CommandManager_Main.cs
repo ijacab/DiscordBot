@@ -26,6 +26,7 @@ namespace DiscordBot.Managers
         private readonly BetManager _betManager;
         private readonly BattleArenaManager _battleArenaManager;
         private readonly GPTService _gptService;
+        private readonly ConvoService _convoService;
         private Dictionary<string, string> _customMappings;
         private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
         private int _argCharLimit = 950;
@@ -36,7 +37,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, GPTService gptService)
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, GPTService gptService, ConvoService convoService)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -49,58 +50,46 @@ namespace DiscordBot.Managers
             _betManager = betManager;
             _battleArenaManager = battleArenaManager;
             _gptService = gptService;
+            _convoService = convoService;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
 
             //need to add new commands in here as they are created
-            _commands = new List<Command>();
-            _commands.Add(new Command("help", Help));
+            _commands = new List<Command>
+            {
+                new Command("help", Help),
+                new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
+                new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
+                new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
+                new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
+                new Command("faceoff", GameFaceOff) { Description = "Plays a multiplayer faceoff game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" },
+                new Command("fo", GameFaceOff) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" },
+                new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
+                new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
+                new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
+                new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`" },
+                new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
+                new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
+                new Command("time", Time) { Syntax = "`.time utc`" },
+                new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },
+                new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" },
+                new Command("cardpull", CardPull) { Description = "Gets a face card" },
+                new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" },
+                new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" },
+                new Command("clear", Clear, hidden: true, requiresAdmin: true),
+                new Command("age", Age) { Description = "Displays age of your discord account", Syntax = "`.age`" },
+                new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`" },
+                new Command("roll", Roll) { Syntax = "`.roll 1 100`" },
+                new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".archiveleaderboard", RequiresAdmin = true, Hidden = true },
+                new Command("start", Start, hidden: true, requiresAdmin: true),
+                new Command("stop", Stop, hidden: true, requiresAdmin: true),
+                new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
+                new Command("convo", Convo),
 
-            _commands.Add(new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
-            _commands.Add(new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" });
-
-            _commands.Add(new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
-            _commands.Add(new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" });
-
-            _commands.Add(new Command("faceoff", GameFaceOff) { Description = "Plays a multiplayer faceoff game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
-            _commands.Add(new Command("fo", GameFaceOff) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" });
-
-
-            _commands.Add(new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" });
-            _commands.Add(new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true });
-            _commands.Add(new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" });
-            _commands.Add(new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`" });
-            _commands.Add(new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" });
-
-
-            _commands.Add(new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." });
-            _commands.Add(new Command("time", Time) { Syntax = "`.time utc`" });
-            _commands.Add(new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true });
-            _commands.Add(new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" });
-
-            _commands.Add(new Command("cardpull", CardPull) { Description = "Gets a face card" });
-
-            _commands.Add(new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" });
-            _commands.Add(new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" });
-            _commands.Add(new Command("clear", Clear, hidden: true, requiresAdmin: true));
-
-            _commands.Add(new Command("age", Age) { Description = "Displays age of your discord account", Syntax = "`.age`" });
-
-
-            _commands.Add(new Command("remindme", AddReminder) { Syntax = "`.remindme \"reminder for something\" 6 hours`" });
-            _commands.Add(new Command("roll", Roll) { Syntax = "`.roll 1 100`" });
-
-            _commands.Add(new Command("archiveleaderboard", ArchiveLeaderboard) { Description = "Archives the leaderboard and resets the current one.", Syntax = ".archiveleaderboard", RequiresAdmin = true, Hidden = true });
-
-            _commands.Add(new Command("start", Start, hidden: true, requiresAdmin: true));
-            _commands.Add(new Command("stop", Stop, hidden: true, requiresAdmin: true));
-            _commands.Add(new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true));
-
-            _commands.Add(new Command("convo", Convo));
-
-            //bot commands
-            _commands.Add(new Command("initiatebet", InitiateBet, hidden: true));
-            _commands.Add(new Command("resolvebet", ResolveBet, hidden: true));
-            _commands.Add(new Command("lbjson", GetLeaderboardJson, hidden: true));
+                //bot commands
+                new Command("initiatebet", InitiateBet, hidden: true),
+                new Command("resolvebet", ResolveBet, hidden: true),
+                new Command("lbjson", GetLeaderboardJson, hidden: true)
+            };
 
         }
 
@@ -183,6 +172,7 @@ namespace DiscordBot.Managers
                             return;
                         }
                     }
+
                     //execute command
                     await commandToExecute.ExecuteAsync(client, message, args);
                 }

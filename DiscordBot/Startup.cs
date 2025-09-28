@@ -5,6 +5,7 @@ using Discord;
 using Discord.WebSocket;
 using DiscordBot.Games;
 using DiscordBot.Games.Managers;
+using DiscordBot.Installers;
 using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -54,6 +55,8 @@ namespace DiscordBot
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();
             services.AddSingleton<GPTService>();
+            services.AddSingleton<OllamaInstaller>();
+            services.AddSingleton<ConvoService>();
 
             services.AddControllers();
             services.AddCors(options =>
@@ -104,7 +107,7 @@ namespace DiscordBot
             });
 
             services.AddHostedService<ChatWorker>();
-            services.AddHostedService<WebAlerterWorker>();
+            //services.AddHostedService<WebAlerterWorker>();
 
         }
 
