@@ -14,11 +14,41 @@ namespace DiscordBot.Managers
     public class BetManager
     {
         private readonly CoinService _coinService;
+        private readonly AppSettings _appSettings;
         public List<ulong> InitiatedBetUserIds = new List<ulong>();
+        private readonly Dictionary<ulong, DailyRollResult> _pendingDailyRolls = new Dictionary<ulong, DailyRollResult>();
+        private const int StealRollNeeded = 10;
+        private const double StealPercent = 0.10;
 
-        public BetManager(CoinService coinService)
+        public class DailyRollResult
+        {
+            public int Roll { get; set; }
+            public double StolenAmount { get; set; }
+            public string StolenFromName { get; set; }
+            public ulong StolenFromUserId { get; set; }
+
+            public override string ToString()
+            {
+                if (StolenAmount > 0)
+                    return $"🎲 First gamble of the day! Rolled a {Roll} and stole ${Common.Helpers.FormatHelper.GetCommaNumber(StolenAmount)} from {StolenFromName}!";
+                return $"🎲 First gamble of the day! Rolled a {Roll}. (Roll a {StealRollNeeded} to steal {StealPercent * 100}% of the top player's net worth.)";
+            }
+        }
+
+        /// <summary>
+        /// Returns (and clears) the daily d10 roll made when the user's gamble was last resolved, if any.
+        /// </summary>
+        public DailyRollResult TakeDailyRoll(ulong userId)
+        {
+            if (!_pendingDailyRolls.Remove(userId, out var result))
+                return null;
+            return result;
+        }
+
+        public BetManager(CoinService coinService, AppSettings appSettings)
         {
             _coinService = coinService;
+            _appSettings = appSettings;
         }
 
         /// <summary>
@@ -91,6 +121,9 @@ namespace DiscordBot.Managers
                 }
             }
 
+            bool firstGambleOfTheDay = coinAccount.LastGambleDate != todayString;
+            coinAccount.LastGambleDate = todayString;
+
             double bonusWinnings = GetBonus(coinAccount, baseWinnings);
             double totalWinnings = baseWinnings + bonusWinnings;
 
@@ -108,9 +141,38 @@ namespace DiscordBot.Managers
 
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
 
+            if (firstGambleOfTheDay)
+                _pendingDailyRolls[userId] = RollDailySteal(coinAccount);
+
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
             InitiatedBetUserIds.Remove(userId);
             return (bonusWinnings, totalWinnings, netWinnings, bonusGranted);
+        }
+
+        /// <summary>
+        /// Rolls a d10; on a 10 moves 10% of the top player's cash net worth to the roller. Mutates both accounts in memory
+        /// (the caller persists via CoinService.Update, which serializes every account).
+        /// </summary>
+        private DailyRollResult RollDailySteal(CoinAccount roller)
+        {
+            var result = new DailyRollResult { Roll = DiceRoller.RollDice(1, 10)[0] };
+            if (result.Roll != StealRollNeeded)
+                return result;
+
+            var top = _coinService.GetTopAccount(excludeUserId: roller.UserId);
+            if (top == null || top.NetWorth < roller.NetWorth)
+                return result; //roller is already the top player (or there's nobody to steal from)
+
+            double amount = Math.Floor(top.NetWorth * StealPercent);
+            if (amount <= 0)
+                return result;
+
+            top.NetWorth -= amount;
+            roller.NetWorth += amount;
+            result.StolenAmount = amount;
+            result.StolenFromName = top.Name;
+            result.StolenFromUserId = top.UserId;
+            return result;
         }
 
         public async Task ResolveBet(IEnumerable<IPlayer> players)
@@ -189,7 +251,7 @@ namespace DiscordBot.Managers
 
         public double GetBonus(CoinAccount coinAccount, double baseWinnings)
         {
-            double p = coinAccount.GetAmountRequiredForNextLevel() / 2;
+            double p = coinAccount.GetPrestigeThreshold(_appSettings.PrestigeDisabled) / 2;
             if (coinAccount.NetWorth > p) return 0;
             double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
             double m = 1;

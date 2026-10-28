@@ -33,6 +33,7 @@ namespace DiscordBot.Managers
             double baseWinnings = double.Parse(args[3]);
 
             var betResults = await _betManager.ResolveBet(userId, userName, betAmount, baseWinnings);
+            _betManager.TakeDailyRoll(userId); //nobody to show it to; just clear it
             await message.Channel.SendMessageAsync($"!TotalWinnings:{betResults.TotalWinnings},BonusWinnings:{betResults.BonusWinnings},NetWinnings:{betResults.NetWinnings},WasBonusGranted:{betResults.WasBonusGranted}");
         }
 

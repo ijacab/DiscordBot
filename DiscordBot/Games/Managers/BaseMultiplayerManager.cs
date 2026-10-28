@@ -280,6 +280,10 @@ namespace DiscordBot.Games.Managers
                         $"\t{bonusLine}" +
                         $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
 
+                    var dailyRoll = _betManager.TakeDailyRoll(player.UserId);
+                    if (dailyRoll != null)
+                        networthLine += $"\n\t{dailyRoll}";
+
                     output += GetEndMessage(player, networthLine);
                 }
 

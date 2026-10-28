@@ -46,6 +46,7 @@ namespace DiscordBot
             services.AddTransient<MappingService>();
             services.AddTransient<ReminderService>();
             services.AddSingleton<CoinService>();
+            services.AddSingleton<StockService>();
             services.AddSingleton<CommandManager>();
             services.AddSingleton<MessageHandler>();
             services.AddTransient<StrawmanChecker>();

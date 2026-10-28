@@ -20,6 +20,7 @@ namespace DiscordBot.Managers
         private readonly MappingService _mappingService;
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
+        private readonly StockService _stockService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
@@ -37,7 +38,7 @@ namespace DiscordBot.Managers
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, GPTService gptService, ConvoService convoService)
         {
             _logger = logger;
@@ -45,6 +46,7 @@ namespace DiscordBot.Managers
             _mappingService = mappingService;
             _reminderService = reminderService;
             _coinService = coinService;
+            _stockService = stockService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
             _blackjackManager = blackjackManager;
@@ -67,7 +69,11 @@ namespace DiscordBot.Managers
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
-                new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`" },
+                new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
+                new Command("stocks", Stocks) { Description = "Shows the stock market. Prices change every 5 minutes. Higher risk tiers (1-5) swing more.", Syntax = "`.stocks`" },
+                new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SCORT 10` or `.buy SCORT max`" },
+                new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SCORT 10` or `.sell SCORT all`" },
+                new Command("portfolio", Portfolio) { Description = "Shows the stocks you own.", Syntax = "`.portfolio`" },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
@@ -218,7 +224,8 @@ namespace DiscordBot.Managers
 
             //coin tasks
             Task coinServiceTask = _coinService.AddInterest();
-            await Task.WhenAll(reminderTask, coinServiceTask);
+            Task stockTask = _stockService.TickIfDue();
+            await Task.WhenAll(reminderTask, coinServiceTask, stockTask);
         }
 
         private async Task SendReminders(DiscordSocketClient client)
