@@ -42,9 +42,9 @@ namespace DiscordBot.Games.Managers
         {
             return "";
         }
-        protected virtual string GetGameEndMessage(TGame game)
+        protected virtual Task AnimateGame(TGame game, IEnumerable<TPlayer> players)
         {
-            return "";
+            return Task.CompletedTask;
         }
 
         protected virtual void PostStartActions(TGame game, IEnumerable<TPlayer> players)
@@ -60,7 +60,7 @@ namespace DiscordBot.Games.Managers
         }
 
         /// <returns>True if new game created, false if joining existing game.</returns>
-        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message, Action<TPlayer> configurePlayer = null)
+        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
         {
             //try to get the player
             if (TryGetPlayer(playerId, out _))
@@ -90,7 +90,6 @@ namespace DiscordBot.Games.Managers
                 Username = message.Author.Username,
                 CoinAccount = coinAcc
             };
-            configurePlayer?.Invoke(player);
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
             if (openGame == null) //if no open games found, create new game
@@ -145,6 +144,7 @@ namespace DiscordBot.Games.Managers
 
                 //normally nothing, but can be overridden in child classes
                 PostStartActions(game, players);
+                await AnimateGame(game, players);
 
                 if (await EndGameIfAllPlayersFinished(playerId, message))
                     return;
@@ -272,7 +272,6 @@ namespace DiscordBot.Games.Managers
                     output += GetDealerEndMessage(dealer);
                 }
 
-                output += GetGameEndMessage(game);
                 CalculateWinnings(game);
                 Games.Remove(game);
 

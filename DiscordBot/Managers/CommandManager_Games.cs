@@ -225,8 +225,7 @@ namespace DiscordBot.Managers
             var playerId = message.Author.Id;
 
             //args valid inputs:
-            //1000 3 - create or join race with 1000 as your bet on duck 3
-            //1000 - create or join race with 1000 as your bet on a random duck
+            //1000|any numbers - create or join race with 1000 as your bet
             //start - start the race without waiting
 
             CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
@@ -240,7 +239,7 @@ namespace DiscordBot.Managers
                 {
                     if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount)) //'.duck start' with no game yet
                     {
-                        await _duckRaceManager.CreateOrJoin(playerId, minBetAmount, message, p => p.DuckNumber = DiceRoller.RollDice(1, DuckRace.DuckCount)[0]);
+                        await _duckRaceManager.CreateOrJoin(playerId, minBetAmount, message); //will throw an exception if player already in a game, don't need to check
                         await _duckRaceManager.Start(playerId, message);
                     }
                 }
@@ -248,15 +247,9 @@ namespace DiscordBot.Managers
                 return;
             }
 
-            int duckNumber = 0;
-            if (args.Count() > 1 && (!int.TryParse(args[1], out duckNumber) || duckNumber < 1 || duckNumber > DuckRace.DuckCount))
-                throw new BadInputException($"Duck number must be between 1 and {DuckRace.DuckCount}.");
-
-            if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.duck 1000 3'
+            if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.duck 1000'
             {
-                await _duckRaceManager.CreateOrJoin(playerId, betAmount, message, p => p.DuckNumber = args.Count() > 1
-                    ? duckNumber
-                    : DiceRoller.RollDice(1, DuckRace.DuckCount)[0]); //will throw an exception if player already in a game, don't need to check
+                await _duckRaceManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
             }
         }
 
