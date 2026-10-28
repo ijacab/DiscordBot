@@ -19,7 +19,7 @@ namespace DiscordBot.Services
 
         public async Task<Stream> Run()
         {
-            var requestMsg = new HttpRequestMessage(HttpMethod.Get, "image");
+            var requestMsg = new HttpRequestMessage(HttpMethod.Get, "random-person.jpeg");
             var response = await _client.SendAsync(requestMsg);
             response.EnsureSuccessStatusCode();
             var stream = await response.Content.ReadAsStreamAsync();
