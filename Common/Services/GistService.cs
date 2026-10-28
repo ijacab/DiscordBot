@@ -85,10 +85,10 @@ namespace Common.Services
         {
             JObject contentJsonObj = JObject.Parse(httpReponseContent);
 
-            // get JSON result objects into a list
-            string result = (string)contentJsonObj["files"][fileName]["content"];
+            // get JSON result objects into a list (file may not exist in the gist yet)
+            string result = (string)contentJsonObj["files"]?[fileName]?["content"];
 
-            //if the file is empty initialize it with an new instance of that class
+            //if the file is missing or empty initialize it with an new instance of that class
             if (string.IsNullOrWhiteSpace(result))
             {
                 T initializedObj = new T();
@@ -106,7 +106,7 @@ namespace Common.Services
             JObject contentJsonObj = JObject.Parse(httpReponseContent);
 
             // get JSON result objects into a list
-            string result = (string)contentJsonObj["files"][fileName]["content"];
+            string result = (string)contentJsonObj["files"]?[fileName]?["content"];
             return result;
         }
     }
