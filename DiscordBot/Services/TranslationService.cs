@@ -11,7 +11,7 @@ namespace DiscordBot.Services
     {
         // Languages the text can be bounced through before it comes back to English
         private static readonly string[] _languages = { "ja", "ru", "ar", "hi", "sw", "th", "de", "ko", "el", "tr", "vi", "pl" };
-        private const int _hopCount = 20;
+        private const int _hopCount = 6;
         private readonly HttpClient _client;
         private readonly Random _random = new Random();
 
