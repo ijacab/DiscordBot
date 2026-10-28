@@ -19,7 +19,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Managers/
     CommandManager_Main.cs     ctor, _commands registry, RunCommand dispatch/parsing
     CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace handlers
-    CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, ...)
+    CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, lang, ban/unban, ...)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
@@ -42,6 +42,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     FaceService.cs             thispersondoesnotexist
     MappingService.cs          custom command storage
     ReminderService.cs         reminders storage
+    TranslationService.cs      .lang: multi-hop translation back to English (Google gtx endpoint)
+    BanService.cs              banned user IDs storage (bans.json in gist)
   Models/
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs

@@ -721,5 +721,55 @@ namespace DiscordBot.Managers
 
             await message.Channel.SendMessageAsync(convo);
         }
+
+        private async Task Lang(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count == 0)
+                throw new BadSyntaxException();
+
+            string translated = await _translationService.TranslateThroughLanguages(string.Join(" ", args));
+
+            if (translated.Length > _messageCharLimit)
+                translated = translated.Substring(0, _messageCharLimit);
+
+            await message.Channel.SendMessageAsync(translated);
+        }
+
+        private async Task Ban(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var target = message.MentionedUsers.FirstOrDefault();
+            if (target == null)
+                throw new BadSyntaxException("you have to mention someone to ban them");
+
+            if (_adminIds.Contains(target.Id))
+                throw new BadSyntaxException("you can't ban an admin");
+
+            if (_bannedUserIds.Contains(target.Id))
+            {
+                await message.Channel.SendMessageAsync($"{target.Mention} is already banned");
+                return;
+            }
+
+            await _banService.Save(_bannedUserIds.Concat(new[] { target.Id }));
+            _bannedUserIds.Add(target.Id);
+            await message.Channel.SendMessageAsync($"Banned {target.Mention}");
+        }
+
+        private async Task Unban(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var target = message.MentionedUsers.FirstOrDefault();
+            if (target == null)
+                throw new BadSyntaxException("you have to mention someone to unban them");
+
+            if (!_bannedUserIds.Contains(target.Id))
+            {
+                await message.Channel.SendMessageAsync($"{target.Mention} is not banned");
+                return;
+            }
+
+            await _banService.Save(_bannedUserIds.Where(id => id != target.Id));
+            _bannedUserIds.Remove(target.Id);
+            await message.Channel.SendMessageAsync($"Unbanned {target.Mention}");
+        }
     }
 }

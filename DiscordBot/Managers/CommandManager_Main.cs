@@ -29,6 +29,9 @@ namespace DiscordBot.Managers
         private readonly DuckRaceManager _duckRaceManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
+        private readonly TranslationService _translationService;
+        private readonly BanService _banService;
+        private HashSet<ulong> _bannedUserIds;
         private Dictionary<string, string> _customMappings;
         private ulong _botId = 205386259026280448;
         private ulong[] _adminIds = new ulong[] { 166477511469957120, 195207667902316544 };
@@ -40,7 +43,8 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, GPTService gptService, ConvoService convoService)
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, GPTService gptService, ConvoService convoService,
+            TranslationService translationService, BanService banService)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -56,7 +60,10 @@ namespace DiscordBot.Managers
             _duckRaceManager = duckRaceManager;
             _gptService = gptService;
             _convoService = convoService;
-            _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
+            _translationService = translationService;
+            _banService = banService;
+            _bannedUserIds = new HashSet<ulong>(banService.GetAll().GetAwaiter().GetResult());
+            _customMappings =mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
 
             //need to add new commands in here as they are created
             _commands = new List<Command>
@@ -95,6 +102,9 @@ namespace DiscordBot.Managers
                 new Command("stop", Stop, hidden: true, requiresAdmin: true),
                 new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
                 new Command("convo", Convo),
+                new Command("lang", Lang) { Description = "Sends your text through a bunch of different translators and back to English.", Syntax = "`.lang some text to mangle`" },
+                new Command("ban", Ban) { Syntax = "`.ban @someone`", Hidden = true, RequiresAdmin = true },
+                new Command("unban", Unban) { Syntax = "`.unban @someone`", Hidden = true, RequiresAdmin = true },
 
                 //bot commands
                 new Command("initiatebet", InitiateBet, hidden: true),
@@ -113,6 +123,13 @@ namespace DiscordBot.Managers
                     _logger.LogDebug("Bot is stopped at the moment. Run .start to start it up again.");
                     return;
                 }
+            }
+
+            if (_bannedUserIds.Contains(message.Author.Id))
+            {
+                if (message.Content.StartsWith('.'))
+                    await message.Channel.SendMessageAsync("you are BANNED YOU CANNOT INTERACT WITH BOT");
+                return;
             }
 
             if (message.Author.IsBot &&

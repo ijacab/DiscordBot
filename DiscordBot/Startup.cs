@@ -59,6 +59,7 @@ namespace DiscordBot
             services.AddSingleton<GPTService>();
             services.AddSingleton<OllamaInstaller>();
             services.AddSingleton<ConvoService>();
+            services.AddTransient<BanService>();
 
             services.AddControllers();
             services.AddCors(options =>
@@ -105,6 +106,12 @@ namespace DiscordBot
             services.AddHttpClient<FaceService>(h =>
             {
                 h.BaseAddress = new Uri(@"https://thispersondoesnotexist.com");
+                h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
+            });
+
+            services.AddHttpClient<TranslationService>(h =>
+            {
+                h.BaseAddress = new Uri(@"https://translate.googleapis.com/");
                 h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
             });
 
