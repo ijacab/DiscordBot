@@ -56,16 +56,16 @@ namespace DiscordBot.Models
                     S("UTIL", "Utility Co", 1, 60),
                     //tier 2 - stable
                     S("GROC", "Grocery Giant", 2, 45),
-                    S("SOUP", "Souper Foods", 2, 25),
+                    S("WANG", "Wang Holdings", 2, 25),
                     //tier 3 - moderate
                     S(ScortSymbol, "Scort Industries", 3, 50),
-                    S("ACME", "ACME Corp", 3, 80),
+                    S("JCB", "JCB Group", 3, 80),
                     //tier 4 - volatile
-                    S("MOON", "Moonshot Rockets", 4, 20),
-                    S("PIZZA", "Pizza Pals", 4, 35),
+                    S("SCORCH", "Scorch Rockets", 4, 20),
+                    S("BALLS", "Balls Inc", 4, 35),
                     //tier 5 - degenerate
-                    S("YOLO", "YOLO Capital", 5, 10),
-                    S("DOGE2", "Doge Squared", 5, 5)
+                    S("GLGY", "GLGY Capital", 5, 10),
+                    S("ALX", "ALX Squared", 5, 5)
                 }
             };
         }
