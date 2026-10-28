@@ -26,6 +26,7 @@ namespace DiscordBot.Managers
         private readonly BlackjackManager _blackjackManager;
         private readonly BetManager _betManager;
         private readonly BattleArenaManager _battleArenaManager;
+        private readonly DuckRaceManager _duckRaceManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
         private Dictionary<string, string> _customMappings;
@@ -39,7 +40,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, GPTService gptService, ConvoService convoService)
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, GPTService gptService, ConvoService convoService)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -52,6 +53,7 @@ namespace DiscordBot.Managers
             _blackjackManager = blackjackManager;
             _betManager = betManager;
             _battleArenaManager = battleArenaManager;
+            _duckRaceManager = duckRaceManager;
             _gptService = gptService;
             _convoService = convoService;
             _customMappings = mappingService.GetAll().GetAwaiter().GetResult();//new Dictionary<string, string>(mappingService.GetAll().GetAwaiter().GetResult(), StringComparer.InvariantCultureIgnoreCase);
@@ -66,6 +68,8 @@ namespace DiscordBot.Managers
                 new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
                 new Command("faceoff", GameFaceOff) { Description = "Plays a multiplayer faceoff game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" },
                 new Command("fo", GameFaceOff) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" },
+                new Command("duckrace", GameDuckRace) { Description = "Plays a multiplayer duck race using virtual money. Pick a duck (1-5) to bet on, or leave it out for a random one. Type '.leaderboard' to see how much money you have", Syntax = "`.duckrace betAmount duckNumber` to start where betAmount is the amount you want to bet and duckNumber is 1-5. For example `.duckrace 1000 3`" },
+                new Command("duck", GameDuckRace) { Hidden = true, Syntax = "`.duckrace betAmount duckNumber` to start where betAmount is the amount you want to bet and duckNumber is 1-5. For example `.duckrace 1000 3`" },
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },

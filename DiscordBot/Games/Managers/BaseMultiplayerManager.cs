@@ -42,6 +42,10 @@ namespace DiscordBot.Games.Managers
         {
             return "";
         }
+        protected virtual string GetGameEndMessage(TGame game)
+        {
+            return "";
+        }
 
         protected virtual void PostStartActions(TGame game, IEnumerable<TPlayer> players)
         {
@@ -56,7 +60,7 @@ namespace DiscordBot.Games.Managers
         }
 
         /// <returns>True if new game created, false if joining existing game.</returns>
-        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
+        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message, Action<TPlayer> configurePlayer = null)
         {
             //try to get the player
             if (TryGetPlayer(playerId, out _))
@@ -86,6 +90,7 @@ namespace DiscordBot.Games.Managers
                 Username = message.Author.Username,
                 CoinAccount = coinAcc
             };
+            configurePlayer?.Invoke(player);
 
             var openGame = Games.FirstOrDefault(g => g.Started == false);
             if (openGame == null) //if no open games found, create new game
@@ -267,6 +272,7 @@ namespace DiscordBot.Games.Managers
                     output += GetDealerEndMessage(dealer);
                 }
 
+                output += GetGameEndMessage(game);
                 CalculateWinnings(game);
                 Games.Remove(game);
 

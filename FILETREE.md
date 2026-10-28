@@ -18,18 +18,19 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   DiscordBot.service           systemd unit
   Managers/
     CommandManager_Main.cs     ctor, _commands registry, RunCommand dispatch/parsing
-    CommandManager_Games.cs    .roulette .blackjack .faceoff handlers
+    CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace handlers
     CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, ...)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
     Blackjack.cs  Roulette.cs  BattleArena.cs     game rules
+    DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
-      BlackjackManager.cs  BattleArenaManager.cs
+      BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
     Models/
-      BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs
+      BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             AttackInfo, BattlePerson, BattleStats, OtherStats
   Services/

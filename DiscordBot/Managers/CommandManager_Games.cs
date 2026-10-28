@@ -220,6 +220,46 @@ namespace DiscordBot.Managers
             }
         }
 
+        private async Task GameDuckRace(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var playerId = message.Author.Id;
+
+            //args valid inputs:
+            //1000 3 - create or join race with 1000 as your bet on duck 3
+            //1000 - create or join race with 1000 as your bet on a random duck
+            //start - start the race without waiting
+
+            CoinAccount coinAccount = await _coinService.Get(playerId, message.Author.Username);
+            if (args.Count() > 0 && args[0].StartsWith("start"))//'.duck start'
+            {
+                try
+                {
+                    await _duckRaceManager.Start(playerId, message);
+                }
+                catch (NotInGameException)
+                {
+                    if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount)) //'.duck start' with no game yet
+                    {
+                        await _duckRaceManager.CreateOrJoin(playerId, minBetAmount, message, p => p.DuckNumber = DiceRoller.RollDice(1, DuckRace.DuckCount)[0]);
+                        await _duckRaceManager.Start(playerId, message);
+                    }
+                }
+
+                return;
+            }
+
+            int duckNumber = 0;
+            if (args.Count() > 1 && (!int.TryParse(args[1], out duckNumber) || duckNumber < 1 || duckNumber > DuckRace.DuckCount))
+                throw new BadInputException($"Duck number must be between 1 and {DuckRace.DuckCount}.");
+
+            if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.duck 1000 3'
+            {
+                await _duckRaceManager.CreateOrJoin(playerId, betAmount, message, p => p.DuckNumber = args.Count() > 1
+                    ? duckNumber
+                    : DiceRoller.RollDice(1, DuckRace.DuckCount)[0]); //will throw an exception if player already in a game, don't need to check
+            }
+        }
+
         private bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)
         {
             betAmount = 0;
