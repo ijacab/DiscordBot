@@ -10,8 +10,9 @@ namespace DiscordBot.Games
     /// </summary>
     public class DuckRace : BaseMultiplayerGame<DuckRacePlayer>
     {
-        public const int TrackLength = 15;
+        public const int TrackLength = 12;
         public const int MaxStepPerTick = 3;
+        public const int BackwardChanceOneIn = 20; //each tick a duck has this chance (1 in N) to be pushed back a space instead of moving forward
         public const double PayoutPerDuck = 0.9; //winner gets bet * DuckCount * PayoutPerDuck, so the house keeps 10%
 
         /// <summary>One duck per player plus the bot duck (always the last duck).</summary>
@@ -41,8 +42,12 @@ namespace DiscordBot.Games
             while (true)
             {
                 var moves = DiceRoller.RollDice(DuckCount, MaxStepPerTick);
+                var backwardRolls = DiceRoller.RollDice(DuckCount, BackwardChanceOneIn);
                 for (int i = 0; i < DuckCount; i++)
-                    positions[i] = System.Math.Min(positions[i] + moves[i], TrackLength);
+                {
+                    int step = backwardRolls[i] == 1 ? -1 : moves[i];
+                    positions[i] = System.Math.Clamp(positions[i] + step, 0, TrackLength);
+                }
 
                 Frames.Add((int[])positions.Clone());
 

@@ -76,7 +76,10 @@ namespace DiscordBot.Games.Managers
                 string duck = isBot ? "🤖" : "🦆";
                 string label = i < 9 ? $"{i + 1}️⃣" : $"`{i + 1}`";
                 string winner = isLastFrame && game.WinningDuck == i + 1 ? " 🏆" : string.Empty;
-                return $"{label} {new string('~', positions[i])}{duck}{new string('~', DuckRace.TrackLength - positions[i])}🏁 **{name}**{winner}";
+                //every cell is a single emoji so all lanes stay the same width; the duck replaces the cell it is on
+                string track = string.Concat(Enumerable.Range(0, DuckRace.TrackLength + 1)
+                    .Select(c => c == positions[i] ? duck : c == DuckRace.TrackLength ? "🏁" : "🟦"));
+                return $"{label} {track} **{name}**{winner}";
             });
 
             string status;
