@@ -92,7 +92,13 @@ namespace DiscordBot.Managers
             }
 
             if (betResolve.WasBonusGranted)
-                output += $"\n\n*You will get a bonus $1000 + {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*";
+                output += _appSettings.PrestigeDisabled
+                    ? $"\n\n*You will get a bonus {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*"
+                    : $"\n\n*You will get a bonus $1000 + {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*";
+
+            var dailyRoll = _betManager.TakeDailyRoll(userId);
+            if (dailyRoll != null)
+                output += $"\n\n{dailyRoll}";
 
             await message.Channel.SendMessageAsync(output);
 

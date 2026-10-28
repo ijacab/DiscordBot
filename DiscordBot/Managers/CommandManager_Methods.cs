@@ -193,21 +193,31 @@ namespace DiscordBot.Managers
             var accounts = _coinService.GetAll();
             string output = "";
             int? prestige = null;
-            foreach (var account in accounts.Accounts.OrderByDescending(a => a.NetWorth).OrderByDescending(a => a.PrestigeLevel))
+            bool prestigeDisabled = _appSettings.PrestigeDisabled;
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId); //cash + stocks
+            var ordered = prestigeDisabled
+                ? accounts.Accounts.OrderByDescending(TotalWorth)
+                : accounts.Accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
+            foreach (var account in ordered)
             {
-                if (prestige != null && account.PrestigeLevel < prestige)
+                if (!prestigeDisabled && prestige != null && account.PrestigeLevel < prestige)
                     output += "\n"; //line between each prestige lvl
 
                 prestige = account.PrestigeLevel;
 
-                string prestigeDisplay = prestige == 0 ? "" : $"**[P{prestige}]**";
-                output += $"{account.Name}: {prestigeDisplay} ${FormatHelper.GetCommaNumber(account.NetWorth)}";
+                string prestigeDisplay = prestigeDisabled || prestige == 0 ? "" : $"**[P{prestige}]** ";
+                output += $"{account.Name}: {prestigeDisplay}${FormatHelper.GetCommaNumber(TotalWorth(account))}";
 
                 if (account.MostRecentDateBonusMet == DateTime.UtcNow.ToString("yyyyMMdd"))
                     output += "   \\*";
                 output += "\n";
             }
-            if (showHints)
+            if (showHints && prestigeDisabled)
+            {
+                output += $"\n*Each day you will get $1000. If you bet over 50% in a single bet that day you will also get an hourly bonus of {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
+                output += "\n*The more money you win from playing in a day, the more money you make from further wins (via a bonus), up to a maxmium of 3x winnings bonus.*";
+            }
+            else if (showHints)
             {
                 output += $"\n*Each day you will get $1000 x P level. If you bet over 50% in a single bet that day, and bet a minimum of P level bets you will also get an hourly bonus $1000 x P level + (up to) {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC). Your leaderboard entry will show \\* symbol if you are currently receiving the bonus.*\n";
                 output += "\n*The more money you win from playing in a day, the more money you make from further wins (via a bonus), up to a maxmium of 3x winnings bonus.*\n";
@@ -239,6 +249,9 @@ namespace DiscordBot.Managers
 
         private async Task Prestige(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (_appSettings.PrestigeDisabled)
+                throw new BadInputException("Prestige is disabled.");
+
             if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
                 throw new BadInputException("Hey **FUCK HEAD**! DON'T TRY TO CHEAT THE SYSTEM! You can't FUCKING prestige while you still have a bet in progress!");
 
@@ -254,6 +267,68 @@ namespace DiscordBot.Managers
             await _coinService.Update(account.UserId, account.NetWorth, account.Name);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} you have prestiged to level {account.PrestigeLevel} and your networth has been reset to {_startingAmount}.");
+        }
+
+        private async Task Stocks(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var market = _stockService.GetMarket();
+            string output = "`SYMBOL   TIER   PRICE        CHANGE`\n";
+            foreach (var stock in market.Stocks.OrderBy(s => s.RiskTier).ThenBy(s => s.Symbol))
+            {
+                string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
+                output += $"`{stock.Symbol,-7}  {stock.RiskTier,-4}  ${stock.Price,-10:N2}  {stock.PercentChange,7:+0.00;-0.00;0.00}%` {arrow} {stock.Name}\n";
+            }
+            output += "\n*Prices change every 5 minutes. Risk tier 1 is stable, tier 5 is wild. Use `.buy`, `.sell` and `.portfolio`.*";
+
+            await message.SendRichEmbedMessage("Stock Market", output);
+        }
+
+        private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 2) throw new BadSyntaxException();
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Finish your bet before trading stocks.");
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (stock, shares, cost) = _stockService.Buy(account, args[0], args[1]);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(cost)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task SellStock(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 2) throw new BadSyntaxException();
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Finish your bet before trading stocks.");
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (stock, shares, proceeds) = _stockService.Sell(account, args[0], args[1]);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task Portfolio(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var market = _stockService.GetMarket();
+            var holdings = market.Portfolios.TryGetValue(account.UserId, out var h) ? h : new Dictionary<string, int>();
+
+            if (holdings.Count == 0)
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} you don't own any stocks. Type `.stocks` to see what's available.");
+                return;
+            }
+
+            string output = "";
+            foreach (var holding in holdings.OrderBy(x => x.Key))
+            {
+                var stock = market.Find(holding.Key);
+                output += $"{holding.Key}: {holding.Value} share(s) @ ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick)\n";
+            }
+            double stocksValue = _stockService.GetPortfolioValue(account.UserId);
+            output += $"\nStocks: ${FormatHelper.GetCommaNumber(stocksValue)} | Cash: ${FormatHelper.GetCommaNumber(account.NetWorth)} | Total: ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}";
+
+            await message.SendRichEmbedMessage($"{account.Name}'s portfolio", output);
         }
 
         private async Task Donate(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -279,7 +354,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(userId, message.Author.Username);
             CoinAccount donationReceiverAccount = await _coinService.Get(userIdToDonateTo, client.GetUser(userIdToDonateTo).Username);
 
-            if (donationReceiverAccount.PrestigeLevel > account.PrestigeLevel)
+            if (!_appSettings.PrestigeDisabled && donationReceiverAccount.PrestigeLevel > account.PrestigeLevel)
                 throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {donationReceiverAccount.PrestigeLevel}.");
 
             if (donationAmount > account.NetWorth)

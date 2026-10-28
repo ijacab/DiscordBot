@@ -8,5 +8,6 @@ namespace DiscordBot
     {
         public List<string> BlackListedWords { get; set; } = new List<string>();
         public List<ulong> BlackListedIds { get; set; } = new List<ulong>();
+        public bool PrestigeDisabled { get; set; } = true;
     }
 }

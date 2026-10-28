@@ -23,6 +23,18 @@ namespace DiscordBot.Models
             public int PrestigeLevel { get; set; } = 0;
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
             public BattlePerson BattlePerson { get; set; }
+            public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
+
+            /// <summary>
+            /// The net worth used as the "ceiling" for bonuses and interest scaling.
+            /// With prestige disabled this is always the level 0 amount.
+            /// </summary>
+            public double GetPrestigeThreshold(bool prestigeDisabled)
+            {
+                if (!prestigeDisabled) return GetAmountRequiredForNextLevel();
+                return new CoinAccount().GetAmountRequiredForNextLevel();
+            }
+
             public double GetAmountRequiredForNextLevel()
             {
                 const int baseAmount = 100000;

@@ -13,11 +13,13 @@ namespace DiscordBot.Services
     {
         private const string _fileName = "coinaccounts.json";
         private readonly LocalFileService _fileService;
+        private readonly AppSettings _appSettings;
         private CoinAccounts _coinAccounts;
 
-        public CoinService(LocalFileService fileService)
+        public CoinService(LocalFileService fileService, AppSettings appSettings)
         {
             _fileService = fileService;
+            _appSettings = appSettings;
             _coinAccounts = _fileService.GetContent<CoinAccounts>(_fileName).Result;
         }
         public CoinAccounts GetAll()
@@ -31,6 +33,17 @@ namespace DiscordBot.Services
                 await Add(userId, amount, name);
 
             return _coinAccounts.Accounts.First(a => a.UserId == userId);
+        }
+
+        /// <summary>
+        /// The account with the highest cash net worth, optionally excluding one user.
+        /// </summary>
+        public CoinAccount GetTopAccount(ulong? excludeUserId = null)
+        {
+            return _coinAccounts.Accounts
+                .Where(a => a.UserId != excludeUserId)
+                .OrderByDescending(a => a.NetWorth)
+                .FirstOrDefault();
         }
 
         public async Task<CoinAccount> Add(ulong userId, double netWorth, string name)
@@ -87,14 +100,14 @@ namespace DiscordBot.Services
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {
-                _coinAccounts.Accounts.ForEach(a => a.NetWorth += 1000 * (a.PrestigeLevel + 1)); //add 1000 if it is the start of the day
+                _coinAccounts.Accounts.ForEach(a => a.NetWorth += _appSettings.PrestigeDisabled ? 1000 : 1000 * (a.PrestigeLevel + 1)); //add 1000 if it is the start of the day
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDateBonusMet == dateString);
             foreach (var account in accountsToAction)
             {
-                account.NetWorth += CalculateAddedInterest(account); //add 1000 + 10% per hour if they are granted the bonus
+                account.NetWorth += CalculateAddedInterest(account); //add interest per hour if they are granted the bonus
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);
             string content = JsonConvert.SerializeObject(_coinAccounts);
@@ -103,6 +116,10 @@ namespace DiscordBot.Services
 
         public double CalculateAddedInterest(CoinAccount account, int fixedAmount = 1000)
         {
+            //no prestige means no threshold to scale against: flat interest on net worth
+            if (_appSettings.PrestigeDisabled)
+                return account.NetWorth * Constants.InterestPercentage / 100;
+
             double p = account.GetAmountRequiredForNextLevel();
             double x = account.NetWorth;
             double c = Constants.InterestPercentage;
