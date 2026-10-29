@@ -81,7 +81,7 @@ namespace DiscordBot.Managers
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
                 new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
-                new Command("stocks", Stocks) { Description = "Shows the stock market. Prices change every 5 minutes. Higher risk tiers (1-5) swing more.", Syntax = "`.stocks`" },
+                new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock. Prices change every 5 minutes. Higher risk tiers (1-5) swing more.", Syntax = "`.stocks` or `.stocks SCORT`" },
                 new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SCORT 10` or `.buy SCORT max`" },
                 new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SCORT 10` or `.sell SCORT all`" },
                 new Command("portfolio", Portfolio) { Description = "Shows the stocks you own.", Syntax = "`.portfolio`" },

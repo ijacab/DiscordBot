@@ -36,6 +36,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
+    StockChart.cs              text price graph for `.stocks {symbol}`
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search

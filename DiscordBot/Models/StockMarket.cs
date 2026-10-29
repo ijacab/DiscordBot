@@ -11,6 +11,8 @@ namespace DiscordBot.Models
         public List<Stock> Stocks { get; set; } = new List<Stock>();
         /// <summary>userId -> (symbol -> whole shares owned)</summary>
         public Dictionary<ulong, Dictionary<string, int>> Portfolios { get; set; } = new Dictionary<ulong, Dictionary<string, int>>();
+        /// <summary>userId -> (symbol -> average price paid per share currently held)</summary>
+        public Dictionary<ulong, Dictionary<string, double>> CostBasis { get; set; } = new Dictionary<ulong, Dictionary<string, double>>();
         /// <summary>Number of 5 minute periods since the unix epoch that prices were last updated for.</summary>
         public long LastTickSlot { get; set; }
 
@@ -24,6 +26,30 @@ namespace DiscordBot.Models
             return Portfolios.TryGetValue(userId, out var holdings) && holdings.TryGetValue(symbol, out int shares) ? shares : 0;
         }
 
+        public double GetAverageCost(ulong userId, string symbol)
+        {
+            return CostBasis.TryGetValue(userId, out var basis) && basis.TryGetValue(symbol, out double cost) ? cost : 0;
+        }
+
+        /// <summary>Holdings for a user, or an empty dictionary.</summary>
+        public IReadOnlyDictionary<string, int> GetHoldings(ulong userId)
+        {
+            return Portfolios.TryGetValue(userId, out var holdings) ? holdings : new Dictionary<string, int>();
+        }
+
+        /// <summary>Adds bought shares and blends their price into the average cost of the holding.</summary>
+        public void RecordPurchase(ulong userId, string symbol, int shares, double price)
+        {
+            int owned = GetShares(userId, symbol);
+            double averageCost = GetAverageCost(userId, symbol);
+            double newAverage = (owned * averageCost + shares * price) / (owned + shares);
+
+            AddShares(userId, symbol, shares);
+            if (!CostBasis.TryGetValue(userId, out var basis))
+                CostBasis[userId] = basis = new Dictionary<string, double>();
+            basis[symbol] = newAverage;
+        }
+
         public void AddShares(ulong userId, string symbol, int shares)
         {
             if (!Portfolios.TryGetValue(userId, out var holdings))
@@ -32,7 +58,11 @@ namespace DiscordBot.Models
             int newTotal = (holdings.TryGetValue(symbol, out int current) ? current : 0) + shares;
             if (newTotal < 0) throw new InvalidOperationException("Can't have a negative number of shares.");
 
-            if (newTotal == 0) holdings.Remove(symbol);
+            if (newTotal == 0)
+            {
+                holdings.Remove(symbol);
+                if (CostBasis.TryGetValue(userId, out var basis)) basis.Remove(symbol);
+            }
             else holdings[symbol] = newTotal;
         }
 
@@ -45,7 +75,7 @@ namespace DiscordBot.Models
         public static StockMarket CreateDefault()
         {
             Stock S(string symbol, string name, int tier, double price) =>
-                new Stock { Symbol = symbol, Name = name, RiskTier = tier, Price = price, PreviousPrice = price };
+                new Stock { Symbol = symbol, Name = name, RiskTier = tier, Price = price, PreviousPrice = price, BasePrice = price, History = new List<double> { price } };
 
             return new StockMarket
             {

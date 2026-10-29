@@ -38,6 +38,77 @@ namespace Tests
         }
 
         [Fact]
+        public void Tick_PullsTowardBasePrice()
+        {
+            var stock = new Stock { Symbol = "X", RiskTier = 1, Price = 50, PreviousPrice = 50, BasePrice = 100 };
+            stock.ApplyTick(() => 0.5); //no swing, so only the pull back towards the base
+            Assert.InRange(stock.Price, 50.01, 100);
+        }
+
+        [Fact]
+        public void Tick_DoesNotDecayOverManyRandomTicks()
+        {
+            var random = new Random(42);
+            var stock = new Stock { Symbol = "X", RiskTier = 5, Price = 10, PreviousPrice = 10, BasePrice = 10 };
+            double logSum = 0;
+            int count = 0;
+            for (int i = 0; i < 100_000; i++)
+            {
+                stock.ApplyTick(random.NextDouble);
+                if (i >= 1_000)
+                {
+                    logSum += Math.Log(stock.Price / stock.BasePrice);
+                    count++;
+                }
+            }
+
+            //averages around the base price rather than drifting down
+            Assert.InRange(logSum / count, -0.5, 0.5);
+        }
+
+        [Fact]
+        public void RecordHistory_KeepsOnlyRecentPoints()
+        {
+            var stock = new Stock { Symbol = "X", RiskTier = 1, Price = 10, BasePrice = 10 };
+            for (int i = 0; i < Stock.MaxHistoryPoints + 5; i++)
+                stock.RecordHistory();
+
+            Assert.Equal(Stock.MaxHistoryPoints, stock.History.Count);
+        }
+
+        [Fact]
+        public void Purchases_BlendAverageCost_AndResetWhenSoldOut()
+        {
+            var market = StockMarket.CreateDefault();
+            market.RecordPurchase(1, "SCORT", 2, 100);
+            market.RecordPurchase(1, "SCORT", 2, 200);
+            Assert.Equal(4, market.GetShares(1, "SCORT"));
+            Assert.Equal(150, market.GetAverageCost(1, "SCORT"));
+
+            market.AddShares(1, "SCORT", -4);
+            market.RecordPurchase(1, "SCORT", 1, 50);
+            Assert.Equal(50, market.GetAverageCost(1, "SCORT"));
+        }
+
+        [Fact]
+        public void Chart_HasOneRowPerLevelPlusAxisAndLabelsMinAndMax()
+        {
+            string chart = StockChart.Render(new double[] { 10, 12, 11, 20, 15 });
+            var lines = chart.Split('\n');
+
+            Assert.Equal(StockChart.Height + 1, lines.Length);
+            Assert.Contains("$20.00", lines[0]);
+            Assert.Contains("$10.00", lines[StockChart.Height - 1]);
+        }
+
+        [Fact]
+        public void Chart_FlatPricesDoNotThrow()
+        {
+            string chart = StockChart.Render(new double[] { 5, 5, 5 });
+            Assert.Equal(StockChart.Height + 1, chart.Split('\n').Length);
+        }
+
+        [Fact]
         public void DefaultMarket_HasScortAndAllFiveTiers()
         {
             var market = StockMarket.CreateDefault();

@@ -16,6 +16,7 @@ using Newtonsoft.Json;
 using Common.Services;
 using System.Reflection;
 using DiscordBot.Models;
+using DiscordBot.Services;
 using DiscordBot.Text;
 using DiscordBot.Games.Models.BattleArena;
 
@@ -191,6 +192,7 @@ namespace DiscordBot.Managers
         private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args, bool showHints = true)
         {
             var accounts = _coinService.GetAll();
+            var market = _stockService.GetMarket();
             string output = "";
             int? prestige = null;
             bool prestigeDisabled = _appSettings.PrestigeDisabled;
@@ -211,6 +213,15 @@ namespace DiscordBot.Managers
                 if (account.MostRecentDateBonusMet == DateTime.UtcNow.ToString("yyyyMMdd"))
                     output += "   \\*";
                 output += "\n";
+
+                //what the total is made of: cash, then each stock held
+                var parts = new List<string> { $"Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}" };
+                foreach (var holding in market.GetHoldings(account.UserId).OrderBy(h => h.Key))
+                {
+                    double value = (market.Find(holding.Key)?.Price ?? 0) * holding.Value;
+                    parts.Add($"{holding.Key} ${FormatHelper.GetCommaNumber(value)}");
+                }
+                output += $"  ↳ {string.Join(" · ", parts)}\n";
             }
             if (showHints && prestigeDisabled)
             {
@@ -272,6 +283,14 @@ namespace DiscordBot.Managers
         private async Task Stocks(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             var market = _stockService.GetMarket();
+            if (args.Count > 1) throw new BadSyntaxException();
+            if (args.Count == 1)
+            {
+                var chosen = market.Find(args[0]) ?? throw new BadInputException($"There's no stock called {args[0].ToUpper()}.");
+                await StockGraph(message, chosen);
+                return;
+            }
+
             string output = "`SYMBOL   TIER   PRICE        CHANGE`\n";
             foreach (var stock in market.Stocks.OrderBy(s => s.RiskTier).ThenBy(s => s.Symbol))
             {
@@ -281,6 +300,29 @@ namespace DiscordBot.Managers
             output += "\n*Prices change every 5 minutes. Risk tier 1 is stable, tier 5 is wild. Use `.buy`, `.sell` and `.portfolio`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
+        }
+
+        private static async Task StockGraph(SocketMessage message, Stock stock)
+        {
+            var history = stock.History;
+            if (history.Count < 2)
+            {
+                await message.SendRichEmbedMessage(stock.Name, "Not enough price history yet. Check back after a few ticks.");
+                return;
+            }
+
+            double first = history[0];
+            double last = history[history.Count - 1];
+            double overallChange = (last - first) / first * 100;
+            TimeSpan span = TimeSpan.FromMinutes(5 * (history.Count - 1));
+            string spanText = span.TotalHours >= 24 ? $"{(int)span.TotalDays}d {span.Hours}h" : $"{(int)span.TotalHours}h {span.Minutes}m";
+
+            string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
+                $"{overallChange:+0.00;-0.00;0.00}% over the last {spanText} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
+                $"```\n{StockChart.Render(history)}\n```\n" +
+                "*One column per tick (5 minutes), newest on the right.*";
+
+            await message.SendRichEmbedMessage($"{stock.Symbol} price history", output);
         }
 
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -323,7 +365,9 @@ namespace DiscordBot.Managers
             foreach (var holding in holdings.OrderBy(x => x.Key))
             {
                 var stock = market.Find(holding.Key);
-                output += $"{holding.Key}: {holding.Value} share(s) @ ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick)\n";
+                double averageCost = market.GetAverageCost(account.UserId, holding.Key);
+                string boughtAt = averageCost > 0 ? $"bought @ ${averageCost:N2}" : "bought price unknown";
+                output += $"{holding.Key}: {holding.Value} share(s) {boughtAt}, now @ ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick)\n";
             }
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
             output += $"\nStocks: ${FormatHelper.GetCommaNumber(stocksValue)} | Cash: ${FormatHelper.GetCommaNumber(account.NetWorth)} | Total: ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}";

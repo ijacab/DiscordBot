@@ -30,6 +30,10 @@ namespace DiscordBot.Services
                 _market = StockMarket.CreateDefault();
                 Save();
             }
+            else
+            {
+                FillMissingBasePrices();
+            }
         }
 
         public StockMarket GetMarket() => _market;
@@ -51,7 +55,10 @@ namespace DiscordBot.Services
 
                 //one tick only, even if the bot was down for several periods
                 foreach (var stock in _market.Stocks)
+                {
                     stock.ApplyTick(_random.NextDouble);
+                    stock.RecordHistory();
+                }
                 _market.LastTickSlot = slot;
                 Save();
             }
@@ -75,7 +82,7 @@ namespace DiscordBot.Services
                     throw new BadInputException($"{shares} shares of {stock.Symbol} cost ${cost:N2} but you only have ${account.NetWorth:N2}.");
 
                 account.NetWorth -= cost;
-                _market.AddShares(account.UserId, stock.Symbol, shares);
+                _market.RecordPurchase(account.UserId, stock.Symbol, shares, stock.Price);
                 Save();
                 return PersistAccount(account, (stock, shares, cost));
             }
@@ -100,6 +107,14 @@ namespace DiscordBot.Services
                 Save();
                 return PersistAccount(account, (stock, shares, proceeds));
             }
+        }
+
+        /// <summary>Markets saved before base prices existed get the default base price for their symbol.</summary>
+        private void FillMissingBasePrices()
+        {
+            var defaults = StockMarket.CreateDefault();
+            foreach (var stock in _market.Stocks.Where(s => s.BasePrice <= 0))
+                stock.BasePrice = defaults.Find(stock.Symbol)?.BasePrice ?? stock.Price;
         }
 
         private static int ParseShares(string amount)
