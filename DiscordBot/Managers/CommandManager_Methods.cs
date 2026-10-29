@@ -67,6 +67,7 @@ namespace DiscordBot.Managers
             else if (args[0].StartsWith("coin"))
             {
                 await _coinService.ClearAll();
+                await _stockService.ClearAll();
             }
             else
             {

@@ -38,6 +38,17 @@ namespace DiscordBot.Services
 
         public StockMarket GetMarket() => _market;
 
+        /// <summary>Resets the market to its default prices, with no holdings or history.</summary>
+        public Task ClearAll()
+        {
+            lock (_lock)
+            {
+                _market = StockMarket.CreateDefault();
+                Save();
+            }
+            return Task.CompletedTask;
+        }
+
         public double GetPortfolioValue(ulong userId)
         {
             lock (_lock) return _market.GetPortfolioValue(userId);
