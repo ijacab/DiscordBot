@@ -351,13 +351,33 @@ namespace DiscordBot.Managers
 
         private async Task Portfolio(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            if (args.Count > 1) throw new BadSyntaxException();
+
+            CoinAccount account;
+            if (args.Count == 0)
+            {
+                account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            }
+            else if (DiscordHelper.TryGetUserId(args[0], out ulong userId))
+            {
+                account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == userId)
+                    ?? throw new BadInputException("Account not found.");
+            }
+            else
+            {
+                throw new BadSyntaxException();
+            }
+
             var market = _stockService.GetMarket();
-            var holdings = market.Portfolios.TryGetValue(account.UserId, out var h) ? h : new Dictionary<string, int>();
+            var holdings = market.GetHoldings(account.UserId);
+            bool isOwnPortfolio = account.UserId == message.Author.Id;
 
             if (holdings.Count == 0)
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} you don't own any stocks. Type `.stocks` to see what's available.");
+                string noStocks = isOwnPortfolio
+                    ? $"{message.Author.Mention} you don't own any stocks. Type `.stocks` to see what's available."
+                    : $"{account.Name} doesn't own any stocks.";
+                await message.Channel.SendMessageAsync(noStocks);
                 return;
             }
 
