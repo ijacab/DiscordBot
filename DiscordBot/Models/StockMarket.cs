@@ -72,6 +72,22 @@ namespace DiscordBot.Models
             return holdings.Sum(h => (Find(h.Key)?.Price ?? 0) * h.Value);
         }
 
+        /// <summary>Current value minus average buy price, over holdings with a known cost. Also returns what those holdings cost.</summary>
+        public (double Gain, double Cost) GetUnrealisedGain(ulong userId)
+        {
+            double gain = 0, cost = 0;
+            foreach (var holding in GetHoldings(userId))
+            {
+                double averageCost = GetAverageCost(userId, holding.Key);
+                if (averageCost <= 0) continue;
+
+                double price = Find(holding.Key)?.Price ?? 0;
+                gain += (price - averageCost) * holding.Value;
+                cost += averageCost * holding.Value;
+            }
+            return (gain, cost);
+        }
+
         public static StockMarket CreateDefault()
         {
             Stock S(string symbol, string name, int tier, double price) =>

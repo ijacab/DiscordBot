@@ -209,18 +209,18 @@ namespace DiscordBot.Managers
                 prestige = account.PrestigeLevel;
 
                 string prestigeDisplay = prestigeDisabled || prestige == 0 ? "" : $"**[P{prestige}]** ";
-                output += $"{account.Name}: {prestigeDisplay}${FormatHelper.GetCommaNumber(TotalWorth(account))}";
+                output += $"**{account.Name}**: {prestigeDisplay}${FormatHelper.GetCommaNumber(TotalWorth(account))}";
 
                 if (account.MostRecentDateBonusMet == DateTime.UtcNow.ToString("yyyyMMdd"))
                     output += "   \\*";
                 output += "\n";
 
                 //what the total is made of: cash, then each stock held
-                var parts = new List<string> { $"Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}" };
+                var parts = new List<string> { $"💵 ${FormatHelper.GetCommaNumber(account.NetWorth)}" };
                 foreach (var holding in market.GetHoldings(account.UserId).OrderBy(h => h.Key))
                 {
                     double value = (market.Find(holding.Key)?.Price ?? 0) * holding.Value;
-                    parts.Add($"{holding.Key} ${FormatHelper.GetCommaNumber(value)}");
+                    parts.Add($"📈 {holding.Key} ${FormatHelper.GetCommaNumber(value)}");
                 }
                 output += $"  ↳ {string.Join(" · ", parts)}\n";
             }
@@ -292,13 +292,18 @@ namespace DiscordBot.Managers
                 return;
             }
 
-            string output = "`SYMBOL   TIER   PRICE        CHANGE`\n";
-            foreach (var stock in market.Stocks.OrderBy(s => s.RiskTier).ThenBy(s => s.Symbol))
+            string output = "";
+            foreach (var tier in market.Stocks.GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
             {
-                string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
-                output += $"`{stock.Symbol,-7}  {stock.RiskTier,-4}  ${stock.Price,-10:N2}  {stock.PercentChange,7:+0.00;-0.00;0.00}%` {arrow} {stock.Name}\n";
+                output += $"**Tier {tier.Key}**\n";
+                foreach (var stock in tier.OrderBy(s => s.Symbol))
+                {
+                    string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
+                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}%)\n";
+                }
+                output += "\n";
             }
-            output += "\n*Prices change every 5 minutes. Risk tier 1 is stable, tier 5 is wild. Use `.buy`, `.sell` and `.portfolio`.*";
+            output += "*Prices change every 5 minutes. Tier 1 is stable, tier 5 is wild. Use `.stocks SYMBOL` for a graph, `.buy` and `.sell`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
         }
@@ -321,7 +326,7 @@ namespace DiscordBot.Managers
             string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
                 $"{overallChange:+0.00;-0.00;0.00}% over the last {spanText} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
                 $"```\n{StockChart.Render(history)}\n```\n" +
-                "*One column per tick (5 minutes), newest on the right.*";
+                "*Each column is a few ticks (5 min each), newest on the right. `#` shows the price range in that column.*";
 
             await message.SendRichEmbedMessage($"{stock.Symbol} price history", output);
         }
@@ -387,14 +392,32 @@ namespace DiscordBot.Managers
             {
                 var stock = market.Find(holding.Key);
                 double averageCost = market.GetAverageCost(account.UserId, holding.Key);
-                string boughtAt = averageCost > 0 ? $"bought @ ${averageCost:N2}" : "bought price unknown";
-                output += $"{holding.Key}: {holding.Value} share(s) {boughtAt}, now @ ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick)\n";
+                string trend = averageCost <= 0 ? "➖" : stock.Price >= averageCost ? "📈" : "📉";
+                output += $"{trend} **{holding.Key}** {holding.Value} sh · now ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)}\n";
+
+                if (averageCost <= 0)
+                {
+                    output += "  ↳ buy price unknown\n";
+                    continue;
+                }
+                double gain = (stock.Price - averageCost) * holding.Value;
+                double gainPercent = (stock.Price - averageCost) / averageCost * 100;
+                output += $"  ↳ bought @ ${averageCost:N2} · {SignedMoney(gain)} ({gainPercent:+0.00;-0.00;0.00}%)\n";
             }
+
+            var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
-            output += $"\nStocks: ${FormatHelper.GetCommaNumber(stocksValue)} | Cash: ${FormatHelper.GetCommaNumber(account.NetWorth)} | Total: ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}";
+            output += $"\n💰 Stocks ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
+            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}\n";
+            output += totalCost > 0
+                ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
+                : "📊 Gain/loss n/a, no known buy prices";
 
             await message.SendRichEmbedMessage($"{account.Name}'s portfolio", output);
         }
+
+        private static string SignedMoney(double amount) =>
+            $"{(amount < 0 ? "-" : "+")}${FormatHelper.GetCommaNumber(Math.Abs(amount))}";
 
         private async Task Donate(DiscordSocketClient client, SocketMessage message, List<string> args)
         {

@@ -109,6 +109,40 @@ namespace Tests
         }
 
         [Fact]
+        public void Chart_LongHistoryKeepsEveryRowTheSameWidth()
+        {
+            var random = new Random(7);
+            var prices = Enumerable.Range(0, Stock.MaxHistoryPoints).Select(_ => 10 + random.NextDouble() * 5).ToList();
+            var lines = StockChart.Render(prices).Split('\n');
+
+            Assert.Equal(StockChart.Height + 1, lines.Length);
+            foreach (string line in lines)
+                Assert.Equal(lines[0].Length, line.Length);
+        }
+
+        [Fact]
+        public void Unrealised_GainUsesAverageCostOfHeldShares()
+        {
+            var market = StockMarket.CreateDefault();
+            market.RecordPurchase(1, "SCORT", 2, 40);
+            var (gain, cost) = market.GetUnrealisedGain(1);
+
+            Assert.Equal(20d, gain); //(50 - 40) * 2
+            Assert.Equal(80d, cost);
+        }
+
+        [Fact]
+        public void Unrealised_IgnoresHoldingsWithUnknownCost()
+        {
+            var market = StockMarket.CreateDefault();
+            market.AddShares(1, "SCORT", 3); //no purchase recorded, so no buy price
+            var (gain, cost) = market.GetUnrealisedGain(1);
+
+            Assert.Equal(0d, gain);
+            Assert.Equal(0d, cost);
+        }
+
+        [Fact]
         public void DefaultMarket_HasScortAndAllFiveTiers()
         {
             var market = StockMarket.CreateDefault();

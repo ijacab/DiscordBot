@@ -5,54 +5,63 @@ using System.Text;
 
 namespace DiscordBot.Services
 {
-    /// <summary>Draws a price history as a text chart, meant to be sent inside a code block.</summary>
+    /// <summary>Draws a price history as an ASCII chart, meant to be sent inside a code block.</summary>
     public static class StockChart
     {
-        public const int Width = 60;
+        public const int Width = 32;
         public const int Height = 10;
         private const int _labelWidth = 10;
-        private const int _eighthsPerRow = 8;
-        //partial block characters, index n fills n + 1 eighths of a row
-        private static readonly char[] _partialBlocks = { '▁', '▂', '▃', '▄', '▅', '▆', '▇' };
 
         /// <summary>Returns <see cref="Height"/> rows of chart followed by an axis line. Expects at least one price.</summary>
         public static string Render(IReadOnlyList<double> prices)
         {
             var columns = Downsample(prices, Width);
-            double min = columns.Min();
-            double max = columns.Max();
+            double min = columns.Min(c => c.Low);
+            double max = columns.Max(c => c.High);
             double range = max - min;
-            int levels = Height * _eighthsPerRow;
 
             var sb = new StringBuilder();
             for (int row = Height - 1; row >= 0; row--)
             {
                 string label = row == Height - 1 ? FormatPrice(max) : row == 0 ? FormatPrice(min) : "";
-                sb.Append(label.PadLeft(_labelWidth)).Append(" ┤");
+                sb.Append(label.PadLeft(_labelWidth)).Append(" |");
 
-                int rowBottom = row * _eighthsPerRow;
-                foreach (double price in columns)
+                foreach (var column in columns)
                 {
-                    int level = range == 0 ? levels / 2 : (int)Math.Round((price - min) / range * (levels - 1));
-                    int filled = level - rowBottom + 1;
-                    sb.Append(filled >= _eighthsPerRow ? '█' : filled >= 1 ? _partialBlocks[filled - 1] : ' ');
+                    int low = Level(column.Low, min, range);
+                    int high = Level(column.High, min, range);
+                    //each column is a bar from its lowest to its highest price, so spikes stay visible
+                    sb.Append(row >= low && row <= high ? '#' : ' ');
                 }
                 sb.Append('\n');
             }
 
-            sb.Append(new string(' ', _labelWidth)).Append(" └").Append(new string('─', columns.Count));
+            sb.Append(new string(' ', _labelWidth)).Append(" +").Append(new string('-', columns.Count));
             return sb.ToString();
         }
 
-        /// <summary>Picks evenly spaced prices when there are more than <paramref name="width"/>.</summary>
-        private static List<double> Downsample(IReadOnlyList<double> prices, int width)
+        private static int Level(double price, double min, double range) =>
+            range == 0 ? Height / 2 : (int)Math.Round((price - min) / range * (Height - 1));
+
+        /// <summary>Splits the prices into at most <paramref name="width"/> columns, each holding the low and high of its span.</summary>
+        private static List<(double Low, double High)> Downsample(IReadOnlyList<double> prices, int width)
         {
             if (prices.Count <= width)
-                return prices.ToList();
+                return prices.Select(p => (Low: p, High: p)).ToList();
 
-            var columns = new List<double>(width);
+            var columns = new List<(double Low, double High)>(width);
             for (int i = 0; i < width; i++)
-                columns.Add(prices[(int)Math.Round(i * (prices.Count - 1) / (double)(width - 1))]);
+            {
+                int start = i * prices.Count / width;
+                int end = Math.Max(start, (i + 1) * prices.Count / width - 1);
+                double low = double.MaxValue, high = double.MinValue;
+                for (int j = start; j <= end; j++)
+                {
+                    low = Math.Min(low, prices[j]);
+                    high = Math.Max(high, prices[j]);
+                }
+                columns.Add((low, high));
+            }
             return columns;
         }
 
