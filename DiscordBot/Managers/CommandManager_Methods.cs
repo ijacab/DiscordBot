@@ -320,15 +320,16 @@ namespace DiscordBot.Managers
             double first = history[0];
             double last = history[history.Count - 1];
             double overallChange = (last - first) / first * 100;
-            TimeSpan span = TimeSpan.FromMinutes(5 * (history.Count - 1));
-            string spanText = span.TotalHours >= 24 ? $"{(int)span.TotalDays}d {span.Hours}h" : $"{(int)span.TotalHours}h {span.Minutes}m";
 
             string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
-                $"{overallChange:+0.00;-0.00;0.00}% over the last {spanText} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
-                $"```\n{StockChart.Render(history)}\n```\n" +
-                "*Each column is a few ticks (5 min each), newest on the right. `#` shows the price range in that column.*";
+                $"{overallChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count)} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
+                "*Each point is one 5 minute price tick, newest on the right.*";
 
-            await message.SendRichEmbedMessage($"{stock.Symbol} price history", output);
+            using var chart = StockChart.RenderPng(history);
+            var embed = DiscordHelper.GetEmbedBuilder($"{stock.Symbol} price history", output)
+                .WithImageUrl("attachment://stock.png")
+                .Build();
+            await message.Channel.SendFileAsync(chart, "stock.png", embed: embed);
         }
 
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)

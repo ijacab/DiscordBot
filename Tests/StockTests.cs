@@ -91,33 +91,46 @@ namespace Tests
         }
 
         [Fact]
-        public void Chart_HasOneRowPerLevelPlusAxisAndLabelsMinAndMax()
+        public void Chart_IsPngOfFixedSize()
         {
-            string chart = StockChart.Render(new double[] { 10, 12, 11, 20, 15 });
-            var lines = chart.Split('\n');
+            using var png = StockChart.RenderPng(new double[] { 10, 12, 11, 20, 15 });
+            byte[] bytes = png.ToArray();
 
-            Assert.Equal(StockChart.Height + 1, lines.Length);
-            Assert.Contains("$20.00", lines[0]);
-            Assert.Contains("$10.00", lines[StockChart.Height - 1]);
+            Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, bytes.Take(4).ToArray()); //PNG signature
+            using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(bytes);
+            Assert.Equal(StockChart.Width, image.Width);
+            Assert.Equal(StockChart.Height, image.Height);
         }
 
         [Fact]
         public void Chart_FlatPricesDoNotThrow()
         {
-            string chart = StockChart.Render(new double[] { 5, 5, 5 });
-            Assert.Equal(StockChart.Height + 1, chart.Split('\n').Length);
+            using var png = StockChart.RenderPng(new double[] { 5, 5, 5 });
+            Assert.True(png.Length > 0);
         }
 
         [Fact]
-        public void Chart_LongHistoryKeepsEveryRowTheSameWidth()
+        public void Chart_NeedsAtLeastTwoPrices()
+        {
+            Assert.Throws<ArgumentException>(() => StockChart.RenderPng(new double[] { 5 }));
+        }
+
+        [Fact]
+        public void Chart_LongHistoryRenders()
         {
             var random = new Random(7);
             var prices = Enumerable.Range(0, Stock.MaxHistoryPoints).Select(_ => 10 + random.NextDouble() * 5).ToList();
-            var lines = StockChart.Render(prices).Split('\n');
+            using var png = StockChart.RenderPng(prices);
 
-            Assert.Equal(StockChart.Height + 1, lines.Length);
-            foreach (string line in lines)
-                Assert.Equal(lines[0].Length, line.Length);
+            Assert.True(png.Length > 0);
+        }
+
+        [Theory]
+        [InlineData(13, "1h 0m")]
+        [InlineData(Stock.MaxHistoryPoints, "6d 23h")]
+        public void FormatSpan_DescribesTheCoveredTime(int points, string expected)
+        {
+            Assert.Equal(expected, StockChart.FormatSpan(points));
         }
 
         [Fact]

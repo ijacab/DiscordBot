@@ -1,70 +1,177 @@
+﻿using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
 
 namespace DiscordBot.Services
 {
-    /// <summary>Draws a price history as an ASCII chart, meant to be sent inside a code block.</summary>
+    /// <summary>Draws a price history as a PNG line chart with a price scale and time labels.</summary>
     public static class StockChart
     {
-        public const int Width = 32;
-        public const int Height = 10;
-        private const int _labelWidth = 10;
+        public const int Width = 800;
+        public const int Height = 420;
 
-        /// <summary>Returns <see cref="Height"/> rows of chart followed by an axis line. Expects at least one price.</summary>
-        public static string Render(IReadOnlyList<double> prices)
+        //margins around the plot area, leaving room for the labels
+        private const int _plotLeft = 120;
+        private const int _plotRight = Width - 30;
+        private const int _plotTop = 30;
+        private const int _plotBottom = Height - 60;
+        private const int _gridLines = 4;
+        private const int _textScale = 2;
+        private const int _glyphWidth = 5;
+        private const int _glyphHeight = 7;
+
+        private static readonly Rgba32 _background = new Rgba32(30, 31, 34);
+        private static readonly Rgba32 _gridColor = new Rgba32(58, 60, 66);
+        private static readonly Rgba32 _textColor = new Rgba32(181, 186, 193);
+        private static readonly Rgba32 _upColor = new Rgba32(87, 242, 135);
+        private static readonly Rgba32 _downColor = new Rgba32(237, 66, 69);
+        private static readonly Rgba32 _markerColor = new Rgba32(255, 255, 255);
+
+        /// <summary>Renders the prices (oldest first, one per 5 minute tick) as a PNG. Expects at least two prices.</summary>
+        public static MemoryStream RenderPng(IReadOnlyList<double> prices)
         {
-            var columns = Downsample(prices, Width);
-            double min = columns.Min(c => c.Low);
-            double max = columns.Max(c => c.High);
-            double range = max - min;
+            if (prices.Count < 2) throw new ArgumentException("A chart needs at least two prices.", nameof(prices));
 
-            var sb = new StringBuilder();
-            for (int row = Height - 1; row >= 0; row--)
+            double min = prices.Min();
+            double max = prices.Max();
+            double padding = (max - min) * 0.08;
+            if (padding == 0) padding = Math.Max(max * 0.05, 0.01); //flat prices still get a sensible scale
+            double low = min - padding;
+            double high = max + padding;
+
+            int XOf(int index) => _plotLeft + (int)Math.Round((double)index * (_plotRight - _plotLeft) / (prices.Count - 1));
+            int YOf(double price) => (int)Math.Round(_plotBottom - (price - low) / (high - low) * (_plotBottom - _plotTop));
+
+            using var image = new Image<Rgba32>(Width, Height);
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                    image[x, y] = _background;
+
+            //horizontal grid lines, each labelled with its price
+            for (int i = 0; i <= _gridLines; i++)
             {
-                string label = row == Height - 1 ? FormatPrice(max) : row == 0 ? FormatPrice(min) : "";
-                sb.Append(label.PadLeft(_labelWidth)).Append(" |");
+                double value = low + (high - low) * i / _gridLines;
+                int y = YOf(value);
+                for (int x = _plotLeft; x <= _plotRight; x++)
+                    SetPixel(image, x, y, _gridColor);
 
-                foreach (var column in columns)
-                {
-                    int low = Level(column.Low, min, range);
-                    int high = Level(column.High, min, range);
-                    //each column is a bar from its lowest to its highest price, so spikes stay visible
-                    sb.Append(row >= low && row <= high ? '#' : ' ');
-                }
-                sb.Append('\n');
+                string label = FormatPrice(value);
+                DrawText(image, label, _plotLeft - 12 - TextWidth(label), y - _glyphHeight * _textScale / 2, _textColor);
             }
 
-            sb.Append(new string(' ', _labelWidth)).Append(" +").Append(new string('-', columns.Count));
-            return sb.ToString();
+            //the line goes green if the stock finished above where it started, red if below
+            Rgba32 lineColor = prices[prices.Count - 1] >= prices[0] ? _upColor : _downColor;
+            for (int i = 1; i < prices.Count; i++)
+                DrawLine(image, XOf(i - 1), YOf(prices[i - 1]), XOf(i), YOf(prices[i]), lineColor);
+
+            int lastX = XOf(prices.Count - 1);
+            int lastY = YOf(prices[prices.Count - 1]);
+            FillCircle(image, lastX, lastY, 5, _markerColor);
+            FillCircle(image, lastX, lastY, 3, lineColor);
+
+            //time labels under the plot, oldest on the left
+            int labelY = _plotBottom + 14;
+            DrawText(image, "-" + FormatSpan(prices.Count), _plotLeft, labelY, _textColor);
+            DrawText(image, "now", _plotRight - TextWidth("now"), labelY, _textColor);
+
+            var stream = new MemoryStream();
+            image.SaveAsPng(stream);
+            stream.Position = 0;
+            return stream;
         }
 
-        private static int Level(double price, double min, double range) =>
-            range == 0 ? Height / 2 : (int)Math.Round((price - min) / range * (Height - 1));
-
-        /// <summary>Splits the prices into at most <paramref name="width"/> columns, each holding the low and high of its span.</summary>
-        private static List<(double Low, double High)> Downsample(IReadOnlyList<double> prices, int width)
+        /// <summary>How long the history covers, given one point per 5 minute tick. Example: "6d 22h" or "1h 0m".</summary>
+        public static string FormatSpan(int pointCount)
         {
-            if (prices.Count <= width)
-                return prices.Select(p => (Low: p, High: p)).ToList();
-
-            var columns = new List<(double Low, double High)>(width);
-            for (int i = 0; i < width; i++)
-            {
-                int start = i * prices.Count / width;
-                int end = Math.Max(start, (i + 1) * prices.Count / width - 1);
-                double low = double.MaxValue, high = double.MinValue;
-                for (int j = start; j <= end; j++)
-                {
-                    low = Math.Min(low, prices[j]);
-                    high = Math.Max(high, prices[j]);
-                }
-                columns.Add((low, high));
-            }
-            return columns;
+            TimeSpan span = TimeSpan.FromMinutes(5 * Math.Max(0, pointCount - 1));
+            return span.TotalHours >= 24 ? $"{(int)span.TotalDays}d {span.Hours}h" : $"{(int)span.TotalHours}h {span.Minutes}m";
         }
 
         private static string FormatPrice(double price) => $"${price:N2}";
+
+        private static void SetPixel(Image<Rgba32> image, int x, int y, Rgba32 color)
+        {
+            if (x >= 0 && x < Width && y >= 0 && y < Height)
+                image[x, y] = color;
+        }
+
+        /// <summary>Bresenham line, drawn 2px thick so it stays visible when the image is scaled down in Discord.</summary>
+        private static void DrawLine(Image<Rgba32> image, int x0, int y0, int x1, int y1, Rgba32 color)
+        {
+            int dx = Math.Abs(x1 - x0), stepX = x0 < x1 ? 1 : -1;
+            int dy = -Math.Abs(y1 - y0), stepY = y0 < y1 ? 1 : -1;
+            int error = dx + dy;
+
+            while (true)
+            {
+                SetPixel(image, x0, y0, color);
+                SetPixel(image, x0 + 1, y0, color);
+                SetPixel(image, x0, y0 + 1, color);
+                SetPixel(image, x0 + 1, y0 + 1, color);
+
+                if (x0 == x1 && y0 == y1) break;
+                int doubled = 2 * error;
+                if (doubled >= dy) { error += dy; x0 += stepX; }
+                if (doubled <= dx) { error += dx; y0 += stepY; }
+            }
+        }
+
+        private static void FillCircle(Image<Rgba32> image, int centerX, int centerY, int radius, Rgba32 color)
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+                for (int dx = -radius; dx <= radius; dx++)
+                    if (dx * dx + dy * dy <= radius * radius)
+                        SetPixel(image, centerX + dx, centerY + dy, color);
+        }
+
+        private static int TextWidth(string text) =>
+            text.Length == 0 ? 0 : text.Length * (_glyphWidth + 1) * _textScale - _textScale;
+
+        private static void DrawText(Image<Rgba32> image, string text, int x, int y, Rgba32 color)
+        {
+            int advance = (_glyphWidth + 1) * _textScale;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (!_glyphs.TryGetValue(text[i], out string[] rows)) continue; //unknown characters are left blank
+                for (int row = 0; row < _glyphHeight; row++)
+                    for (int col = 0; col < _glyphWidth; col++)
+                    {
+                        if (rows[row][col] != '#') continue;
+                        int blockX = x + i * advance + col * _textScale;
+                        int blockY = y + row * _textScale;
+                        for (int dy = 0; dy < _textScale; dy++)
+                            for (int dx = 0; dx < _textScale; dx++)
+                                SetPixel(image, blockX + dx, blockY + dy, color);
+                    }
+            }
+        }
+
+        //5x7 pixel font, '#' is ink. Only the characters the chart labels need.
+        private static readonly Dictionary<char, string[]> _glyphs = new Dictionary<char, string[]>
+        {
+            ['0'] = new[] { ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###." },
+            ['1'] = new[] { "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###." },
+            ['2'] = new[] { ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####" },
+            ['3'] = new[] { "#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###." },
+            ['4'] = new[] { "...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#." },
+            ['5'] = new[] { "#####", "#....", "####.", "....#", "....#", "#...#", ".###." },
+            ['6'] = new[] { "..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###." },
+            ['7'] = new[] { "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..." },
+            ['8'] = new[] { ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###." },
+            ['9'] = new[] { ".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.." },
+            ['$'] = new[] { "..#..", ".####", "#.#..", ".###.", "..#.#", "####.", "..#.." },
+            ['.'] = new[] { ".....", ".....", ".....", ".....", ".....", ".##..", ".##.." },
+            [','] = new[] { ".....", ".....", ".....", ".....", ".##..", "..#..", ".#..." },
+            ['-'] = new[] { ".....", ".....", ".....", "#####", ".....", ".....", "....." },
+            ['d'] = new[] { "....#", "....#", ".####", "#...#", "#...#", "#...#", ".####" },
+            ['h'] = new[] { "#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#" },
+            ['m'] = new[] { ".....", ".....", "##.##", "#.#.#", "#.#.#", "#...#", "#...#" },
+            ['n'] = new[] { ".....", ".....", "####.", "#...#", "#...#", "#...#", "#...#" },
+            ['o'] = new[] { ".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###." },
+            ['w'] = new[] { ".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#." },
+        };
     }
 }
