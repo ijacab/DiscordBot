@@ -133,9 +133,9 @@ namespace DiscordBot.Services
         private static void DrawLabel(Image<Rgba32> image, string text, int x, int top)
         {
             int width = TextWidth(text);
-            //keep the whole box inside the image so nothing gets clipped at the edges
-            x = Math.Clamp(x, LabelPadding + 2, Width - width - LabelPadding - 2);
-            top = Math.Clamp(top, LabelPadding + 2, Height - LabelHeight - LabelPadding - 2);
+            //keep the label inside the plot area so it never covers the price scale or time labels
+            x = Math.Clamp(x, _plotLeft, _plotRight - width);
+            top = Math.Clamp(top, _plotTop, _plotBottom - LabelHeight);
 
             for (int y = top - LabelPadding; y < top + LabelHeight + LabelPadding; y++)
                 for (int px = x - LabelPadding; px < x + width + LabelPadding; px++)
