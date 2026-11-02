@@ -2,6 +2,7 @@
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
 using DiscordBot.Games.Models;
+using DiscordBot.Games.Models.BattleArena;
 using Common.Helpers;
 using System;
 using System.Collections.Generic;
@@ -165,7 +166,8 @@ namespace DiscordBot.Managers
 
             //args valid inputs:
             //1000|any numbers - create or join game with 1000 as your bet
-            //r|roll - blackjack stay action
+            //attack|defend|focus|gamble - pick this round's action
+            //ability - use your card's ability once per game
             //start - start the game without waiting
 
             if (_battleArenaManager.TryGetPlayer(playerId, out var player)
@@ -202,7 +204,7 @@ namespace DiscordBot.Managers
 
                     return;
                 }
-                else if (args[0].StartsWith("r"))//'.fo roll [numberOfDice]'
+                else if (BattleActionInfo.TryParse(args[0], out BattleAction action))//'.fo attack', '.fo defend', '.fo focus', '.fo gamble'
                 {
                     if (player == null)
                     {
@@ -210,16 +212,10 @@ namespace DiscordBot.Managers
                         return;
                     }
 
-                    int numberOfDice = 3;
-                    if (args.Count > 1 && int.TryParse(args[1], out int parsedDice))
-                    {
-                        numberOfDice = parsedDice;
-                    }
-
-                    await _battleArenaManager.Roll(player, numberOfDice, message, client);
+                    await _battleArenaManager.SubmitAction(player, action, message, client);
                     return;
                 }
-                else if (args[0].StartsWith("a"))//'.fo ability'
+                else if (args[0].Equals("ability", StringComparison.OrdinalIgnoreCase))//'.fo ability'
                 {
                     if (player == null)
                     {

@@ -12,12 +12,13 @@ namespace DiscordBot.Games.Models
 
         public double HitPoints { get; set; } = MaxHitPoints;
         public bool IsDead => HitPoints <= 0;
-        public bool HasAttacked { get; set; }
+        public bool HasAttacked { get; set; }     //true once the player has picked this round's action
+        public bool FocusReady { get; set; }      //set by Focus, adds to the next Attack or Gamble roll
 
         //card ability state, the ability can be used once per game
         public bool AbilityUsed { get; set; }
         public bool ShieldActive { get; set; }    //halves damage taken until the round resolves
-        public bool ExtraDieArmed { get; set; }   //the next roll gets one extra die
+        public bool RerollArmed { get; set; }     //the next roll is made twice and the higher result is kept
         public bool CritBoostActive { get; set; } //crits deal more damage until the round resolves
 
         public string GetFormattedStanding()

@@ -1,8 +1,9 @@
-using DiscordBot.Exceptions;
+﻿using DiscordBot.Exceptions;
 using DiscordBot.Games;
 using DiscordBot.Games.Models;
 using DiscordBot.Games.Models.BattleArena;
 using Newtonsoft.Json;
+using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 using static DiscordBot.Models.CoinAccounts;
@@ -112,6 +113,58 @@ namespace Tests
             game.Start();
 
             Assert.Throws<BadInputException>(() => game.UseAbility(player));
+        }
+    
+
+        [Fact]
+        public void Defend_PerfectBlock_TakesNoDamage()
+        {
+            var attacker = Player(1, 100);
+            var defender = Player(2, 100);
+            var game = GameWith(attacker, defender);
+            game.Start();
+
+            game.SubmitAction(attacker, BattleAction.Attack, () => 5);
+            game.SubmitAction(defender, BattleAction.Defend, () => 20);
+            game.ResolveRound();
+
+            Assert.Equal(BattleArenaPlayer.MaxHitPoints, defender.HitPoints);
+        }
+
+        [Fact]
+        public void Focus_AddsFiveToNextAttackRoll()
+        {
+            var attacker = Player(1, 100);
+            var defender = Player(2, 100);
+            var game = GameWith(attacker, defender);
+            game.Start();
+
+            game.SubmitAction(attacker, BattleAction.Focus, () => throw new System.Exception("Focus should not roll"));
+            game.SubmitAction(defender, BattleAction.Defend, () => 5);
+            game.ResolveRound();
+
+            game.SubmitAction(attacker, BattleAction.Attack, () => 10);
+            game.SubmitAction(defender, BattleAction.Defend, () => 5);
+            List<RoundOutcome> outcomes = game.ResolveRound();
+
+            Assert.Equal(15, outcomes.First(o => o.Player == attacker).DiceRoll);
+        }
+
+        [Fact]
+        public void Reroll_KeepsTheHigherRoll()
+        {
+            var attacker = Player(1, 100, ability: CardAbility.Reroll);
+            var defender = Player(2, 100);
+            var game = GameWith(attacker, defender);
+            game.Start();
+            game.UseAbility(attacker);
+
+            var rolls = new Queue<int>(new[] { 3, 17 });
+            game.SubmitAction(attacker, BattleAction.Attack, () => rolls.Dequeue());
+            game.SubmitAction(defender, BattleAction.Defend, () => 5);
+            List<RoundOutcome> outcomes = game.ResolveRound();
+
+            Assert.Equal(17, outcomes.First(o => o.Player == attacker).DiceRoll);
         }
     }
 }

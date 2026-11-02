@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace DiscordBot.Games.Models.BattleArena
 {
@@ -15,7 +15,7 @@ namespace DiscordBot.Games.Models.BattleArena
         None,
         Heal,
         Shield,
-        ExtraDie,
+        Reroll, //same slot as the old ExtraDie so saved cards keep their number
         CritBoost
     }
 
@@ -54,7 +54,7 @@ namespace DiscordBot.Games.Models.BattleArena
             {
                 case CardAbility.Heal: return "Restore 25 HP, once per game.";
                 case CardAbility.Shield: return "Halve the damage you take in your next round, once per game.";
-                case CardAbility.ExtraDie: return "Roll 1 extra die on your next roll, once per game.";
+                case CardAbility.Reroll: return "Roll your d20 twice on your next roll and keep the higher, once per game.";
                 case CardAbility.CritBoost: return "Your crits deal 50% more damage in your next round, once per game.";
                 default: return "No ability.";
             }

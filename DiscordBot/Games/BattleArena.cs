@@ -10,16 +10,23 @@ namespace DiscordBot.Games
 {
     public class BattleArena : BaseMultiplayerGame<BattleArenaPlayer>
     {
-        private const int MaxDice = 3;
         private const double CritBoostMultiplier = 1.5;
+        private const int FocusCap = 20;
 
-        internal Dictionary<BattleArenaPlayer, IEnumerable<(int DiceRoll, AttackType AttackType)>> CurrentPlayerAttacks;
+        /// <summary>The action each living player picked this round, with the d20 it rolled.</summary>
+        internal class SubmittedAction
+        {
+            public BattleAction Action { get; set; }
+            public int DiceRoll { get; set; }
+        }
+
+        internal Dictionary<BattleArenaPlayer, SubmittedAction> CurrentActions { get; } = new Dictionary<BattleArenaPlayer, SubmittedAction>();
         public int Round { get; private set; } = 1;
 
         public IEnumerable<BattleArenaPlayer> LivingPlayers => Players.Where(p => !p.IsDead);
 
-        /// <summary>A round resolves once every living player has rolled. Dead players don't roll.</summary>
-        public bool IsReadyToResolve => LivingPlayers.All(p => CurrentPlayerAttacks.ContainsKey(p));
+        /// <summary>A round resolves once every living player has picked an action. Dead players don't act.</summary>
+        public bool IsReadyToResolve => LivingPlayers.All(p => CurrentActions.ContainsKey(p));
 
         /// <summary>The game is over once one player (or nobody) is left alive.</summary>
         public bool IsOver => LivingPlayers.Count() <= 1;
@@ -36,7 +43,6 @@ namespace DiscordBot.Games
         public BattleArena()
         {
             MinimumRequiredPlayers = 2;
-            CurrentPlayerAttacks = new Dictionary<BattleArenaPlayer, IEnumerable<(int DiceRoll, AttackType AttackType)>>();
         }
 
         /// <summary>The winner takes every bet placed in the game.</summary>
@@ -56,21 +62,39 @@ namespace DiscordBot.Games
             return randomOrderList;
         }
 
-        public void RollDice(int numberOfDice, BattleArenaPlayer player)
+        /// <summary>
+        /// Locks in a player's action for this round. Every action except Focus rolls one d20 (a card with Reroll rolls twice and keeps the higher).
+        /// </summary>
+        /// <param name="rollD20">Produces one d20 result. Passed in so rounds can be tested with fixed rolls.</param>
+        public void SubmitAction(BattleArenaPlayer player, BattleAction action, Func<int> rollD20)
         {
-            int maxDice = player.ExtraDieArmed ? MaxDice + 1 : MaxDice;
-            player.ExtraDieArmed = false; //the extra die is used up by this roll
-            numberOfDice = Math.Clamp(numberOfDice, 1, maxDice);
+            if (!Started) throw new BadInputException("The game has not started yet.");
+            if (player.IsDead) throw new BadInputException("You are out of the game.");
+            if (CurrentActions.ContainsKey(player)) throw new BadInputException("You have already picked an action this round.");
 
-            var diceRolls = DiceRoller.RollDice(numberOfDice, 6);
-            var results = new List<(int diceRoll, AttackType attackType)>();
-            diceRolls.ForEach((dr) =>
+            int diceRoll = 0;
+            if (action == BattleAction.Focus)
             {
-                AttackType atkType = GetAttackType(dr);
-                results.Add((dr, atkType));
-            });
+                player.FocusReady = true;
+            }
+            else
+            {
+                diceRoll = rollD20();
+                if (player.RerollArmed)
+                {
+                    player.RerollArmed = false; //used up by this roll
+                    diceRoll = Math.Max(diceRoll, rollD20());
+                }
+
+                if (player.FocusReady && (action == BattleAction.Attack || action == BattleAction.Gamble))
+                {
+                    diceRoll = Math.Min(FocusCap, diceRoll + BattleActionInfo.FocusBonus);
+                    player.FocusReady = false;
+                }
+            }
+
             player.HasAttacked = true;
-            CurrentPlayerAttacks[player] = results;
+            CurrentActions[player] = new SubmittedAction { Action = action, DiceRoll = diceRoll };
         }
 
         /// <summary>Uses the player's card ability. Each player can use their ability once per game.</summary>
@@ -89,8 +113,8 @@ namespace DiscordBot.Games
                 case CardAbility.Shield:
                     player.ShieldActive = true;
                     break;
-                case CardAbility.ExtraDie:
-                    player.ExtraDieArmed = true;
+                case CardAbility.Reroll:
+                    player.RerollArmed = true;
                     break;
                 case CardAbility.CritBoost:
                     player.CritBoostActive = true;
@@ -103,57 +127,75 @@ namespace DiscordBot.Games
             return ability.Describe();
         }
 
-        public IEnumerable<AttackInfo> ResolveRolls()
+        /// <summary>
+        /// Works out every action first, then applies all damage together, so the order players acted in doesn't matter.
+        /// </summary>
+        public List<RoundOutcome> ResolveRound()
         {
             if (!IsReadyToResolve)
-                throw new Exception($"Method {nameof(ResolveRolls)} cannot be called unless all living players have attacked. Something went wrong here in game {GameGuid}");
+                throw new Exception($"Method {nameof(ResolveRound)} cannot be called unless all living players have picked an action. Something went wrong here in game {GameGuid}");
 
-            var attackInfos = new List<AttackInfo>();
+            var outcomes = new List<RoundOutcome>();
+            var pendingHits = new List<(RoundOutcome Outcome, BattleArenaPlayer Target, double RawDamage)>();
+            var defendMultipliers = new Dictionary<BattleArenaPlayer, double>();
+
             foreach (var player in GetPlayerOrder())
             {
                 if (player.IsDead)
                     continue;
 
-                var diceResults = CurrentPlayerAttacks[player];
+                SubmittedAction submitted = CurrentActions[player];
+                var outcome = new RoundOutcome { Player = player, Action = submitted.Action, DiceRoll = submitted.DiceRoll };
+                outcomes.Add(outcome);
+                var enemies = LivingPlayers.Where(p => p != player).ToList();
 
-                foreach (var diceResult in diceResults)
+                switch (submitted.Action)
                 {
-                    var enemies = LivingPlayers.Where(p => p != player).ToList();
-                    if (enemies.Count == 0)
+                    case BattleAction.Attack:
+                        var (attackResult, attackMultiplier, isCrit) = AttackTier(submitted.DiceRoll);
+                        outcome.Result = attackResult;
+                        if (attackMultiplier == 0.5) //fumble hurts the attacker
+                        {
+                            pendingHits.Add((outcome, player, BuildDamage(player, player, attackMultiplier, isCrit)));
+                        }
+                        else
+                        {
+                            foreach (var enemy in enemies)
+                                pendingHits.Add((outcome, enemy, BuildDamage(player, enemy, attackMultiplier, isCrit)));
+                        }
                         break;
 
-                    var attackInfo = new AttackInfo()
-                    {
-                        PlayerAttacking = player,
-                        AttackType = diceResult.AttackType,
-                        DiceRoll = diceResult.DiceRoll
-                    };
+                    case BattleAction.Defend:
+                        var (defendResult, defendMultiplier) = DefendTier(submitted.DiceRoll);
+                        outcome.Result = defendResult;
+                        defendMultipliers[player] = defendMultiplier;
+                        break;
 
-                    switch (diceResult.AttackType)
-                    {
-                        case AttackType.AttackSelf:
-                            double selfDamage = ReduceForShield(player, player.CoinAccount.BattlePerson.Attack);
-                            player.HitPoints -= selfDamage;
-                            attackInfo.Attacks.Add(new Attack() { PlayerAttacked = player, AttackDamage = selfDamage });
-                            break;
-                        case AttackType.Attack:
-                        case AttackType.CritAttack:
-                            bool isCrit = diceResult.AttackType == AttackType.CritAttack;
-                            foreach (var enemy in enemies)
-                            {
-                                double damage = DamageAgainst(player, enemy, isCrit);
-                                enemy.HitPoints -= damage;
-                                attackInfo.Attacks.Add(new Attack() { PlayerAttacked = enemy, AttackDamage = damage });
-                                UpdateDeathStatus(enemy);
-                            }
-                            break;
-                    }
+                    case BattleAction.Focus:
+                        outcome.Result = $"Focusing. The next Attack or Gamble roll gets +{BattleActionInfo.FocusBonus}.";
+                        break;
 
-                    attackInfos.Add(attackInfo);
-                    UpdateDeathStatus(player);
-                    if (player.IsDead)
+                    case BattleAction.Gamble:
+                        var (gambleResult, gambleMultiplier, gambleCrit, hitsSelf) = GambleTier(submitted.DiceRoll);
+                        outcome.Result = gambleResult;
+                        if (gambleMultiplier > 0)
+                        {
+                            var targets = hitsSelf ? new List<BattleArenaPlayer> { player } : enemies;
+                            foreach (var target in targets)
+                                pendingHits.Add((outcome, target, BuildDamage(player, target, gambleMultiplier, gambleCrit)));
+                        }
                         break;
                 }
+            }
+
+            foreach (var hit in pendingHits)
+            {
+                double incoming = (defendMultipliers.TryGetValue(hit.Target, out double defend) ? defend : 1) * (hit.Target.ShieldActive ? 0.5 : 1);
+                double damage = hit.RawDamage * incoming;
+
+                hit.Target.HitPoints -= damage;
+                hit.Outcome.Hits.Add(new Hit { Target = hit.Target, Damage = damage });
+                UpdateDeathStatus(hit.Target);
             }
 
             foreach (var player in Players)
@@ -162,7 +204,7 @@ namespace DiscordBot.Games
                 player.ShieldActive = false;
                 player.CritBoostActive = false;
             }
-            CurrentPlayerAttacks.Clear();
+            CurrentActions.Clear();
             Round++;
 
             if (IsOver)
@@ -171,15 +213,16 @@ namespace DiscordBot.Games
                 Players.ForEach(p => p.IsFinishedPlaying = true); //lets the game end now instead of waiting for the timer
             }
 
-            return attackInfos;
+            return outcomes;
         }
 
-        private static double DamageAgainst(BattleArenaPlayer attacker, BattleArenaPlayer target, bool isCrit)
+        /// <summary>Damage from one attacker to one target, before the target's defend and shield are applied.</summary>
+        private static double BuildDamage(BattleArenaPlayer attacker, BattleArenaPlayer target, double multiplier, bool isCrit)
         {
             var attackerCard = attacker.CoinAccount.BattlePerson;
             var targetCard = target.CoinAccount.BattlePerson;
 
-            double damage = attackerCard.Attack * ((100 - targetCard.Defense) / 100);
+            double damage = attackerCard.Attack * multiplier * ((100 - targetCard.Defense) / 100);
             if (isCrit)
             {
                 damage *= 1 + attackerCard.CritMultiplier;
@@ -187,12 +230,31 @@ namespace DiscordBot.Games
                     damage *= CritBoostMultiplier;
             }
 
-            return ReduceForShield(target, damage);
+            return damage;
         }
 
-        private static double ReduceForShield(BattleArenaPlayer target, double damage)
+        private static (string Result, double Multiplier, bool IsCrit) AttackTier(int diceRoll)
         {
-            return target.ShieldActive ? damage / 2 : damage;
+            if (diceRoll == 1) return ("Fumbled and hit themselves", 0.5, false);
+            if (diceRoll <= 10) return ("Hit", 1.0, false);
+            if (diceRoll < 20) return ("Strong hit", 1.5, false);
+            return ("Critical hit", 1.0, true);
+        }
+
+        /// <summary>Multiplier applied to all damage this player receives this round. 0 means no damage at all.</summary>
+        private static (string Result, double Multiplier) DefendTier(int diceRoll)
+        {
+            if (diceRoll == 1) return ("Stumbled, no block", 1.0);
+            if (diceRoll < 20) return ("Blocked half the damage", 0.5);
+            return ("Perfect block", 0.0);
+        }
+
+        private static (string Result, double Multiplier, bool IsCrit, bool HitsSelf) GambleTier(int diceRoll)
+        {
+            if (diceRoll <= 5) return ("Backfired and hit themselves", 1.5, false, true);
+            if (diceRoll <= 14) return ("Nothing happened", 0, false, false);
+            if (diceRoll < 20) return ("Big hit on everyone", 2.0, false, false);
+            return ("Jackpot! Critical hit on everyone", 2.0, true, false);
         }
 
         private void UpdateDeathStatus(BattleArenaPlayer player)
@@ -206,31 +268,6 @@ namespace DiscordBot.Games
                     DeathOrderList.Add(player);
                 }
             }
-        }
-
-        private AttackType GetAttackType(int diceRoll)
-        {
-            switch (diceRoll)
-            {
-                case 1:
-                case 2:
-                    return AttackType.AttackSelf;
-                case 3:
-                case 4:
-                case 5:
-                    return AttackType.Attack;
-                case 6:
-                    return AttackType.CritAttack;
-                default:
-                    return AttackType.Attack;
-            }
-        }
-
-        public enum AttackType
-        {
-            AttackSelf,
-            Attack,
-            CritAttack
         }
     }
 }

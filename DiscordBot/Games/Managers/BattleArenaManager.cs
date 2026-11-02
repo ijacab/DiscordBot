@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
+using DiscordBot.Games.Models.BattleArena;
 using DiscordBot.Managers;
 using DiscordBot.Services;
 using System;
@@ -18,10 +19,10 @@ namespace DiscordBot.Games.Managers
     {
         public override string GameName => "Face Off";
         public override string BaseCommand => "fo";
-        public override string[] PlayCommands => new string[] { "roll numberOfDice", "ability" };
+        public override string[] PlayCommands => new string[] { "attack", "defend", "focus", "gamble", "ability" };
 
         private const int SecondsToForceAttackAfter = 30;
-        private const int DefaultDice = 3;
+        private static readonly BattleAction DefaultAction = BattleAction.Attack;
 
         //one round timer per game, so a timer from an earlier round can't roll for the next one
         private readonly object _roundTimerLock = new object();
@@ -91,7 +92,8 @@ namespace DiscordBot.Games.Managers
             return output;
         }
 
-        public async Task Roll(BattleArenaPlayer player, int numberOfDice, SocketMessage message, DiscordSocketClient client)
+        /// <summary>Locks in a player's action for the round. Other players only see that it was chosen, not which action.</summary>
+        public async Task SubmitAction(BattleArenaPlayer player, BattleAction action, SocketMessage message, DiscordSocketClient client)
         {
             if (player.HasAttacked || player.IsDead)
                 return;
@@ -103,12 +105,12 @@ namespace DiscordBot.Games.Managers
                 return;
             }
 
-            game.RollDice(numberOfDice, player);
+            game.SubmitAction(player, action, RollD20);
             if (!game.IsReadyToResolve)
             {
-                await message.SendRichEmbedMessage($"{player.Username} has rolled", "Waiting on the other players to roll before resolving.");
+                await message.SendRichEmbedMessage($"{player.Username} has picked an action", "Waiting on the other players before the round resolves.");
 
-                if (game.CurrentPlayerAttacks.Count == 1) //first roll of the round starts the clock
+                if (game.CurrentActions.Count == 1) //first pick of the round starts the clock
                     StartRoundTimer(game, message, client);
             }
             else
@@ -117,27 +119,31 @@ namespace DiscordBot.Games.Managers
             }
         }
 
+        private static int RollD20() => DiceRoller.RollDice(1, 20)[0];
+
         private async Task ResolveRound(BattleArena game, SocketMessage message)
         {
             CancelRoundTimer(game.GameGuid);
 
             int round = game.Round;
             string output = "";
-            foreach (var attackInfo in game.ResolveRolls())
+            foreach (var outcome in game.ResolveRound())
             {
-                output += $"{attackInfo.PlayerAttacking.Username} rolled a {attackInfo.DiceRoll}\t (**{attackInfo.AttackType.ToString().SplitCamelCaseWithSpace()}**)\n";
-                foreach (var attack in attackInfo.Attacks)
+                output += outcome.DiceRoll > 0
+                    ? $"{outcome.Player.Username} {outcome.Action.ToString().ToLowerInvariant()}ed and rolled a {outcome.DiceRoll}: **{outcome.Result}**\n"
+                    : $"{outcome.Player.Username} focused: **{outcome.Result}**\n";
+                foreach (var hit in outcome.Hits)
                 {
-                    output += $"\t{attack.PlayerAttacked.Username} took {attack.AttackDamage:0.0} dmg\n";
+                    output += $"\t{hit.Target.Username} took {hit.Damage:0.0} dmg\n";
                 }
                 output += '\n';
             }
 
-            await message.SendRichEmbedMessage($"Round {round} attacks", output);
+            await message.SendRichEmbedMessage($"Round {round}", output);
             await message.SendRichEmbedMessage($"Player standings", FormattedPlayerStanding(game));
 
             if (!game.IsOver)
-                await message.SendRichEmbedMessage($"Round {game.Round}", $"Type `.fo roll` to roll again. Use `.fo ability` to use your card's ability once per game.");
+                await message.SendRichEmbedMessage($"Round {game.Round}", $"Pick an action: `.fo attack`, `.fo defend`, `.fo focus` or `.fo gamble`. Use `.fo ability` to use your card's ability once per game.");
 
             await EndGameIfAllPlayersFinished(game.Players.First().UserId, message);
         }
@@ -167,7 +173,7 @@ namespace DiscordBot.Games.Managers
             });
         }
 
-        /// <summary>Rolls the default number of dice for every living player who has not rolled yet this round.</summary>
+        /// <summary>Picks the default action for every living player who has not acted yet this round.</summary>
         private async Task ForceRoundRolls(Guid gameGuid, SocketMessage message, DiscordSocketClient client)
         {
             try
@@ -180,8 +186,8 @@ namespace DiscordBot.Games.Managers
                     if (!TryGetExisitingGame(gameGuid, out _)) //the game ended while rolling
                         return;
 
-                    await message.SendRichEmbedMessage($"{player.Username} ran out of time", $"Rolling {DefaultDice} dice for them.");
-                    await Roll(player, DefaultDice, message, client);
+                    await message.SendRichEmbedMessage($"{player.Username} ran out of time", $"Attacking for them.");
+                    await SubmitAction(player, DefaultAction, message, client);
                 }
             }
             catch (BadInputException)
