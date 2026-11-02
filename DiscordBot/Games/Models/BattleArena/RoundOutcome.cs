@@ -16,5 +16,6 @@ namespace DiscordBot.Games.Models.BattleArena
     {
         public BattleArenaPlayer Target { get; set; }
         public double Damage { get; set; }
+        public string Note { get; set; } //e.g. "Attack beats Focus", or null
     }
 }

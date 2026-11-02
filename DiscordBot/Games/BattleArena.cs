@@ -136,7 +136,7 @@ namespace DiscordBot.Games
                 throw new Exception($"Method {nameof(ResolveRound)} cannot be called unless all living players have picked an action. Something went wrong here in game {GameGuid}");
 
             var outcomes = new List<RoundOutcome>();
-            var pendingHits = new List<(RoundOutcome Outcome, BattleArenaPlayer Target, double RawDamage)>();
+            var pendingHits = new List<(RoundOutcome Outcome, BattleArenaPlayer Target, double RawDamage, string Note)>();
             var defendMultipliers = new Dictionary<BattleArenaPlayer, double>();
 
             foreach (var player in GetPlayerOrder())
@@ -156,12 +156,12 @@ namespace DiscordBot.Games
                         outcome.Result = attackResult;
                         if (attackMultiplier == 0.5) //fumble hurts the attacker
                         {
-                            pendingHits.Add((outcome, player, BuildDamage(player, player, attackMultiplier, isCrit)));
+                            pendingHits.Add(MatchupHit(outcome, player, player, submitted.Action, attackMultiplier, isCrit));
                         }
                         else
                         {
                             foreach (var enemy in enemies)
-                                pendingHits.Add((outcome, enemy, BuildDamage(player, enemy, attackMultiplier, isCrit)));
+                                pendingHits.Add(MatchupHit(outcome, player, enemy, submitted.Action, attackMultiplier, isCrit));
                         }
                         break;
 
@@ -182,7 +182,7 @@ namespace DiscordBot.Games
                         {
                             var targets = hitsSelf ? new List<BattleArenaPlayer> { player } : enemies;
                             foreach (var target in targets)
-                                pendingHits.Add((outcome, target, BuildDamage(player, target, gambleMultiplier, gambleCrit)));
+                                pendingHits.Add(MatchupHit(outcome, player, target, submitted.Action, gambleMultiplier, gambleCrit));
                         }
                         break;
                 }
@@ -194,7 +194,7 @@ namespace DiscordBot.Games
                 double damage = hit.RawDamage * incoming;
 
                 hit.Target.HitPoints -= damage;
-                hit.Outcome.Hits.Add(new Hit { Target = hit.Target, Damage = damage });
+                hit.Outcome.Hits.Add(new Hit { Target = hit.Target, Damage = damage, Note = hit.Note });
                 UpdateDeathStatus(hit.Target);
             }
 
@@ -214,6 +214,41 @@ namespace DiscordBot.Games
             }
 
             return outcomes;
+        }
+
+        /// <summary>
+        /// Counter loop: every action beats exactly one other action (Attack beats Focus, Focus beats Gamble,
+        /// Gamble beats Defend, Defend beats Attack). Picks are public, so a hit on a target whose pick it beats does 1.5x,
+        /// and a hit on a target whose pick beats it does 0.5x. Hitting yourself is never countered.
+        /// </summary>
+        public static double MatchupMultiplier(BattleAction attackerAction, BattleAction targetAction)
+        {
+            if (Beats(attackerAction, targetAction)) return 1.5;
+            if (Beats(targetAction, attackerAction)) return 0.5;
+            return 1;
+        }
+
+        public static bool Beats(BattleAction action, BattleAction other)
+        {
+            return (action == BattleAction.Attack && other == BattleAction.Focus)
+                || (action == BattleAction.Focus && other == BattleAction.Gamble)
+                || (action == BattleAction.Gamble && other == BattleAction.Defend)
+                || (action == BattleAction.Defend && other == BattleAction.Attack);
+        }
+
+        private (RoundOutcome Outcome, BattleArenaPlayer Target, double RawDamage, string Note) MatchupHit(
+            RoundOutcome outcome, BattleArenaPlayer attacker, BattleArenaPlayer target, BattleAction attackerAction, double multiplier, bool isCrit)
+        {
+            if (target == attacker)
+                return (outcome, target, BuildDamage(attacker, target, multiplier, isCrit), null);
+
+            BattleAction targetAction = CurrentActions[target].Action;
+            double matchup = MatchupMultiplier(attackerAction, targetAction);
+            string note = matchup > 1 ? $"{attackerAction} beats {targetAction}"
+                        : matchup < 1 ? $"{attackerAction} was countered by {targetAction}"
+                        : null;
+
+            return (outcome, target, BuildDamage(attacker, target, multiplier, isCrit) * matchup, note);
         }
 
         /// <summary>Damage from one attacker to one target, before the target's defend and shield are applied.</summary>

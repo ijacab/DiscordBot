@@ -166,5 +166,18 @@ namespace Tests
 
             Assert.Equal(17, outcomes.First(o => o.Player == attacker).DiceRoll);
         }
+    
+
+        [Fact]
+        public void Counters_EachActionBeatsExactlyOneOther()
+        {
+            Assert.Equal(1.5, BattleArena.MatchupMultiplier(BattleAction.Attack, BattleAction.Focus));
+            Assert.Equal(0.5, BattleArena.MatchupMultiplier(BattleAction.Focus, BattleAction.Attack));
+            Assert.Equal(1.5, BattleArena.MatchupMultiplier(BattleAction.Gamble, BattleAction.Defend));
+            Assert.Equal(0.5, BattleArena.MatchupMultiplier(BattleAction.Defend, BattleAction.Gamble));
+            Assert.Equal(0.5, BattleArena.MatchupMultiplier(BattleAction.Attack, BattleAction.Defend));
+            Assert.Equal(1.0, BattleArena.MatchupMultiplier(BattleAction.Attack, BattleAction.Gamble));
+            Assert.Equal(1.0, BattleArena.MatchupMultiplier(BattleAction.Attack, BattleAction.Attack));
+        }
     }
 }

@@ -134,7 +134,7 @@ namespace DiscordBot.Games.Managers
                     : $"{outcome.Player.Username} focused: **{outcome.Result}**\n";
                 foreach (var hit in outcome.Hits)
                 {
-                    output += $"\t{hit.Target.Username} took {hit.Damage:0.0} dmg\n";
+                    output += $"\t{hit.Target.Username} took {hit.Damage:0.0} dmg" + (hit.Note != null ? $" ({hit.Note})" : "") + "\n";
                 }
                 output += '\n';
             }
@@ -143,7 +143,7 @@ namespace DiscordBot.Games.Managers
             await message.SendRichEmbedMessage($"Player standings", FormattedPlayerStanding(game));
 
             if (!game.IsOver)
-                await message.SendRichEmbedMessage($"Round {game.Round}", $"Pick an action: `.fo attack`, `.fo defend`, `.fo focus` or `.fo gamble`. Use `.fo ability` to use your card's ability once per game.");
+                await message.SendRichEmbedMessage($"Round {game.Round}", $"Pick an action: `.fo attack`, `.fo defend`, `.fo focus` or `.fo gamble`. {BattleActionInfo.CounterRules} Use `.fo ability` to use your card's ability once per game.");
 
             await EndGameIfAllPlayersFinished(game.Players.First().UserId, message);
         }
