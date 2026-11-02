@@ -129,17 +129,15 @@ namespace DiscordBot.Services
             return index;
         }
 
-        /// <summary>Draws text on a background-coloured box so it stays readable over the line and grid.</summary>
+        /// <summary>
+        /// Draws a label as plain text (no box, so it never hides part of the line). Kept inside the plot area so it
+        /// doesn't cover the price scale or time labels.
+        /// </summary>
         private static void DrawLabel(Image<Rgba32> image, string text, int x, int top)
         {
             int width = TextWidth(text);
-            //keep the label inside the plot area so it never covers the price scale or time labels
             x = Math.Clamp(x, _plotLeft, _plotRight - width);
             top = Math.Clamp(top, _plotTop, _plotBottom - LabelHeight);
-
-            for (int y = top - LabelPadding; y < top + LabelHeight + LabelPadding; y++)
-                for (int px = x - LabelPadding; px < x + width + LabelPadding; px++)
-                    SetPixel(image, px, y, _background);
             DrawText(image, text, x, top, _textColor);
         }
 
