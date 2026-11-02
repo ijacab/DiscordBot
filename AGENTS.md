@@ -30,7 +30,7 @@ CI/CD: `azure-pipelines.yml` publishes linux-arm64 to a Pi and restarts the `Dis
 - Commands use prefix `.`; each is `Command(name, handler)` with `Description`, `Syntax`, `Hidden`, `RequiresAdmin`. Handler signature: `Task X(DiscordSocketClient, SocketMessage, List<string> args)`.
 - Games: `Games/<Game>.cs` (rules) + `Games/Managers/<Game>Manager.cs` (session/lobby, derives `BaseMultiplayerManager`) + `Games/Models/` (players, cards, bets).
 - Feature flag: `AppSettings.PrestigeDisabled` (appsettings.json, default `true`) disables `.prestige`, prestige scaling of interest/daily income/bonus threshold. Interest is `Constants.InterestPercentage` (2%).
-- First gamble of the day (`BetManager.ResolveBet`, tracked by `CoinAccount.LastGambleDate`): d10 roll, a 10 steals 10% of the top (cash) player's net worth; result is read via `BetManager.TakeDailyRoll`.
+- First gamble of the day (`BetManager.ResolveBet`, tracked by `CoinAccount.LastGambleDate`): d10 roll, a 10 steals 10% of the cash of whoever is 1st on the leaderboard (cash + stocks), unless the roller is already 1st; result is read via `BetManager.TakeDailyRoll`.
 - Stocks: `Services/StockService` (singleton) ticks every 5-min UTC slot from the `ChatWorker` minute loop via `CommandManager.RunBackgroundTasks`; risk tiers/swings in `Models/Stock.cs`; `.stocks .buy .sell .portfolio`. Leaderboard ranks cash + stock value.
 - Money: `Services/CoinService` (accounts, interest, leaderboard) + `Managers/BetManager` (initiate/resolve bets, bonuses, stats). Persistence via `Common/Services` (`GistService` remote, `LocalFileService` local).
 

@@ -35,17 +35,6 @@ namespace DiscordBot.Services
             return _coinAccounts.Accounts.First(a => a.UserId == userId);
         }
 
-        /// <summary>
-        /// The account with the highest cash net worth, optionally excluding one user.
-        /// </summary>
-        public CoinAccount GetTopAccount(ulong? excludeUserId = null)
-        {
-            return _coinAccounts.Accounts
-                .Where(a => a.UserId != excludeUserId)
-                .OrderByDescending(a => a.NetWorth)
-                .FirstOrDefault();
-        }
-
         public async Task<CoinAccount> Add(ulong userId, double netWorth, string name)
         {
             var coinAccount = new CoinAccount()

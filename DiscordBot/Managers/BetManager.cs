@@ -14,6 +14,7 @@ namespace DiscordBot.Managers
     public class BetManager
     {
         private readonly CoinService _coinService;
+        private readonly StockService _stockService;
         private readonly AppSettings _appSettings;
         public List<ulong> InitiatedBetUserIds = new List<ulong>();
         private readonly Dictionary<ulong, DailyRollResult> _pendingDailyRolls = new Dictionary<ulong, DailyRollResult>();
@@ -45,9 +46,10 @@ namespace DiscordBot.Managers
             return result;
         }
 
-        public BetManager(CoinService coinService, AppSettings appSettings)
+        public BetManager(CoinService coinService, StockService stockService, AppSettings appSettings)
         {
             _coinService = coinService;
+            _stockService = stockService;
             _appSettings = appSettings;
         }
 
@@ -150,8 +152,21 @@ namespace DiscordBot.Managers
         }
 
         /// <summary>
-        /// Rolls a d10; on a 10 moves 10% of the top player's cash net worth to the roller. Mutates both accounts in memory
-        /// (the caller persists via CoinService.Update, which serializes every account).
+        /// Accounts in leaderboard order (1st first). Matches the ordering in the Leaderboard command: cash + stocks,
+        /// with prestige taking priority when prestige is enabled.
+        /// </summary>
+        private IEnumerable<CoinAccount> RankedAccounts()
+        {
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId);
+            var accounts = _coinService.GetAll().Accounts;
+            return _appSettings.PrestigeDisabled
+                ? accounts.OrderByDescending(TotalWorth)
+                : accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
+        }
+
+        /// <summary>
+        /// Rolls a d10; on a 10 and if the roller isn't 1st on the leaderboard, moves 10% of 1st place's cash to the roller.
+        /// Mutates both accounts in memory (the caller persists via CoinService.Update, which serializes every account).
         /// </summary>
         private DailyRollResult RollDailySteal(CoinAccount roller)
         {
@@ -159,19 +174,19 @@ namespace DiscordBot.Managers
             if (result.Roll != StealRollNeeded)
                 return result;
 
-            var top = _coinService.GetTopAccount(excludeUserId: roller.UserId);
-            if (top == null || top.NetWorth < roller.NetWorth)
-                return result; //roller is already the top player (or there's nobody to steal from)
+            var leader = RankedAccounts().FirstOrDefault();
+            if (leader == null || leader.UserId == roller.UserId)
+                return result; //roller is already 1st on the leaderboard
 
-            double amount = Math.Floor(top.NetWorth * StealPercent);
+            double amount = Math.Floor(leader.NetWorth * StealPercent);
             if (amount <= 0)
                 return result;
 
-            top.NetWorth -= amount;
+            leader.NetWorth -= amount;
             roller.NetWorth += amount;
             result.StolenAmount = amount;
-            result.StolenFromName = top.Name;
-            result.StolenFromUserId = top.UserId;
+            result.StolenFromName = leader.Name;
+            result.StolenFromUserId = leader.UserId;
             return result;
         }
 
