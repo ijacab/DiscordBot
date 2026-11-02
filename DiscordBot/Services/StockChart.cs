@@ -22,6 +22,7 @@ namespace DiscordBot.Services
         private const int _textScale = 2;
         private const int _glyphWidth = 5;
         private const int _glyphHeight = 7;
+        private const int LabelHeight = _glyphHeight * _textScale;
 
         private static readonly Rgba32 _background = new Rgba32(30, 31, 34);
         private static readonly Rgba32 _gridColor = new Rgba32(58, 60, 66);
@@ -67,10 +68,32 @@ namespace DiscordBot.Services
             for (int i = 1; i < prices.Count; i++)
                 DrawLine(image, XOf(i - 1), YOf(prices[i - 1]), XOf(i), YOf(prices[i]), lineColor);
 
+            //highest and lowest points, each labelled with its price and % difference from the current price
+            double current = prices[prices.Count - 1];
+            int highIndex = IndexOfExtreme(prices, highest: true);
+            int lowIndex = IndexOfExtreme(prices, highest: false);
+
+            int highX = XOf(highIndex), highY = YOf(prices[highIndex]);
+            FillCircle(image, highX, highY, 3, _markerColor);
+            string highLabel = PriceWithChange(prices[highIndex], current);
+            int highTop = highY - 12 - LabelHeight;
+            if (highTop < 2) highTop = highY + 10; //no room above, so put it below the point
+            DrawLabel(image, highLabel, Math.Clamp(highX - TextWidth(highLabel) / 2, 2, Width - TextWidth(highLabel) - 6), highTop);
+
+            int lowX = XOf(lowIndex), lowY = YOf(prices[lowIndex]);
+            FillCircle(image, lowX, lowY, 3, _markerColor);
+            string lowLabel = PriceWithChange(prices[lowIndex], current);
+            int lowTop = lowY + 10;
+            if (lowTop + LabelHeight > Height - 2) lowTop = lowY - 12 - LabelHeight; //no room below, so put it above the point
+            DrawLabel(image, lowLabel, Math.Clamp(lowX - TextWidth(lowLabel) / 2, 2, Width - TextWidth(lowLabel) - 6), lowTop);
+
+            //current value, drawn last so it sits on top of the line
             int lastX = XOf(prices.Count - 1);
-            int lastY = YOf(prices[prices.Count - 1]);
+            int lastY = YOf(current);
             FillCircle(image, lastX, lastY, 5, _markerColor);
             FillCircle(image, lastX, lastY, 3, lineColor);
+            string currentLabel = $"now {FormatPrice(current)}";
+            DrawLabel(image, currentLabel, Math.Max(2, lastX - 10 - TextWidth(currentLabel)), lastY - LabelHeight / 2);
 
             //time labels under the plot, oldest on the left
             int labelY = _plotBottom + 14;
@@ -91,6 +114,30 @@ namespace DiscordBot.Services
         }
 
         private static string FormatPrice(double price) => $"${price:N2}";
+
+        /// <summary>Price followed by its % difference from the current price, e.g. "$12.34 -3.10%".</summary>
+        private static string PriceWithChange(double price, double current) =>
+            $"{FormatPrice(price)} {(price - current) / current * 100:+0.00;-0.00;0.00}%";
+
+        private static int IndexOfExtreme(IReadOnlyList<double> prices, bool highest)
+        {
+            int index = 0;
+            for (int i = 1; i < prices.Count; i++)
+                if (highest ? prices[i] > prices[index] : prices[i] < prices[index])
+                    index = i;
+            return index;
+        }
+
+        /// <summary>Draws text on a background-coloured box so it stays readable over the line and grid.</summary>
+        private static void DrawLabel(Image<Rgba32> image, string text, int x, int top)
+        {
+            const int padding = 4;
+            int width = TextWidth(text);
+            for (int y = top - padding; y < top + LabelHeight + padding; y++)
+                for (int px = x - padding; px < x + width + padding; px++)
+                    SetPixel(image, px, y, _background);
+            DrawText(image, text, x, top, _textColor);
+        }
 
         private static void SetPixel(Image<Rgba32> image, int x, int y, Rgba32 color)
         {
@@ -166,6 +213,8 @@ namespace DiscordBot.Services
             ['.'] = new[] { ".....", ".....", ".....", ".....", ".....", ".##..", ".##.." },
             [','] = new[] { ".....", ".....", ".....", ".....", ".##..", "..#..", ".#..." },
             ['-'] = new[] { ".....", ".....", ".....", "#####", ".....", ".....", "....." },
+            ['+'] = new[] { ".....", "..#..", "..#..", "#####", "..#..", "..#..", "....." },
+            ['%'] = new[] { "##..#", "##.#.", "...#.", "..#..", ".#...", ".#.##", "#..##" },
             ['d'] = new[] { "....#", "....#", ".####", "#...#", "#...#", "#...#", ".####" },
             ['h'] = new[] { "#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#" },
             ['m'] = new[] { ".....", ".....", "##.##", "#.#.#", "#.#.#", "#...#", "#...#" },
