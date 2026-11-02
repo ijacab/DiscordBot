@@ -32,7 +32,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Models/
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
-      BattleArena/             AttackInfo, BattlePerson, BattleStats, OtherStats
+      BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)

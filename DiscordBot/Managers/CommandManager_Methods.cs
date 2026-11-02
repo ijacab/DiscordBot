@@ -641,79 +641,141 @@ namespace DiscordBot.Managers
             await message.Channel.SendFileAsync(stream: stream, "image.jpg");
         }
 
+        private const string CardDirectory = "card_images";
+
         public async Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            var faceTask = _faceService.Run();
-            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
-            const string dirName = "card_images";
-
-            string cardName = NameGenerator.GetGeneratedName(2);
-            var battlePerson = new BattlePerson(cardName);
-
             if (args.Count > 1 && args[0].StartsWith("keep"))
             {
-                if (!ulong.TryParse(args[1].Substring(0, args[1].IndexOf("_")), out ulong userId)
+                string keepPrefix = args[1];
+                if (!ulong.TryParse(keepPrefix.Split('_')[0], out ulong userId)
                     || userId != message.Author.Id)
                 {
                     await message.SendRichEmbedMessage($"You are not the owner of this card. FUCK OFF");
                     return;
                 }
 
-                string fileNameWithoutExtension = args[1];
-                await SaveCard(fileNameWithoutExtension, cardName, coinAccount, battlePerson, message);
+                CoinAccount ownerAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
+                await SaveCard(keepPrefix, ownerAccount, message);
+                return;
+            }
+
+            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
+            string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
+            bool isFreePull = coinAccount.LastFreePullDate != today;
+
+            if (!isFreePull && coinAccount.NetWorth < BattlePerson.PullCost)
+            {
+                await message.SendRichEmbedMessage("Not enough money", $"A card pull costs ${FormatHelper.GetCommaNumber(BattlePerson.PullCost)}. Your first pull each day is free.");
+                return;
+            }
+
+            //get the face before charging, so nobody pays when the image service is down
+            byte[] faceBytes;
+            using (var faceStream = await _faceService.Run())
+            using (var buffer = new MemoryStream())
+            {
+                await faceStream.CopyToAsync(buffer);
+                faceBytes = buffer.ToArray();
+            }
+
+            var battlePerson = new BattlePerson(NameGenerator.GetGeneratedName(2));
+            string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
+
+            //the card is saved next to the image so 'keep' saves the card the player actually saw
+            Directory.CreateDirectory(CardDirectory);
+            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
+            await File.WriteAllBytesAsync($"{unsavedBase}.jpg", faceBytes);
+            await File.WriteAllTextAsync($"{unsavedBase}.json", JsonConvert.SerializeObject(battlePerson));
+
+            if (isFreePull)
+                coinAccount.LastFreePullDate = today;
+            else
+                coinAccount.NetWorth -= BattlePerson.PullCost;
+            await _coinService.Update();
+
+            _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t => DeleteUnsavedCard(prefix));
+
+            var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, battlePerson.GetSummary()).Build();
+            using (var image = new MemoryStream(faceBytes))
+            {
+                await message.Channel.SendFileAsync(stream: image, $"{prefix}_unsaved.jpg", embed: embed);
+            }
+
+            if (coinAccount.BattlePerson == null)
+            {
+                await SaveCard(prefix, coinAccount, message); //auto save the card if they don't have any card
             }
             else
             {
-                string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
-                string fileName = $"{prefix}_unsaved.jpg";
-
-                if (!Directory.Exists(dirName)) Directory.CreateDirectory(dirName);
-
-                using var faceStream = await faceTask;
-                using var fileStream = File.Create(Path.Combine(dirName, fileName));
-                faceStream.Position = 0;
-                faceStream.CopyTo(fileStream);
-                fileStream.Close();
-
-                faceStream.Position = 0; //reset position again so we can send the stream to the channel
-
-                if (coinAccount.BattlePerson == null)
-                    await SaveCard(prefix, cardName, coinAccount, battlePerson, message); //auto save the card if they don't have any card
-
-                _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t =>
-                {
-                    if (File.Exists(fileName))
-                        File.Delete(fileName);
-                });
-
-                var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, JsonConvert.SerializeObject(battlePerson)).Build();
-                await message.Channel.SendFileAsync(stream: faceStream, fileName, embed: embed);
-                await message.Channel.SendMessageAsync($"Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):");
+                string paidLine = isFreePull ? "Free daily pull used." : $"${FormatHelper.GetCommaNumber(BattlePerson.PullCost)} paid.";
+                await message.Channel.SendMessageAsync($"{paidLine} Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):");
                 await message.Channel.SendMessageAsync($".cardpull keep {prefix}");
             }
         }
 
-        private async Task SaveCard(string fileNameWithoutExtension, string cardName, CoinAccount coinAccount, BattlePerson battlePerson, SocketMessage message)
+        public async Task CardView(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            const string dirName = "card_images";
-
-            string sourceFileName = $"{fileNameWithoutExtension}_unsaved.jpg";
-            string targetFileName = $"{fileNameWithoutExtension}.jpg";
-            if (File.Exists(Path.Combine(dirName, sourceFileName)))
+            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
+            BattlePerson card = coinAccount.BattlePerson;
+            if (card == null)
             {
-                if (coinAccount.BattlePerson != null && File.Exists(coinAccount.BattlePerson.FilePath))
-                    File.Delete(coinAccount.BattlePerson.FilePath);
+                await message.SendRichEmbedMessage("No card", "You don't have a Battle Person yet. Type `.cardpull` to get one.");
+                return;
+            }
 
-                File.Move(Path.Combine(dirName, sourceFileName), Path.Combine(dirName, targetFileName));
-                battlePerson.FilePath = Path.Combine(dirName, targetFileName);
-
-                coinAccount.BattlePerson = battlePerson;
-                await _coinService.Update();
-                await message.SendRichEmbedMessage($"New Battle Person saved: {cardName}");
+            var embed = DiscordHelper.GetEmbedBuilder(card.Name, card.GetSummary()).Build();
+            if (!string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath))
+            {
+                using var image = File.OpenRead(card.FilePath);
+                await message.Channel.SendFileAsync(stream: image, Path.GetFileName(card.FilePath), embed: embed);
             }
             else
             {
+                await message.Channel.SendMessageAsync(embed: embed);
+            }
+        }
+
+        private async Task SaveCard(string prefix, CoinAccount coinAccount, SocketMessage message)
+        {
+            //the prefix comes from the player's message, so it must be a plain file name
+            if (string.IsNullOrWhiteSpace(prefix) || prefix != Path.GetFileName(prefix))
+            {
                 await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
+                return;
+            }
+
+            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
+            string unsavedJsonPath = $"{unsavedBase}.json";
+            string unsavedImagePath = $"{unsavedBase}.jpg";
+            if (!File.Exists(unsavedJsonPath) || !File.Exists(unsavedImagePath))
+            {
+                await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
+                return;
+            }
+
+            BattlePerson battlePerson = JsonConvert.DeserializeObject<BattlePerson>(await File.ReadAllTextAsync(unsavedJsonPath));
+
+            if (coinAccount.BattlePerson?.FilePath != null && File.Exists(coinAccount.BattlePerson.FilePath))
+                File.Delete(coinAccount.BattlePerson.FilePath); //replacing the old card removes its image
+
+            string savedImagePath = Path.Combine(CardDirectory, $"{prefix}.jpg");
+            File.Move(unsavedImagePath, savedImagePath);
+            File.Delete(unsavedJsonPath);
+
+            battlePerson.FilePath = savedImagePath;
+            coinAccount.BattlePerson = battlePerson;
+            await _coinService.Update();
+            await message.SendRichEmbedMessage($"New Battle Person saved: {battlePerson.Name}");
+        }
+
+        private static void DeleteUnsavedCard(string prefix)
+        {
+            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
+            foreach (string path in new[] { $"{unsavedBase}.jpg", $"{unsavedBase}.json" })
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
             }
         }
 

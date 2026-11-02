@@ -202,14 +202,32 @@ namespace DiscordBot.Managers
 
                     return;
                 }
-                else if (args[0].StartsWith("r"))//'.fo roll'
+                else if (args[0].StartsWith("r"))//'.fo roll [numberOfDice]'
                 {
-                    if (!int.TryParse(args[1], out int numberOfDice))
+                    if (player == null)
                     {
-                        numberOfDice = 3;
+                        await message.SendRichEmbedMessage("Not in a game", "Type `.fo betAmount` to join a game first.");
+                        return;
+                    }
+
+                    int numberOfDice = 3;
+                    if (args.Count > 1 && int.TryParse(args[1], out int parsedDice))
+                    {
+                        numberOfDice = parsedDice;
                     }
 
                     await _battleArenaManager.Roll(player, numberOfDice, message, client);
+                    return;
+                }
+                else if (args[0].StartsWith("a"))//'.fo ability'
+                {
+                    if (player == null)
+                    {
+                        await message.SendRichEmbedMessage("Not in a game", "Type `.fo betAmount` to join a game first.");
+                        return;
+                    }
+
+                    await _battleArenaManager.UseAbility(player, message);
                     return;
                 }
             }

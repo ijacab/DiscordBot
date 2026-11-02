@@ -25,6 +25,7 @@ namespace DiscordBot.Models
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
             public BattlePerson BattlePerson { get; set; }
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
+            public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
 
             public const int MaxNetWorthHistoryPoints = 30 * 24; //30 days of hourly samples
             /// <summary>Total worth (cash + stocks) sampled once an hour, oldest first. Used for the .networth graph.</summary>

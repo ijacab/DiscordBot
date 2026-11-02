@@ -1,73 +1,50 @@
-﻿
+﻿using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace DiscordBot.Games.Models.BattleArena
 {
     public class BattlePerson
     {
+        public const int PullCost = 1000;
         private static readonly Random _random = new Random(); //best practice to use static object for random, not an instance for each time you want to use it
-        private readonly BattleStats _battleStats;
-        private readonly OtherStats _otherStats;
 
-        public string Name { get; }
+        public string Name { get; set; }
         public int Level { get; set; }
         public string FilePath { get; set; }
-
-        //battle stats
-        public double Attack => _battleStats.GetTotalAttack(Level);
-        public double Defense => _battleStats.GetTotalDefense(Level);
-        public double CritMultiplier => _battleStats.GetTotalCritMultiplier(Level);
-        //public double CritChancePercent => _battleStats.GetTotalCritChancePercent(Level);
+        public CardRarity Rarity { get; set; } = CardRarity.Common;
+        public CardAbility Ability { get; set; } = CardAbility.None;
+        public BattleStats Stats { get; set; }
         public int Wins { get; set; }
         public int Losses { get; set; }
 
-        //other stats
-        public double BonusBetRewardPercent => _otherStats.GetTotalBonusBetRewardPercent(Level);
-        public double BonusInterestPercent => _otherStats.GetTotalBonusInterestPercent(Level);
+        //battle stats, calculated from the saved stats and level
+        [JsonIgnore] public double Attack => Stats.GetTotalAttack(Level);
+        [JsonIgnore] public double Defense => Stats.GetTotalDefense(Level);
+        [JsonIgnore] public double CritMultiplier => Stats.GetTotalCritMultiplier(Level);
 
-        public BattlePerson(string name)
+        /// <summary>Used when loading a saved card. The stats come from the saved JSON, so nothing is re-rolled.</summary>
+        public BattlePerson()
+        {
+            Stats = BattleStats.Generate(_random, 1); //only kept when the saved card has no stats
+        }
+
+        /// <summary>Pulls a new card with random rarity, ability and stats.</summary>
+        public BattlePerson(string name) : this()
         {
             Name = name;
-            _battleStats = GetRandomBattleStats();
-            _otherStats = GetRandomOtherStats();
+            Rarity = CardTraits.RollRarity(_random);
+            Ability = CardTraits.RollAbility(_random);
+            Stats = BattleStats.Generate(_random, Rarity.StatMultiplier());
         }
 
-        private BattleStats GetRandomBattleStats()
+        public string GetSummary()
         {
-            const double maxStartStatsMultiplier = 0.3;
-            const double maxPerLevelMultiplier = 0.03; //3% max possible gain per level
-
-            double attack = maxStartStatsMultiplier * _random.NextDouble() * BattleStats.MaxAttack;
-            double attackPerLevel = maxPerLevelMultiplier * _random.NextDouble() * BattleStats.MaxAttack;
-
-            double defense = maxStartStatsMultiplier * _random.NextDouble() * BattleStats.MaxDefense;
-            double defensePerLevel = maxPerLevelMultiplier * _random.NextDouble() * BattleStats.MaxDefense;
-
-            double critChancePercent = maxStartStatsMultiplier * _random.NextDouble() * BattleStats.MaxCritChancePercent;
-            double critChancePercentPerLevel = maxPerLevelMultiplier * _random.NextDouble() * BattleStats.MaxCritChancePercent;
-
-            double critMultiplier = maxStartStatsMultiplier * _random.NextDouble() * BattleStats.MaxCritMultipler;
-            double critMultiplierPerLevel = maxPerLevelMultiplier * _random.NextDouble() * BattleStats.MaxCritMultipler;
-
-            return new BattleStats(attack, attackPerLevel, defense, defensePerLevel, critChancePercent, critChancePercentPerLevel, critMultiplier, critMultiplierPerLevel);
-        }
-
-        private OtherStats GetRandomOtherStats()
-        {
-            const double maxStartStatsMultiplier = 0.3;
-            const double maxPerLevelMultiplier = 0.03; //3% max possible gain per level
-
-            double betRewardBonus = maxStartStatsMultiplier * _random.NextDouble() * OtherStats.MaxBonusBetRewardPercent;
-            double betRewardBonusPerLevel = maxPerLevelMultiplier * _random.NextDouble() * OtherStats.MaxBonusBetRewardPercent;
-
-            double interestBonus = maxStartStatsMultiplier * _random.NextDouble() * OtherStats.MaxBonusInterestPercent;
-            double interestBonusPerLevel = maxPerLevelMultiplier * _random.NextDouble() * OtherStats.MaxBonusInterestPercent;
-
-            return new OtherStats(betRewardBonus, betRewardBonusPerLevel, interestBonus, interestBonusPerLevel);
+            return $"**Rarity:** {Rarity}\n" +
+                   $"**Ability:** {Ability} - {Ability.Describe()}\n" +
+                   $"**Level:** {Level} (W {Wins} / L {Losses})\n" +
+                   $"**Attack:** {Attack:0.0}\n" +
+                   $"**Defense:** {Defense:0.0}\n" +
+                   $"**Crit multiplier:** {CritMultiplier:0.00}x";
         }
     }
-
-
 }

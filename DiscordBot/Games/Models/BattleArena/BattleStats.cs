@@ -1,7 +1,4 @@
-﻿using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System;
 
 namespace DiscordBot.Games.Models.BattleArena
 {
@@ -9,64 +6,52 @@ namespace DiscordBot.Games.Models.BattleArena
     {
         public const double MaxAttack = 100;
         public const double MaxDefense = 75;
-        public const double MaxCritChancePercent = 100;
         public const double MaxCritMultipler = 2;
 
-        [JsonProperty]
-        private double Attack { get; }
-        [JsonProperty]
-        private double AttackBonusPerLevel { get; }
+        //public setters so the stats are saved with the card and read back unchanged
+        public double Attack { get; set; }
+        public double AttackBonusPerLevel { get; set; }
+        public double Defense { get; set; }
+        public double DefenseBonusPerLevel { get; set; }
+        public double CritMultiplier { get; set; }
+        public double CritMultiplierBonusPerLevel { get; set; }
+
         public double GetTotalAttack(int level)
         {
             double totalAttack = Attack + (AttackBonusPerLevel * level);
             return totalAttack > MaxAttack ? MaxAttack : totalAttack;
         }
 
-        [JsonProperty]
-        private double Defense { get; }
-        [JsonProperty]
-        private double DefenseBonusPerLevel { get; }
         public double GetTotalDefense(int level)
         {
             double totalDefense = Defense + (DefenseBonusPerLevel * level);
             return totalDefense > MaxDefense ? MaxDefense : totalDefense;
         }
 
-        //[JsonProperty]
-        //private double CritChancePercent { get; }
-        //[JsonProperty]
-        //private double CritChancePercentBonusPerLevel { get; }
-        //public double GetTotalCritChancePercent(int level)
-        //{
-        //    double totalCritChancePercent = CritChancePercent + (CritChancePercentBonusPerLevel * level);
-        //    return totalCritChancePercent > MaxCritChancePercent ? MaxCritChancePercent : totalCritChancePercent;
-        //}
-
-        [JsonProperty]
-        private double CritMultiplier { get; }
-        [JsonProperty]
-        private double CritMultiplierBonusPerLevel { get; }
         public double GetTotalCritMultiplier(int level)
         {
             double totalCritMultiplier = CritMultiplier + (CritMultiplierBonusPerLevel * level);
             return totalCritMultiplier > MaxCritMultipler ? MaxCritMultipler : totalCritMultiplier;
-
         }
 
-        public BattleStats(double attack, double attackPerLevel,
-            double defense, double defensePerLevel,
-            double critChancePercent, double critChancePercentPerLevel,
-            double critMultiplier, double critMultiplierPerLevel)
+        /// <summary>Rolls new starting stats. Rarity scales the starting values only, not the per-level growth.</summary>
+        public static BattleStats Generate(Random random, double rarityMultiplier)
         {
-            Attack = attack;
-            AttackBonusPerLevel = attackPerLevel;
-            Defense = defense;
-            DefenseBonusPerLevel = defensePerLevel;
-            //CritChancePercent = critChancePercent;
-            //CritChancePercentBonusPerLevel = critChancePercentPerLevel;
-            CritMultiplier = critMultiplier;
-            CritMultiplierBonusPerLevel = critMultiplierPerLevel;
-        }
+            const double maxStartStatsMultiplier = 0.3;
+            const double maxPerLevelMultiplier = 0.03; //3% max possible gain per level
 
+            double Start(double max) => maxStartStatsMultiplier * random.NextDouble() * max * rarityMultiplier;
+            double PerLevel(double max) => maxPerLevelMultiplier * random.NextDouble() * max;
+
+            return new BattleStats
+            {
+                Attack = Start(MaxAttack),
+                AttackBonusPerLevel = PerLevel(MaxAttack),
+                Defense = Start(MaxDefense),
+                DefenseBonusPerLevel = PerLevel(MaxDefense),
+                CritMultiplier = Start(MaxCritMultipler),
+                CritMultiplierBonusPerLevel = PerLevel(MaxCritMultipler)
+            };
+        }
     }
 }
