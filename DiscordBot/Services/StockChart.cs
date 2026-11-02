@@ -32,8 +32,11 @@ namespace DiscordBot.Services
         private static readonly Rgba32 _downColor = new Rgba32(237, 66, 69);
         private static readonly Rgba32 _markerColor = new Rgba32(255, 255, 255);
 
-        /// <summary>Renders the prices (oldest first, one per 5 minute tick) as a PNG. Expects at least two prices.</summary>
-        public static MemoryStream RenderPng(IReadOnlyList<double> prices)
+        /// <summary>
+        /// Renders a series of values (oldest first) as a PNG. <paramref name="pointInterval"/> is the time between points,
+        /// used for the time labels. Expects at least two values.
+        /// </summary>
+        public static MemoryStream RenderPng(IReadOnlyList<double> prices, TimeSpan pointInterval)
         {
             if (prices.Count < 2) throw new ArgumentException("A chart needs at least two prices.", nameof(prices));
 
@@ -98,7 +101,7 @@ namespace DiscordBot.Services
 
             //time labels under the plot, oldest on the left
             int labelY = _plotBottom + 14;
-            DrawText(image, "-" + FormatSpan(prices.Count), _plotLeft, labelY, _textColor);
+            DrawText(image, "-" + FormatSpan(prices.Count, pointInterval), _plotLeft, labelY, _textColor);
             DrawText(image, "now", _plotRight - TextWidth("now"), labelY, _textColor);
 
             var stream = new MemoryStream();
@@ -107,10 +110,10 @@ namespace DiscordBot.Services
             return stream;
         }
 
-        /// <summary>How long the history covers, given one point per 5 minute tick. Example: "6d 22h" or "1h 0m".</summary>
-        public static string FormatSpan(int pointCount)
+        /// <summary>How long the series covers, given one point per <paramref name="pointInterval"/>. Example: "6d 22h" or "1h 0m".</summary>
+        public static string FormatSpan(int pointCount, TimeSpan pointInterval)
         {
-            TimeSpan span = TimeSpan.FromMinutes(5 * Math.Max(0, pointCount - 1));
+            TimeSpan span = TimeSpan.FromTicks(pointInterval.Ticks * Math.Max(0, pointCount - 1));
             return span.TotalHours >= 24 ? $"{(int)span.TotalDays}d {span.Hours}h" : $"{(int)span.TotalHours}h {span.Minutes}m";
         }
 

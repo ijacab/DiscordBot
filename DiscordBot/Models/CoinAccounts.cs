@@ -12,6 +12,7 @@ namespace DiscordBot.Models
         public List<CoinAccount> Accounts { get; set; } = new List<CoinAccount>();
         public string DateDailyIncrementPaidFor { get; set; }
         public List<string> TimesInterestPaidForList { get; set; } = new List<string>();//looks like e.g. "20210202", "20210203"
+        public string LastNetWorthSampleHour { get; set; } //yyyyMMddHH (UTC) of the most recent net worth history sample
 
         public class CoinAccount
         {
@@ -24,6 +25,10 @@ namespace DiscordBot.Models
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
             public BattlePerson BattlePerson { get; set; }
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
+
+            public const int MaxNetWorthHistoryPoints = 30 * 24; //30 days of hourly samples
+            /// <summary>Total worth (cash + stocks) sampled once an hour, oldest first. Used for the .networth graph.</summary>
+            public List<double> NetWorthHistory { get; set; } = new List<double>();
 
             /// <summary>
             /// The net worth used as the "ceiling" for bonuses and interest scaling.

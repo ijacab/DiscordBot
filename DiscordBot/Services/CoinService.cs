@@ -67,6 +67,23 @@ namespace DiscordBot.Services
             }
         }
 
+        /// <summary>Records each account's total worth once per UTC hour, for the .networth graph.</summary>
+        public async Task RecordNetWorthHistory(Func<CoinAccount, double> totalWorthOf)
+        {
+            var hourString = DateTimeOffset.UtcNow.ToString("yyyyMMddHH");
+            if (_coinAccounts.LastNetWorthSampleHour == hourString) return;
+
+            foreach (var account in _coinAccounts.Accounts)
+            {
+                account.NetWorthHistory.Add(totalWorthOf(account));
+                int excess = account.NetWorthHistory.Count - CoinAccount.MaxNetWorthHistoryPoints;
+                if (excess > 0)
+                    account.NetWorthHistory.RemoveRange(0, excess);
+            }
+            _coinAccounts.LastNetWorthSampleHour = hourString;
+            await Update();
+        }
+
         public async Task Update()
         {
             string content = JsonConvert.SerializeObject(_coinAccounts);

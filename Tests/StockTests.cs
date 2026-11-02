@@ -11,6 +11,8 @@ namespace Tests
 {
     public class StockTests
     {
+        private static readonly TimeSpan FiveMinutes = TimeSpan.FromMinutes(5);
+
         [Theory]
         [InlineData(1, 0.01)]
         [InlineData(2, 0.03)]
@@ -93,7 +95,7 @@ namespace Tests
         [Fact]
         public void Chart_IsPngOfFixedSize()
         {
-            using var png = StockChart.RenderPng(new double[] { 10, 12, 11, 20, 15 });
+            using var png = StockChart.RenderPng(new double[] { 10, 12, 11, 20, 15 }, FiveMinutes);
             byte[] bytes = png.ToArray();
 
             Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, bytes.Take(4).ToArray()); //PNG signature
@@ -105,14 +107,14 @@ namespace Tests
         [Fact]
         public void Chart_FlatPricesDoNotThrow()
         {
-            using var png = StockChart.RenderPng(new double[] { 5, 5, 5 });
+            using var png = StockChart.RenderPng(new double[] { 5, 5, 5 }, FiveMinutes);
             Assert.True(png.Length > 0);
         }
 
         [Fact]
         public void Chart_NeedsAtLeastTwoPrices()
         {
-            Assert.Throws<ArgumentException>(() => StockChart.RenderPng(new double[] { 5 }));
+            Assert.Throws<ArgumentException>(() => StockChart.RenderPng(new double[] { 5 }, FiveMinutes));
         }
 
         [Fact]
@@ -120,7 +122,7 @@ namespace Tests
         {
             var random = new Random(7);
             var prices = Enumerable.Range(0, Stock.MaxHistoryPoints).Select(_ => 10 + random.NextDouble() * 5).ToList();
-            using var png = StockChart.RenderPng(prices);
+            using var png = StockChart.RenderPng(prices, FiveMinutes);
 
             Assert.True(png.Length > 0);
         }
@@ -130,7 +132,7 @@ namespace Tests
         [InlineData(Stock.MaxHistoryPoints, "6d 23h")]
         public void FormatSpan_DescribesTheCoveredTime(int points, string expected)
         {
-            Assert.Equal(expected, StockChart.FormatSpan(points));
+            Assert.Equal(expected, StockChart.FormatSpan(points, FiveMinutes));
         }
 
         [Fact]

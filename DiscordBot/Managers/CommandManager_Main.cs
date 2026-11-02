@@ -85,6 +85,8 @@ namespace DiscordBot.Managers
                 new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SCORT 10` or `.buy SCORT max`" },
                 new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SCORT 10` or `.sell SCORT all`" },
                 new Command("portfolio", Portfolio) { Description = "Shows the stocks you own.", Syntax = "`.portfolio`" },
+                new Command("pf", Portfolio) { Description = "Shorthand for `.portfolio`.", Syntax = "`.pf`", Hidden = true },
+                new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks) over the last 30 days, sampled hourly. Pass a user to see theirs.", Syntax = "`.networth` or `.networth @person`" },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
@@ -247,6 +249,9 @@ namespace DiscordBot.Managers
             Task coinServiceTask = _coinService.AddInterest();
             Task stockTask = _stockService.TickIfDue();
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask);
+
+            //after interest and stock ticks, so the hourly sample reflects both
+            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId));
         }
 
         private async Task SendReminders(DiscordSocketClient client)

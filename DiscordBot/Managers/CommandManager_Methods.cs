@@ -319,10 +319,10 @@ namespace DiscordBot.Managers
             double overallChange = (last - first) / first * 100;
 
             string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
-                $"{overallChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count)} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
+                $"{overallChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count, TimeSpan.FromMinutes(5))} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
                 "*Each point is one 5 minute price tick, newest on the right.*";
 
-            using var chart = StockChart.RenderPng(history);
+            using var chart = StockChart.RenderPng(history, TimeSpan.FromMinutes(5));
             var embed = DiscordHelper.GetEmbedBuilder($"{stock.Symbol} price history", output)
                 .WithImageUrl("attachment://stock.png")
                 .Build();
@@ -351,6 +351,48 @@ namespace DiscordBot.Managers
             var (stock, shares, proceeds) = _stockService.Sell(account, args[0], args[1]);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task NetWorthGraph(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count > 1) throw new BadSyntaxException();
+
+            CoinAccount account;
+            if (args.Count == 0)
+            {
+                account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            }
+            else if (DiscordHelper.TryGetUserId(args[0], out ulong userId))
+            {
+                account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == userId)
+                    ?? throw new BadInputException("Account not found.");
+            }
+            else
+            {
+                throw new BadSyntaxException();
+            }
+
+            if (account.NetWorthHistory.Count == 0)
+            {
+                await message.SendRichEmbedMessage($"{account.Name} net worth", "Not enough history yet. The graph is sampled once an hour, so check back later.");
+                return;
+            }
+
+            //history is sampled hourly, so end the line at the current value
+            double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId);
+            var points = account.NetWorthHistory.Append(current).ToList();
+            TimeSpan interval = TimeSpan.FromHours(1);
+
+            double first = points[0];
+            double change = first == 0 ? 0 : (current - first) / first * 100;
+            string output = $"Net worth (cash + stocks): ${FormatHelper.GetCommaNumber(current)}\n" +
+                $"{change:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(points.Count, interval)} | low ${FormatHelper.GetCommaNumber(points.Min())} | high ${FormatHelper.GetCommaNumber(points.Max())}";
+
+            using var chart = StockChart.RenderPng(points, interval);
+            var embed = DiscordHelper.GetEmbedBuilder($"{account.Name} net worth", output)
+                .WithImageUrl("attachment://networth.png")
+                .Build();
+            await message.Channel.SendFileAsync(chart, "networth.png", embed: embed);
         }
 
         private async Task Portfolio(DiscordSocketClient client, SocketMessage message, List<string> args)
