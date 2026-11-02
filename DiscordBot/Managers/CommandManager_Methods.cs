@@ -193,7 +193,6 @@ namespace DiscordBot.Managers
         private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args, bool showHints = true)
         {
             var accounts = _coinService.GetAll();
-            var market = _stockService.GetMarket();
             string output = "";
             int? prestige = null;
             bool prestigeDisabled = _appSettings.PrestigeDisabled;
@@ -215,13 +214,11 @@ namespace DiscordBot.Managers
                     output += "   \\*";
                 output += "\n";
 
-                //what the total is made of: cash, then each stock held
+                //what the total is made of: cash and the combined value of stocks held
                 var parts = new List<string> { $"💵 ${FormatHelper.GetCommaNumber(account.NetWorth)}" };
-                foreach (var holding in market.GetHoldings(account.UserId).OrderBy(h => h.Key))
-                {
-                    double value = (market.Find(holding.Key)?.Price ?? 0) * holding.Value;
-                    parts.Add($"📈 {holding.Key} ${FormatHelper.GetCommaNumber(value)}");
-                }
+                double stocksValue = _stockService.GetPortfolioValue(account.UserId);
+                if (stocksValue > 0)
+                    parts.Add($"📈 ${FormatHelper.GetCommaNumber(stocksValue)}");
                 output += $"  ↳ {string.Join(" · ", parts)}\n";
             }
             if (showHints && prestigeDisabled)
