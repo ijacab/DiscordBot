@@ -680,6 +680,8 @@ namespace DiscordBot.Managers
             }
 
             var battlePerson = new BattlePerson(NameGenerator.GetGeneratedName(2));
+            if (battlePerson.Foil)
+                faceBytes = FoilEffect.Apply(faceBytes); //foil cards get the holographic image, saved with the card
             string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
 
             //the card is saved next to the image so 'keep' saves the card the player actually saw
