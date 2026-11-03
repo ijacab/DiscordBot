@@ -51,6 +51,12 @@ namespace DiscordBot.Games.Managers
         {
         }
 
+        /// <summary>Runs after the game is animated and before the first turn. Can be overridden to post extra messages.</summary>
+        protected virtual Task PostStartAsync(TGame game, IEnumerable<TPlayer> players)
+        {
+            return Task.CompletedTask;
+        }
+
         protected virtual void PreEndActions(TGame game)
         {
         }
@@ -145,6 +151,7 @@ namespace DiscordBot.Games.Managers
                 //normally nothing, but can be overridden in child classes
                 PostStartActions(game, players);
                 await AnimateGame(game, players);
+                await PostStartAsync(game, players);
 
                 if (await EndGameIfAllPlayersFinished(playerId, message))
                     return;

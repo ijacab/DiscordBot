@@ -6,6 +6,7 @@ using DiscordBot.Games.Models.BattleArena;
 using DiscordBot.Managers;
 using DiscordBot.Services;
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -68,6 +69,35 @@ namespace DiscordBot.Games.Managers
             }
 
             _coinService.Update().Wait();
+        }
+
+        /// <summary>Shows each fighter's card (image and stats) in their channel when the fight starts.</summary>
+        protected override async Task PostStartAsync(BattleArena game, IEnumerable<BattleArenaPlayer> players)
+        {
+            foreach (var player in players)
+            {
+                var channel = _client.GetChannel(player.ChannelId) as ISocketMessageChannel;
+                if (channel == null)
+                    continue;
+
+                BattlePerson card = player.CoinAccount?.BattlePerson;
+                if (card == null)
+                {
+                    await channel.SendMessageAsync($"{player.Username} has no Battle Person card, so they fight without one. Type `.cardpull` to get one.");
+                    continue;
+                }
+
+                var embed = DiscordHelper.GetEmbedBuilder($"{player.Username}: {card.Name}", card.GetSummary()).Build();
+                if (!string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath))
+                {
+                    using var image = File.OpenRead(card.FilePath);
+                    await channel.SendFileAsync(stream: image, Path.GetFileName(card.FilePath), embed: embed);
+                }
+                else
+                {
+                    await channel.SendMessageAsync(embed: embed);
+                }
+            }
         }
 
         protected override string GetStartMessage(BattleArenaPlayer player)
