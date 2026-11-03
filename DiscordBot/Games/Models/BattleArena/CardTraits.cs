@@ -42,6 +42,14 @@ namespace DiscordBot.Games.Models.BattleArena
             }
         }
 
+        /// <summary>A foil card is a rare cosmetic variant. Roughly 1 in 20 pulls.</summary>
+        public const double FoilChance = 0.05;
+
+        public static bool RollFoil(Random random)
+        {
+            return random.NextDouble() < FoilChance;
+        }
+
         public static CardAbility RollAbility(Random random)
         {
             //every ability except None

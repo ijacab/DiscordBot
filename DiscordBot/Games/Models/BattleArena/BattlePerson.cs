@@ -13,6 +13,7 @@ namespace DiscordBot.Games.Models.BattleArena
         public string FilePath { get; set; }
         public CardRarity Rarity { get; set; } = CardRarity.Common;
         public CardAbility Ability { get; set; } = CardAbility.None;
+        public bool Foil { get; set; }
         public BattleStats Stats { get; set; }
         public int Wins { get; set; }
         public int Losses { get; set; }
@@ -34,12 +35,15 @@ namespace DiscordBot.Games.Models.BattleArena
             Name = name;
             Rarity = CardTraits.RollRarity(_random);
             Ability = CardTraits.RollAbility(_random);
+            Foil = CardTraits.RollFoil(_random);
             Stats = BattleStats.Generate(_random, Rarity.StatMultiplier());
         }
 
         public string GetSummary()
         {
-            return $"**Rarity:** {Rarity}\n" +
+            string foilLine = Foil ? "**FOIL** (rare variant)\n" : "";
+            return foilLine +
+                   $"**Rarity:** {Rarity}\n" +
                    $"**Ability:** {Ability} - {Ability.Describe()}\n" +
                    $"**Level:** {Level} (W {Wins} / L {Losses})\n" +
                    $"**Attack:** {Attack:0.0}\n" +
