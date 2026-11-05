@@ -214,6 +214,37 @@ namespace DiscordBot.Services
             return stream;
         }
 
+        /// <summary>
+        /// Joins separately rendered charts (PNGs of the same size) into one image, filling left to right then top to bottom.
+        /// Unused cells in the last row are left as background.
+        /// </summary>
+        public static MemoryStream RenderGridPng(IReadOnlyList<MemoryStream> charts, int columns)
+        {
+            if (charts.Count == 0) throw new ArgumentException("A grid needs at least one chart.", nameof(charts));
+            if (columns < 1) throw new ArgumentOutOfRangeException(nameof(columns));
+
+            int rows = (charts.Count + columns - 1) / columns;
+            using var canvas = new Image<Rgba32>(Width * columns, Height * rows);
+            for (int y = 0; y < canvas.Height; y++)
+                for (int x = 0; x < canvas.Width; x++)
+                    canvas[x, y] = _background;
+
+            for (int i = 0; i < charts.Count; i++)
+            {
+                int offsetX = (i % columns) * Width;
+                int offsetY = (i / columns) * Height;
+                using var chart = Image.Load<Rgba32>(charts[i].ToArray());
+                for (int y = 0; y < chart.Height && y < Height; y++)
+                    for (int x = 0; x < chart.Width && x < Width; x++)
+                        canvas[offsetX + x, offsetY + y] = chart[x, y];
+            }
+
+            var stream = new MemoryStream();
+            canvas.SaveAsPng(stream);
+            stream.Position = 0;
+            return stream;
+        }
+
         private static string FormatMoney(double value) => $"${value:N0}";
 
         /// <summary>How long the series covers, given one point per <paramref name="pointInterval"/>. Example: "6d 22h" or "1h 0m".</summary>

@@ -316,28 +316,41 @@ namespace DiscordBot.Managers
         }
 
         /// <summary>
-        /// One chart per stock, each showing its % change since its first kept tick, so prices of very different sizes
-        /// are comparable. Stocks with fewer than two ticks have nothing to draw and are skipped.
+        /// Every stock's % change since its first kept tick, as one panel per stock in a single image (two per row), so
+        /// prices of very different sizes are comparable. The font has no letters, so the order is listed in the embed.
+        /// Stocks with fewer than two ticks have nothing to draw and are left out.
         /// </summary>
         private static async Task SendMarketChart(SocketMessage message, IEnumerable<Stock> stocks)
         {
-            foreach (var stock in stocks)
+            var symbols = new List<string>();
+            var charts = new List<MemoryStream>();
+            try
             {
-                var history = stock.History.Count > 0 ? stock.History : new List<double> { stock.Price };
-                if (history.Count < 2) continue;
-
-                double first = history[0];
-                var series = new List<IReadOnlyList<double>>
+                foreach (var stock in stocks)
                 {
-                    history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList()
-                };
+                    var history = stock.History.Count > 0 ? stock.History : new List<double> { stock.Price };
+                    if (history.Count < 2) continue;
 
-                using var chart = StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%");
-                var embed = DiscordHelper.GetEmbedBuilder($"{stock.Symbol} ({stock.Name})",
-                        $"% change since its first recorded tick, newest on the right.")
-                    .WithImageUrl("attachment://stock.png")
+                    double first = history[0];
+                    var series = new List<IReadOnlyList<double>>
+                    {
+                        history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList()
+                    };
+                    charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%"));
+                    symbols.Add(stock.Symbol);
+                }
+                if (charts.Count == 0) return;
+
+                using var grid = StockChart.RenderGridPng(charts, 2);
+                var embed = DiscordHelper.GetEmbedBuilder("Stock prices",
+                        $"% change since each stock's first recorded tick, newest on the right.\nLeft to right, top to bottom: {string.Join(", ", symbols)}")
+                    .WithImageUrl("attachment://stocks.png")
                     .Build();
-                await message.Channel.SendFileAsync(chart, "stock.png", embed: embed);
+                await message.Channel.SendFileAsync(grid, "stocks.png", embed: embed);
+            }
+            finally
+            {
+                foreach (var chart in charts) chart.Dispose();
             }
         }
 
