@@ -32,6 +32,9 @@ namespace DiscordBot.Services
         private static readonly Rgba32 _upColor = new Rgba32(87, 242, 135);
         private static readonly Rgba32 _downColor = new Rgba32(237, 66, 69);
         private static readonly Rgba32 _markerColor = new Rgba32(255, 255, 255);
+        //top-left corner of a grid panel's ticker label, above the plot area and clear of the top price label
+        private const int TickerLabelX = 12;
+        private const int TickerLabelY = 6;
 
         /// <summary>
         /// Renders a series of values (oldest first) as a PNG. <paramref name="pointInterval"/> is the time between points,
@@ -216,11 +219,12 @@ namespace DiscordBot.Services
 
         /// <summary>
         /// Joins separately rendered charts (PNGs of the same size) into one image, filling left to right then top to bottom.
-        /// Unused cells in the last row are left as background.
+        /// Each chart gets its label drawn in its top-left corner. Unused cells in the last row are left as background.
         /// </summary>
-        public static MemoryStream RenderGridPng(IReadOnlyList<MemoryStream> charts, int columns)
+        public static MemoryStream RenderGridPng(IReadOnlyList<MemoryStream> charts, IReadOnlyList<string> labels, int columns)
         {
             if (charts.Count == 0) throw new ArgumentException("A grid needs at least one chart.", nameof(charts));
+            if (labels.Count != charts.Count) throw new ArgumentException("Each chart needs a label.", nameof(labels));
             if (columns < 1) throw new ArgumentOutOfRangeException(nameof(columns));
 
             int rows = (charts.Count + columns - 1) / columns;
@@ -234,6 +238,8 @@ namespace DiscordBot.Services
                 int offsetX = (i % columns) * Width;
                 int offsetY = (i / columns) * Height;
                 using var chart = Image.Load<Rgba32>(charts[i].ToArray());
+                //drawn on the panel itself, since the drawing helpers clip to a single chart's size
+                DrawText(chart, labels[i], TickerLabelX, TickerLabelY, _markerColor);
                 for (int y = 0; y < chart.Height && y < Height; y++)
                     for (int x = 0; x < chart.Width && x < Width; x++)
                         canvas[offsetX + x, offsetY + y] = chart[x, y];
@@ -363,6 +369,32 @@ namespace DiscordBot.Services
             ['n'] = new[] { ".....", ".....", "####.", "#...#", "#...#", "#...#", "#...#" },
             ['o'] = new[] { ".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###." },
             ['w'] = new[] { ".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#." },
+            ['A'] = new[] { ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" },
+            ['B'] = new[] { "####.", "#...#", "#...#", "####.", "#...#", "#...#", "####." },
+            ['C'] = new[] { ".###.", "#...#", "#....", "#....", "#....", "#...#", ".###." },
+            ['D'] = new[] { "####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####." },
+            ['E'] = new[] { "#####", "#....", "#....", "####.", "#....", "#....", "#####" },
+            ['F'] = new[] { "#####", "#....", "#....", "####.", "#....", "#....", "#...." },
+            ['G'] = new[] { ".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####" },
+            ['H'] = new[] { "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" },
+            ['I'] = new[] { ".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###." },
+            ['J'] = new[] { "..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.." },
+            ['K'] = new[] { "#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#" },
+            ['L'] = new[] { "#....", "#....", "#....", "#....", "#....", "#....", "#####" },
+            ['M'] = new[] { "#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#" },
+            ['N'] = new[] { "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#" },
+            ['O'] = new[] { ".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###." },
+            ['P'] = new[] { "####.", "#...#", "#...#", "####.", "#....", "#....", "#...." },
+            ['Q'] = new[] { ".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#" },
+            ['R'] = new[] { "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#" },
+            ['S'] = new[] { ".####", "#....", "#....", ".###.", "....#", "....#", "####." },
+            ['T'] = new[] { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." },
+            ['U'] = new[] { "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###." },
+            ['V'] = new[] { "#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.." },
+            ['W'] = new[] { "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#." },
+            ['X'] = new[] { "#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#" },
+            ['Y'] = new[] { "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.." },
+            ['Z'] = new[] { "#####", "....#", "...#.", "..#..", ".#...", "#....", "#####" },
         };
     }
 }

@@ -317,7 +317,7 @@ namespace DiscordBot.Managers
 
         /// <summary>
         /// Every stock's % change since its first kept tick, as one panel per stock in a single image (two per row), so
-        /// prices of very different sizes are comparable. The font has no letters, so the order is listed in the embed.
+        /// prices of very different sizes are comparable. Each panel is labelled with its ticker.
         /// Stocks with fewer than two ticks have nothing to draw and are left out.
         /// </summary>
         private static async Task SendMarketChart(SocketMessage message, IEnumerable<Stock> stocks)
@@ -337,13 +337,13 @@ namespace DiscordBot.Managers
                         history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList()
                     };
                     charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%"));
-                    symbols.Add(stock.Symbol);
+                    symbols.Add(stock.Symbol.ToUpperInvariant());
                 }
                 if (charts.Count == 0) return;
 
-                using var grid = StockChart.RenderGridPng(charts, 2);
+                using var grid = StockChart.RenderGridPng(charts, symbols, 2);
                 var embed = DiscordHelper.GetEmbedBuilder("Stock prices",
-                        $"% change since each stock's first recorded tick, newest on the right.\nLeft to right, top to bottom: {string.Join(", ", symbols)}")
+                        "% change since each stock's first recorded tick, newest on the right.")
                     .WithImageUrl("attachment://stocks.png")
                     .Build();
                 await message.Channel.SendFileAsync(grid, "stocks.png", embed: embed);
