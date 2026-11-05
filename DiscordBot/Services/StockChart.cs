@@ -122,6 +122,99 @@ namespace DiscordBot.Services
             return stream;
         }
 
+        /// <summary>
+        /// Colours for the lines in <see cref="RenderMultiPng"/>, in order. The .nw all legend uses matching coloured
+        /// circles in the same order, so keep the two in step.
+        /// </summary>
+        public static readonly Rgba32[] SeriesColors =
+        {
+            new Rgba32(237, 66, 69),   //red
+            new Rgba32(250, 166, 26),  //orange
+            new Rgba32(254, 231, 92),  //yellow
+            new Rgba32(87, 242, 135),  //green
+            new Rgba32(88, 101, 242),  //blue
+            new Rgba32(155, 89, 182),  //purple
+            new Rgba32(255, 255, 255), //white
+            new Rgba32(170, 110, 60),  //brown
+        };
+
+        /// <summary>
+        /// Renders several series (oldest first) on one chart, one line per series in <see cref="SeriesColors"/>
+        /// (wrapping after the last colour). Series are lined up by their newest point, so a shorter series starts
+        /// later on the x axis. Expects every series to have at least one value and the longest to have two.
+        /// </summary>
+        public static MemoryStream RenderMultiPng(IReadOnlyList<IReadOnlyList<double>> series, TimeSpan pointInterval)
+        {
+            if (series.Count == 0) throw new ArgumentException("A chart needs at least one series.", nameof(series));
+            if (series.Any(s => s.Count == 0)) throw new ArgumentException("Every series needs at least one value.", nameof(series));
+            int longest = series.Max(s => s.Count);
+            if (longest < 2) throw new ArgumentException("A chart needs at least two points.", nameof(series));
+
+            double min = series.Min(s => s.Min());
+            double max = series.Max(s => s.Max());
+            double padding = (max - min) * 0.08;
+            if (padding == 0) padding = Math.Max(Math.Abs(max) * 0.05, 0.01); //flat values still get a sensible scale
+            double low = min - padding;
+            double high = max + padding;
+
+            var gridValues = new double[_gridLines + 1];
+            var gridLabels = new string[_gridLines + 1];
+            int widestLabel = 0;
+            for (int i = 0; i <= _gridLines; i++)
+            {
+                gridValues[i] = low + (high - low) * i / _gridLines;
+                gridLabels[i] = FormatMoney(gridValues[i]);
+                widestLabel = Math.Max(widestLabel, TextWidth(gridLabels[i]));
+            }
+            int plotLeft = _labelEdgePadding + widestLabel + _labelGap;
+
+            //index counts from the start of the longest series, so the newest points all line up on the right
+            int XOf(int index) => plotLeft + (int)Math.Round((double)index * (_plotRight - plotLeft) / (longest - 1));
+            int YOf(double value) => (int)Math.Round(_plotBottom - (value - low) / (high - low) * (_plotBottom - _plotTop));
+
+            using var image = new Image<Rgba32>(Width, Height);
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                    image[x, y] = _background;
+
+            for (int i = 0; i <= _gridLines; i++)
+            {
+                int y = YOf(gridValues[i]);
+                for (int x = plotLeft; x <= _plotRight; x++)
+                    SetPixel(image, x, y, _gridColor);
+
+                string label = gridLabels[i];
+                DrawText(image, label, plotLeft - _labelGap - TextWidth(label), y - _glyphHeight * _textScale / 2, _textColor);
+            }
+
+            for (int s = 0; s < series.Count; s++)
+            {
+                IReadOnlyList<double> values = series[s];
+                Rgba32 color = SeriesColors[s % SeriesColors.Length];
+                int offset = longest - values.Count; //a shorter series has no points before its first value
+                for (int i = 1; i < values.Count; i++)
+                    DrawLine(image, XOf(offset + i - 1), YOf(values[i - 1]), XOf(offset + i), YOf(values[i]), color);
+            }
+
+            //a dot at each line's newest value
+            for (int s = 0; s < series.Count; s++)
+            {
+                IReadOnlyList<double> values = series[s];
+                FillCircle(image, XOf(longest - 1), YOf(values[values.Count - 1]), 4, SeriesColors[s % SeriesColors.Length]);
+            }
+
+            int labelY = _plotBottom + 14;
+            DrawText(image, "-" + FormatSpan(longest, pointInterval), plotLeft, labelY, _textColor);
+            DrawText(image, "now", _plotRight - TextWidth("now"), labelY, _textColor);
+
+            var stream = new MemoryStream();
+            image.SaveAsPng(stream);
+            stream.Position = 0;
+            return stream;
+        }
+
+        private static string FormatMoney(double value) => $"${value:N0}";
+
         /// <summary>How long the series covers, given one point per <paramref name="pointInterval"/>. Example: "6d 22h" or "1h 0m".</summary>
         public static string FormatSpan(int pointCount, TimeSpan pointInterval)
         {

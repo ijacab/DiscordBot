@@ -353,9 +353,17 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
+        //circles matching StockChart.SeriesColors, in the same order
+        private static readonly string[] _seriesDots = { "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚪", "🟤" };
+
         private async Task NetWorthGraph(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count > 1) throw new BadSyntaxException();
+            if (args.Count == 1 && args[0].Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                await NetWorthGraphAll(message);
+                return;
+            }
 
             CoinAccount account;
             if (args.Count == 0)
@@ -390,6 +398,44 @@ namespace DiscordBot.Managers
 
             using var chart = StockChart.RenderPng(points, interval);
             var embed = DiscordHelper.GetEmbedBuilder($"{account.Name} net worth", output)
+                .WithImageUrl("attachment://networth.png")
+                .Build();
+            await message.Channel.SendFileAsync(chart, "networth.png", embed: embed);
+        }
+
+        /// <summary>Every account's net worth on one chart, each in its own colour, with a legend ranked by current worth.</summary>
+        private async Task NetWorthGraphAll(SocketMessage message)
+        {
+            var ranked = _coinService.GetAll().Accounts
+                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId)))
+                .OrderByDescending(x => x.Current)
+                .ToList();
+            if (ranked.Count == 0 || ranked.All(x => x.Account.NetWorthHistory.Count == 0))
+            {
+                await message.SendRichEmbedMessage("Everyone's net worth", "Not enough history yet. The graph is sampled once an hour, so check back later.");
+                return;
+            }
+
+            //each line ends at the current value, like the single account graph
+            var series = ranked.Select(x => x.Account.NetWorthHistory.Append(x.Current).ToList()).ToList();
+
+            var lines = new List<string>();
+            for (int i = 0; i < ranked.Count; i++)
+            {
+                var (account, current) = ranked[i];
+                double first = series[i][0];
+                double change = first == 0 ? 0 : (current - first) / first * 100;
+                string dot = _seriesDots[i % _seriesDots.Length];
+                lines.Add($"{dot} **{account.Name}** ${FormatHelper.GetCommaNumber(current)} ({change:+0.00;-0.00;0.00}%)");
+            }
+
+            string output = $"Net worth (cash + stocks), newest on the right. % is change over each person's own history.\n" +
+                string.Join("\n", lines);
+            if (ranked.Count > _seriesDots.Length)
+                output += $"\n*Colours repeat after {_seriesDots.Length} people.*";
+
+            using var chart = StockChart.RenderMultiPng(series, TimeSpan.FromHours(1));
+            var embed = DiscordHelper.GetEmbedBuilder("Everyone's net worth", output)
                 .WithImageUrl("attachment://networth.png")
                 .Build();
             await message.Channel.SendFileAsync(chart, "networth.png", embed: embed);

@@ -3,6 +3,7 @@ using DiscordBot.Models;
 using DiscordBot.Services;
 using Common.Services;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 using static DiscordBot.Models.CoinAccounts;
@@ -115,6 +116,32 @@ namespace Tests
         public void Chart_NeedsAtLeastTwoPrices()
         {
             Assert.Throws<ArgumentException>(() => StockChart.RenderPng(new double[] { 5 }, FiveMinutes));
+        }
+
+        [Fact]
+        public void MultiChart_IsPngOfFixedSizeWithShorterSeries()
+        {
+            var series = new List<IReadOnlyList<double>>
+            {
+                new double[] { 1000, 1200, 1100, 1500 },
+                new double[] { 50_000, 52_000 }, //joined later, lines up on the right
+                new double[] { 7 },              //no history yet, just a current value
+            };
+            using var png = StockChart.RenderMultiPng(series, TimeSpan.FromHours(1));
+            byte[] bytes = png.ToArray();
+
+            Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, bytes.Take(4).ToArray());
+            using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(bytes);
+            Assert.Equal(StockChart.Width, image.Width);
+            Assert.Equal(StockChart.Height, image.Height);
+        }
+
+        [Fact]
+        public void MultiChart_ValidatesInput()
+        {
+            Assert.Throws<ArgumentException>(() => StockChart.RenderMultiPng(new List<IReadOnlyList<double>>(), FiveMinutes));
+            Assert.Throws<ArgumentException>(() => StockChart.RenderMultiPng(new List<IReadOnlyList<double>> { new double[] { 5 } }, FiveMinutes));
+            Assert.Throws<ArgumentException>(() => StockChart.RenderMultiPng(new List<IReadOnlyList<double>> { new double[] { 5, 6 }, new double[0] }, FiveMinutes));
         }
 
         [Fact]
