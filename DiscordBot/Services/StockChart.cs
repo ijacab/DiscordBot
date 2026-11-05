@@ -13,8 +13,9 @@ namespace DiscordBot.Services
         public const int Width = 800;
         public const int Height = 420;
 
-        //margins around the plot area, leaving room for the labels
-        private const int _plotLeft = 120;
+        //margins around the plot area, leaving room for the labels. The left margin is sized to the widest price label.
+        private const int _labelEdgePadding = 8;
+        private const int _labelGap = 12;
         private const int _plotRight = Width - 30;
         private const int _plotTop = 30;
         private const int _plotBottom = Height - 60;
@@ -47,7 +48,19 @@ namespace DiscordBot.Services
             double low = min - padding;
             double high = max + padding;
 
-            int XOf(int index) => _plotLeft + (int)Math.Round((double)index * (_plotRight - _plotLeft) / (prices.Count - 1));
+            //work out the price labels first, so the left margin can fit the widest one
+            var gridValues = new double[_gridLines + 1];
+            var gridLabels = new string[_gridLines + 1];
+            int widestLabel = 0;
+            for (int i = 0; i <= _gridLines; i++)
+            {
+                gridValues[i] = low + (high - low) * i / _gridLines;
+                gridLabels[i] = FormatPrice(gridValues[i]);
+                widestLabel = Math.Max(widestLabel, TextWidth(gridLabels[i]));
+            }
+            int plotLeft = _labelEdgePadding + widestLabel + _labelGap;
+
+            int XOf(int index) => plotLeft + (int)Math.Round((double)index * (_plotRight - plotLeft) / (prices.Count - 1));
             int YOf(double price) => (int)Math.Round(_plotBottom - (price - low) / (high - low) * (_plotBottom - _plotTop));
 
             using var image = new Image<Rgba32>(Width, Height);
@@ -58,13 +71,12 @@ namespace DiscordBot.Services
             //horizontal grid lines, each labelled with its price
             for (int i = 0; i <= _gridLines; i++)
             {
-                double value = low + (high - low) * i / _gridLines;
-                int y = YOf(value);
-                for (int x = _plotLeft; x <= _plotRight; x++)
+                int y = YOf(gridValues[i]);
+                for (int x = plotLeft; x <= _plotRight; x++)
                     SetPixel(image, x, y, _gridColor);
 
-                string label = FormatPrice(value);
-                DrawText(image, label, _plotLeft - 12 - TextWidth(label), y - _glyphHeight * _textScale / 2, _textColor);
+                string label = gridLabels[i];
+                DrawText(image, label, plotLeft - _labelGap - TextWidth(label), y - _glyphHeight * _textScale / 2, _textColor);
             }
 
             //the line goes green if the stock finished above where it started, red if below
@@ -82,14 +94,14 @@ namespace DiscordBot.Services
             string highLabel = PriceWithChange(prices[highIndex], current);
             int highTop = highY - 12 - LabelHeight;
             if (highTop < 2) highTop = highY + 10; //no room above, so put it below the point
-            DrawLabel(image, highLabel, highX - TextWidth(highLabel) / 2, highTop);
+            DrawLabel(image, highLabel, highX - TextWidth(highLabel) / 2, highTop, plotLeft);
 
             int lowX = XOf(lowIndex), lowY = YOf(prices[lowIndex]);
             FillCircle(image, lowX, lowY, 3, _markerColor);
             string lowLabel = PriceWithChange(prices[lowIndex], current);
             int lowTop = lowY + 10;
             if (lowTop + LabelHeight + LabelPadding > _plotBottom + 10) lowTop = lowY - 12 - LabelHeight; //would run into the time labels, so put it above the point
-            DrawLabel(image, lowLabel, lowX - TextWidth(lowLabel) / 2, lowTop);
+            DrawLabel(image, lowLabel, lowX - TextWidth(lowLabel) / 2, lowTop, plotLeft);
 
             //current value, drawn last so it sits on top of the line
             int lastX = XOf(prices.Count - 1);
@@ -97,11 +109,11 @@ namespace DiscordBot.Services
             FillCircle(image, lastX, lastY, 5, _markerColor);
             FillCircle(image, lastX, lastY, 3, lineColor);
             string currentLabel = $"now {FormatPrice(current)}";
-            DrawLabel(image, currentLabel, lastX - 10 - TextWidth(currentLabel), lastY - LabelHeight / 2);
+            DrawLabel(image, currentLabel, lastX - 10 - TextWidth(currentLabel), lastY - LabelHeight / 2, plotLeft);
 
             //time labels under the plot, oldest on the left
             int labelY = _plotBottom + 14;
-            DrawText(image, "-" + FormatSpan(prices.Count, pointInterval), _plotLeft, labelY, _textColor);
+            DrawText(image, "-" + FormatSpan(prices.Count, pointInterval), plotLeft, labelY, _textColor);
             DrawText(image, "now", _plotRight - TextWidth("now"), labelY, _textColor);
 
             var stream = new MemoryStream();
@@ -136,10 +148,10 @@ namespace DiscordBot.Services
         /// Draws a label as plain text (no box, so it never hides part of the line). Kept inside the plot area so it
         /// doesn't cover the price scale or time labels.
         /// </summary>
-        private static void DrawLabel(Image<Rgba32> image, string text, int x, int top)
+        private static void DrawLabel(Image<Rgba32> image, string text, int x, int top, int plotLeft)
         {
             int width = TextWidth(text);
-            x = Math.Clamp(x, _plotLeft, _plotRight - width);
+            x = Math.Clamp(x, plotLeft, _plotRight - width);
             top = Math.Clamp(top, _plotTop, _plotBottom - LabelHeight);
             DrawText(image, text, x, top, _textColor);
         }
