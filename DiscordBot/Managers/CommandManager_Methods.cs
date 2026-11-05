@@ -289,6 +289,9 @@ namespace DiscordBot.Managers
                 return;
             }
 
+            //the chart goes first, so it still arrives before the text if that gets split into more than one message
+            await SendMarketChart(message, market.Stocks);
+
             string output = "";
             foreach (var tier in market.Stocks.GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
             {
@@ -296,13 +299,44 @@ namespace DiscordBot.Managers
                 foreach (var stock in tier.OrderBy(s => s.Symbol))
                 {
                     string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
-                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}%)\n";
+                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {ChangeSinceInception(stock):+0.00;-0.00;0.00}% since inception)\n";
                 }
                 output += "\n";
             }
             output += "*Prices change every 5 minutes. Tier 1 is stable, tier 5 is wild. Use `.stocks SYMBOL` for a graph, `.buy` and `.sell`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
+        }
+
+        /// <summary>% change from the oldest tick still kept (history is capped at 7 days, so that is the furthest back we can see).</summary>
+        private static double ChangeSinceInception(Stock stock)
+        {
+            double first = stock.History.Count > 0 ? stock.History[0] : stock.Price;
+            return first <= 0 ? 0 : (stock.Price - first) / first * 100;
+        }
+
+        /// <summary>
+        /// Every stock's % change since its first kept tick, one line each, so prices of very different sizes share one scale.
+        /// Sends nothing until at least one stock has two ticks to draw.
+        /// </summary>
+        private static async Task SendMarketChart(SocketMessage message, IEnumerable<Stock> stocks)
+        {
+            var list = stocks.ToList();
+            var series = new List<IReadOnlyList<double>>();
+            foreach (var stock in list)
+            {
+                var history = stock.History.Count > 0 ? stock.History : new List<double> { stock.Price };
+                double first = history[0];
+                series.Add(history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList());
+            }
+            if (!series.Any(s => s.Count >= 2)) return;
+
+            string legend = string.Join("  ", list.Select((stock, i) => $"{_seriesDots[i % _seriesDots.Length]} {stock.Symbol}"));
+            using var chart = StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%");
+            var embed = DiscordHelper.GetEmbedBuilder("Stock prices", $"% change since each stock's first recorded tick, newest on the right.\n{legend}")
+                .WithImageUrl("attachment://market.png")
+                .Build();
+            await message.Channel.SendFileAsync(chart, "market.png", embed: embed);
         }
 
         private static async Task StockGraph(SocketMessage message, Stock stock)

@@ -143,8 +143,9 @@ namespace DiscordBot.Services
         /// (wrapping after the last colour). Series are lined up by their newest point, so a shorter series starts
         /// later on the x axis. Expects every series to have at least one value and the longest to have two.
         /// </summary>
-        public static MemoryStream RenderMultiPng(IReadOnlyList<IReadOnlyList<double>> series, TimeSpan pointInterval)
+        public static MemoryStream RenderMultiPng(IReadOnlyList<IReadOnlyList<double>> series, TimeSpan pointInterval, Func<double, string> formatLabel = null)
         {
+            formatLabel ??= v => FormatMoney(v);
             if (series.Count == 0) throw new ArgumentException("A chart needs at least one series.", nameof(series));
             if (series.Any(s => s.Count == 0)) throw new ArgumentException("Every series needs at least one value.", nameof(series));
             int longest = series.Max(s => s.Count);
@@ -163,7 +164,7 @@ namespace DiscordBot.Services
             for (int i = 0; i <= _gridLines; i++)
             {
                 gridValues[i] = low + (high - low) * i / _gridLines;
-                gridLabels[i] = FormatMoney(gridValues[i]);
+                gridLabels[i] = formatLabel(gridValues[i]);
                 widestLabel = Math.Max(widestLabel, TextWidth(gridLabels[i]));
             }
             int plotLeft = _labelEdgePadding + widestLabel + _labelGap;
