@@ -1,8 +1,11 @@
-﻿using Discord.WebSocket;
+﻿using Discord;
+using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
+using DiscordBot.Games.Managers;
 using DiscordBot.Games.Models;
 using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Services;
 using Common.Helpers;
 using System;
 using System.Collections.Generic;
@@ -273,36 +276,58 @@ namespace DiscordBot.Managers
             string name = message.Author.Username;
             string action = args.Count > 0 ? args[0].ToLowerInvariant() : "";
 
-            string text;
+            DungeonReply reply;
             switch (action)
             {
                 case "":
                 case "status":
-                    text = _dungeonManager.IsActive(userId)
-                        ? await _dungeonManager.Status(userId, name)
-                        : "Enter a dungeon with a buy-in, for example `.dungeon 1000`. Gold found in each room builds your haul. Cash out to bank it. Dying loses the haul and the buy-in. Bosses come every 5 floors.";
+                    reply = await _dungeonManager.Status(userId);
+                    break;
+                case "join":
+                    CoinAccount joiner = await _coinService.Get(userId, name);
+                    reply = await _dungeonManager.Join(joiner, message.Channel);
+                    break;
+                case "start":
+                    reply = await _dungeonManager.Start(userId);
                     break;
                 case "go":
-                    text = await _dungeonManager.Go(userId, name);
+                    reply = await _dungeonManager.Go(userId);
                     break;
                 case "cash":
-                    text = await _dungeonManager.Cash(userId, name);
+                    reply = await _dungeonManager.Cash(userId);
                     break;
                 case "buy":
-                    text = await _dungeonManager.Buy(userId, name);
+                    reply = await _dungeonManager.Buy(userId);
                     break;
                 case "drink":
-                    text = await _dungeonManager.Drink(userId, name);
+                    reply = await _dungeonManager.Drink(userId);
                     break;
                 default:
-                    CoinAccount account = await _coinService.Get(userId, name);
-                    if (!TryExtractBetAmount(args, account, out double buyIn))
+                    CoinAccount host = await _coinService.Get(userId, name);
+                    if (!TryExtractBetAmount(args, host, out double buyIn))
                         throw new BadSyntaxException();
-                    text = await _dungeonManager.Start(account, buyIn);
+                    reply = await _dungeonManager.Open(host, buyIn, message.Channel);
                     break;
             }
 
-            await message.SendRichEmbedMessage("Dungeon", text);
+            await SendDungeonReply(message, reply);
+        }
+
+        /// <summary>Sends the reply as an embed. If the reply has a run, the party card image is attached.</summary>
+        private static async Task SendDungeonReply(SocketMessage message, DungeonReply reply)
+        {
+            EmbedBuilder embed = DiscordHelper.GetEmbedBuilder("Dungeon", reply.Text);
+            if (reply.Run == null)
+            {
+                await message.Channel.SendMessageAsync(embed: embed.Build());
+                return;
+            }
+
+            embed.WithImageUrl("attachment://dungeon.png");
+            using (var card = DungeonCardRenderer.Render(reply.Run))
+            {
+                await message.Channel.SendFileAsync(stream: card, "dungeon.png", embed: embed.Build());
+            }
         }
 
         private bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)

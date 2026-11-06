@@ -29,9 +29,10 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            solo dungeon runs: buy-in, cash out, idle timeout
+      DungeonManager.cs            shared dungeon parties: lobby, join/start, majority cash out, idle timeout
     Models/
-      Dungeon/DungeonRun.cs        one dungeon crawl: rooms, fights, merchant/shrine offers
+      Dungeon/DungeonRun.cs        one shared party run: rooms, multi-target fights, offers, haul split
+      Dungeon/DungeonMember.cs     one party member: HP, gear, potions, alive flag
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
@@ -39,6 +40,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CoinService.cs             accounts, interest, leaderboard, top account
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
+    PixelFont.cs               5x7 bitmap font + rectangle fill, shared by StockChart and DungeonCardRenderer
+    DungeonCardRenderer.cs     PNG card for a dungeon party: header, haul, one HP panel per member
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search
