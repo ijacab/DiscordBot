@@ -7,20 +7,19 @@ using System.IO;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Draws the state of a dungeon party as a PNG: a header with the floor and room, the shared haul, and one panel
-    /// per party slot with HP bars and stats. Uses the pixel font, so labels are uppercase only.
+    /// Draws one player's solo run as a PNG: a header with the floor and room and the haul, a panel with HP and stats,
+    /// and an optional footer for session info such as the time left in the crawl. Uses the pixel font, so labels are uppercase only.
     /// </summary>
     public static class DungeonCardRenderer
     {
         public const int Width = 800;
-        public const int Height = 460;
+        public const int Height = 300;
 
         private const int HeaderHeight = 56;
-        private const int PanelWidth = 380;
-        private const int PanelHeight = 170;
-        private const int PanelGap = 8;
         private const int PanelLeft = 16;
-        private const int PanelTop = HeaderHeight + 12;
+        private const int PanelTop = HeaderHeight + 16;
+        private const int PanelWidth = Width - 32;
+        private const int PanelHeight = 170;
         private const int TitleScale = 3;
         private const int TextScale = 2;
         private const int BarHeight = 16;
@@ -29,7 +28,6 @@ namespace DiscordBot.Services
         private static readonly Rgba32 HeaderColor = new Rgba32(44, 46, 52);
         private static readonly Rgba32 PanelColor = new Rgba32(40, 42, 48);
         private static readonly Rgba32 DeadPanelColor = new Rgba32(24, 25, 28);
-        private static readonly Rgba32 OpenPanelColor = new Rgba32(34, 35, 39);
         private static readonly Rgba32 BarTrackColor = new Rgba32(58, 60, 66);
         private static readonly Rgba32 HealthyColor = new Rgba32(87, 242, 135);
         private static readonly Rgba32 HurtColor = new Rgba32(250, 166, 26);
@@ -38,24 +36,16 @@ namespace DiscordBot.Services
         private static readonly Rgba32 BrightColor = new Rgba32(255, 255, 255);
         private static readonly Rgba32 MutedColor = new Rgba32(100, 104, 112);
 
-        public static MemoryStream Render(DungeonRun run)
+        /// <summary>Renders the run. <paramref name="footer"/> is optional session info drawn along the bottom.</summary>
+        public static MemoryStream Render(DungeonRun run, string footer = null)
         {
             using var image = new Image<Rgba32>(Width, Height);
             PixelFont.FillRect(image, 0, 0, Width, Height, Background);
             DrawHeader(image, run);
+            DrawPanel(image, run);
 
-            for (int slot = 0; slot < DungeonRun.MaxPartySize; slot++)
-            {
-                int column = slot % 2, row = slot / 2;
-                int x = PanelLeft + column * (PanelWidth + PanelGap);
-                int y = PanelTop + row * (PanelHeight + PanelGap);
-                if (slot < run.Members.Count)
-                    DrawMemberPanel(image, run.Members[slot], x, y);
-                else
-                    DrawOpenPanel(image, x, y);
-            }
-
-            DrawFooter(image, run);
+            if (!string.IsNullOrEmpty(footer))
+                PixelFont.DrawText(image, footer.ToUpperInvariant(), PanelLeft, Height - 26, TextColor, TextScale);
 
             var stream = new MemoryStream();
             image.SaveAsPng(stream);
@@ -67,49 +57,35 @@ namespace DiscordBot.Services
         {
             PixelFont.FillRect(image, 0, 0, Width, HeaderHeight, HeaderColor);
 
+            int titleY = (HeaderHeight - PixelFont.GlyphHeight * TitleScale) / 2;
             string title = run.LastRoom == null ? "THE DOOR" : $"FLOOR {run.Floor} {run.LastRoom.Value.ToString().ToUpperInvariant()}";
-            PixelFont.DrawText(image, title, 16, (HeaderHeight - PixelFont.GlyphHeight * TitleScale) / 2, BrightColor, TitleScale);
+            PixelFont.DrawText(image, title, 16, titleY, BrightColor, TitleScale);
 
             string haul = $"HAUL ${run.Haul:N2}";
             int haulX = Width - 16 - PixelFont.TextWidth(haul, TitleScale);
-            PixelFont.DrawText(image, haul, haulX, (HeaderHeight - PixelFont.GlyphHeight * TitleScale) / 2, HurtColor, TitleScale);
+            PixelFont.DrawText(image, haul, haulX, titleY, HurtColor, TitleScale);
         }
 
-        private static void DrawFooter(Image<Rgba32> image, DungeonRun run)
+        private static void DrawPanel(Image<Rgba32> image, DungeonRun run)
         {
-            //the pixel font has no slash, so counts are written as "X OF Y"
-            string footer = $"PARTY {run.LivingCount} OF {run.Members.Count}   BUY-IN ${run.BuyIn:N2} EACH   CASH VOTES {run.CashOutVotes.Count} OF {run.LivingCount / 2 + 1}";
-            PixelFont.DrawText(image, footer, PanelLeft, Height - 26, TextColor, TextScale);
-        }
+            int x = PanelLeft, y = PanelTop;
+            PixelFont.FillRect(image, x, y, PanelWidth, PanelHeight, run.Alive ? PanelColor : DeadPanelColor);
 
-        private static void DrawMemberPanel(Image<Rgba32> image, DungeonMember member, int x, int y)
-        {
-            Rgba32 panel = member.Alive ? PanelColor : DeadPanelColor;
-            PixelFont.FillRect(image, x, y, PanelWidth, PanelHeight, panel);
-
-            string name = Clip(member.Name.ToUpperInvariant(), 26);
-            PixelFont.DrawText(image, name, x + 12, y + 12, member.Alive ? BrightColor : MutedColor, TextScale);
+            string name = Clip(run.Name.ToUpperInvariant(), 60);
+            PixelFont.DrawText(image, name, x + 12, y + 12, run.Alive ? BrightColor : MutedColor, TextScale);
 
             int barX = x + 12, barY = y + 44, barWidth = PanelWidth - 24;
             PixelFont.FillRect(image, barX, barY, barWidth, BarHeight, BarTrackColor);
-            double fraction = member.MaxHp <= 0 ? 0 : Math.Clamp((double)member.Hp / member.MaxHp, 0, 1);
-            if (member.Alive && fraction > 0)
+            double fraction = run.MaxHp <= 0 ? 0 : Math.Clamp((double)run.Hp / run.MaxHp, 0, 1);
+            if (run.Alive && fraction > 0)
                 PixelFont.FillRect(image, barX, barY, (int)Math.Round(barWidth * fraction), BarHeight, HealthColor(fraction));
 
-            int hp = Math.Max(0, member.Hp);
-            PixelFont.DrawText(image, $"HP {hp} OF {member.MaxHp}", x + 12, y + 68, TextColor, TextScale);
-            PixelFont.DrawText(image, $"ATK {member.Attack}  DEF {member.Defense}", x + 12, y + 92, TextColor, TextScale);
-            PixelFont.DrawText(image, $"POTIONS {member.Potions}  KILLS {member.Kills}", x + 12, y + 116, TextColor, TextScale);
+            PixelFont.DrawText(image, $"HP {Math.Max(0, run.Hp)} OF {run.MaxHp}", x + 12, y + 68, TextColor, TextScale);
+            PixelFont.DrawText(image, $"ATK {run.Attack}  DEF {run.Defense}", x + 12, y + 92, TextColor, TextScale);
+            PixelFont.DrawText(image, $"POTIONS {run.Potions}  KILLS {run.Kills}", x + 12, y + 116, TextColor, TextScale);
 
-            if (!member.Alive)
-                PixelFont.DrawText(image, "DOWN", x + 12, y + 130, CriticalColor, TitleScale);
-        }
-
-        private static void DrawOpenPanel(Image<Rgba32> image, int x, int y)
-        {
-            PixelFont.FillRect(image, x, y, PanelWidth, PanelHeight, OpenPanelColor);
-            PixelFont.DrawText(image, "OPEN SLOT", x + 12, y + 12, MutedColor, TextScale);
-            PixelFont.DrawText(image, "TYPE .DNG JOIN", x + 12, y + 36, MutedColor, TextScale);
+            if (!run.Alive)
+                PixelFont.DrawText(image, "DOWN", x + 12, y + 136, CriticalColor, TitleScale);
         }
 
         private static Rgba32 HealthColor(double fraction)

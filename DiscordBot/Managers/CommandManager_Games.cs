@@ -281,7 +281,10 @@ namespace DiscordBot.Managers
             {
                 case "":
                 case "status":
-                    reply = await _dungeonManager.Status();
+                    reply = await _dungeonManager.Status(userId);
+                    break;
+                case "loot":
+                    reply = await _dungeonManager.Loot(userId);
                     break;
                 case "join":
                     CoinAccount joiner = await _coinService.Get(userId, name);
@@ -317,16 +320,25 @@ namespace DiscordBot.Managers
         private static async Task SendDungeonReply(SocketMessage message, DungeonReply reply)
         {
             EmbedBuilder embed = DiscordHelper.GetEmbedBuilder("Dungeon", reply.Text);
-            if (reply.Run == null)
+            if (reply.Run != null)
+            {
+                embed.WithImageUrl("attachment://dungeon.png");
+                using (var card = DungeonCardRenderer.Render(reply.Run, reply.CardFooter))
+                {
+                    await message.Channel.SendFileAsync(stream: card, "dungeon.png", embed: embed.Build());
+                }
+            }
+            else
             {
                 await message.Channel.SendMessageAsync(embed: embed.Build());
-                return;
             }
 
-            embed.WithImageUrl("attachment://dungeon.png");
-            using (var card = DungeonCardRenderer.Render(reply.Run))
+            if (reply.LootImage != null)
             {
-                await message.Channel.SendFileAsync(stream: card, "dungeon.png", embed: embed.Build());
+                using (reply.LootImage)
+                {
+                    await message.Channel.SendFileAsync(stream: reply.LootImage, "loot.png");
+                }
             }
         }
 

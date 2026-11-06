@@ -9,15 +9,12 @@ namespace Tests
 {
     public class DungeonCardRendererTests
     {
-        private static DungeonRun PartyOf(int size, int seed = 1)
+        private static DungeonRun RunFor(int seed)
         {
-            var run = new DungeonRun(1000, new Random(seed));
-            for (int i = 1; i <= size; i++)
-                run.AddMember((ulong)i, $"Player {i}");
-            return run;
+            return new DungeonRun((ulong)seed, $"Player {seed}", 1000, new Random(seed));
         }
 
-        private static void AssertPngOfCardSize(MemoryStream stream)
+        private static void AssertPngOfSize(MemoryStream stream, int width, int height)
         {
             byte[] bytes = stream.ToArray();
             Assert.True(bytes.Length > 8);
@@ -27,45 +24,56 @@ namespace Tests
             Assert.Equal((byte)'G', bytes[3]);
 
             using Image image = Image.Load(bytes);
-            Assert.Equal(DungeonCardRenderer.Width, image.Width);
-            Assert.Equal(DungeonCardRenderer.Height, image.Height);
+            Assert.Equal(width, image.Width);
+            Assert.Equal(height, image.Height);
         }
 
         [Fact]
-        public void Render_SoloParty_ProducesCardOfFixedSize()
+        public void Render_NewRun_ProducesCardOfFixedSize()
         {
-            using MemoryStream card = DungeonCardRenderer.Render(PartyOf(1));
+            using MemoryStream card = DungeonCardRenderer.Render(RunFor(1));
 
-            AssertPngOfCardSize(card);
+            AssertPngOfSize(card, DungeonCardRenderer.Width, DungeonCardRenderer.Height);
         }
 
         [Fact]
-        public void Render_FullParty_ProducesCardOfFixedSize()
+        public void Render_WithFooter_ProducesCardOfFixedSize()
         {
-            using MemoryStream card = DungeonCardRenderer.Render(PartyOf(DungeonRun.MaxPartySize));
+            using MemoryStream card = DungeonCardRenderer.Render(RunFor(2), "Crawl ends in 4 min. 3 still crawling");
 
-            AssertPngOfCardSize(card);
+            AssertPngOfSize(card, DungeonCardRenderer.Width, DungeonCardRenderer.Height);
         }
 
         [Fact]
-        public void Render_AfterRoomsWithADeadMember_ProducesCardOfFixedSize()
+        public void Render_AfterRoomsAndDeath_ProducesCardOfFixedSize()
         {
-            var run = PartyOf(3, seed: 9);
-            run.Member(2).Alive = false;
-            for (int i = 0; i < 3 && !run.IsOver; i++)
+            var run = RunFor(9);
+            for (int i = 0; i < 10 && run.Alive; i++)
                 run.Descend();
 
             using MemoryStream card = DungeonCardRenderer.Render(run);
 
-            AssertPngOfCardSize(card);
+            AssertPngOfSize(card, DungeonCardRenderer.Width, DungeonCardRenderer.Height);
         }
 
         [Fact]
         public void Render_ReturnsStreamAtStart()
         {
-            using MemoryStream card = DungeonCardRenderer.Render(PartyOf(2));
+            using MemoryStream card = DungeonCardRenderer.Render(RunFor(3));
 
             Assert.Equal(0, card.Position);
+        }
+
+        [Theory]
+        [InlineData(LootTier.Common)]
+        [InlineData(LootTier.Rare)]
+        [InlineData(LootTier.Epic)]
+        public void LootCard_ProducesCardOfFixedSize(LootTier tier)
+        {
+            var loot = new LootResult { Tier = tier, Name = "Dragon Scale", AttackGain = 2, DefenseGain = 1, MaxHpGain = 9 };
+            using MemoryStream card = LootCardRenderer.Render(loot);
+
+            AssertPngOfSize(card, LootCardRenderer.Width, LootCardRenderer.Height);
         }
     }
 }

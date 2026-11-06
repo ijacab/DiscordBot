@@ -8,54 +8,23 @@ namespace Tests
 {
     public class DungeonRunTests
     {
-        private static DungeonRun PartyOf(int size, int seed = 1)
+        private static DungeonRun RunFor(int seed, double buyIn = 1000)
         {
-            var run = new DungeonRun(1000, new Random(seed));
-            for (int i = 1; i <= size; i++)
-                run.AddMember((ulong)i, $"P{i}");
-            return run;
+            return new DungeonRun((ulong)seed, $"P{seed}", buyIn, new Random(seed));
         }
 
         [Fact]
-        public void NewRun_HasNoMembersUntilAdded()
+        public void NewRun_StartsAliveAtFullHealthWithNoHaul()
         {
-            var run = new DungeonRun(1000, new Random(1));
+            var run = RunFor(1);
 
-            Assert.Empty(run.Members);
+            Assert.Equal(DungeonRun.StartingHp, run.Hp);
+            Assert.Equal(DungeonRun.StartingHp, run.MaxHp);
             Assert.Equal(0, run.Haul);
             Assert.Equal(0, run.Floor);
+            Assert.True(run.Alive);
             Assert.False(run.IsOver);
-        }
-
-        [Fact]
-        public void AddMember_StartsEachMemberAtFullHealth()
-        {
-            var run = PartyOf(2);
-
-            Assert.All(run.Members, m =>
-            {
-                Assert.Equal(DungeonMember.StartingHp, m.Hp);
-                Assert.Equal(DungeonMember.StartingHp, m.MaxHp);
-                Assert.True(m.Alive);
-            });
-        }
-
-        [Fact]
-        public void AddMember_RejectsFullPartiesAndDuplicates()
-        {
-            var run = PartyOf(DungeonRun.MaxPartySize);
-
-            Assert.Throws<InvalidOperationException>(() => run.AddMember(99, "Extra"));
-            Assert.Throws<InvalidOperationException>(() => PartyOf(1).AddMember(1, "Again"));
-        }
-
-        [Fact]
-        public void AddMember_RejectsJoinsAfterTheRunStarts()
-        {
-            var run = PartyOf(1, seed: 4);
-            run.Descend();
-
-            Assert.Throws<InvalidOperationException>(() => run.AddMember(50, "Late"));
+            Assert.False(run.CanLoot);
         }
 
         [Fact]
@@ -64,7 +33,7 @@ namespace Tests
             int reachedFifth = 0;
             for (int seed = 1; seed <= 50; seed++)
             {
-                var run = PartyOf(2, seed);
+                var run = RunFor(seed);
                 RoomResult last = null;
                 while (!run.IsOver && run.Floor < DungeonRun.BossEvery)
                     last = run.Descend();
@@ -78,52 +47,73 @@ namespace Tests
             Assert.True(reachedFifth > 0, "no seed survived to the first boss, so the test checked nothing");
         }
 
-        [Theory]
-        [InlineData(1)]
-        [InlineData(3)]
-        [InlineData(4)]
-        public void Invariants_HoldAcrossManySeeds(int partySize)
+        [Fact]
+        public void Invariants_HoldAcrossManySeeds()
         {
-            for (int seed = 1; seed <= 100; seed++)
+            for (int seed = 1; seed <= 200; seed++)
             {
-                var run = PartyOf(partySize, seed);
+                var run = RunFor(seed);
                 int guard = 0;
                 while (!run.IsOver && guard++ < 500)
                 {
                     RoomResult room = run.Descend();
 
                     Assert.True(run.Haul >= 0, $"haul went negative with seed {seed}");
-                    Assert.All(run.Living, m =>
-                    {
-                        Assert.True(m.Hp > 0, $"living member at {m.Hp} HP with seed {seed}");
-                        Assert.True(m.Hp <= m.MaxHp, $"HP above max with seed {seed}");
-                    });
                     if (room.Died)
                     {
+                        Assert.False(run.Alive);
                         Assert.True(run.IsOver);
-                        Assert.Equal(0, run.LivingCount);
+                        Assert.True(run.Hp <= 0);
+                    }
+                    else
+                    {
+                        Assert.True(run.Hp > 0);
+                        Assert.True(run.Hp <= run.MaxHp);
                     }
                 }
             }
         }
 
         [Fact]
-        public void Descend_AfterTheRunEnds_Throws()
+        public void CashOut_ReturnsHaulAndEndsRun()
+        {
+            var run = RunFor(3);
+
+            Assert.Equal(run.Haul, run.CashOut());
+            Assert.True(run.IsOver);
+            Assert.Throws<InvalidOperationException>(() => run.Descend());
+            Assert.Throws<InvalidOperationException>(() => run.CashOut());
+        }
+
+        [Fact]
+        public void Descend_AfterDeath_Throws()
         {
             for (int seed = 1; seed <= 100; seed++)
             {
-                var run = PartyOf(2, seed);
+                var run = RunFor(seed);
                 int guard = 0;
                 while (!run.IsOver && guard++ < 500)
                     run.Descend();
 
-                if (run.IsOver)
+                if (!run.Alive)
                 {
                     Assert.Throws<InvalidOperationException>(() => run.Descend());
                     return;
                 }
             }
-            Assert.True(false, "no seed ended a run in range, so the test checked nothing");
+            Assert.True(false, "no seed in range produced a death, so the test checked nothing");
+        }
+
+        [Fact]
+        public void TakeHaulForPvp_EmptiesTheRunAndEndsIt()
+        {
+            var run = RunFor(5);
+            double before = run.Haul;
+            double taken = run.TakeHaulForPvp();
+
+            Assert.Equal(before, taken);
+            Assert.Equal(0, run.Haul);
+            Assert.True(run.IsOver);
         }
 
         [Fact]
@@ -144,75 +134,57 @@ namespace Tests
         }
 
         [Fact]
-        public void CashOut_LeavesOutDeadMembers()
-        {
-            var run = PartyOf(3);
-            run.Member(2).Alive = false;
-
-            IReadOnlyDictionary<ulong, double> payouts = run.CashOut();
-
-            Assert.Equal(2, payouts.Count);
-            Assert.False(payouts.ContainsKey(2));
-            Assert.True(run.IsOver);
-        }
-
-        [Theory]
-        [InlineData(4, 2, false)]
-        [InlineData(4, 3, true)]
-        [InlineData(3, 2, true)]
-        [InlineData(2, 1, false)]
-        [InlineData(2, 2, true)]
-        [InlineData(1, 1, true)]
-        public void VoteCashOut_NeedsMoreThanHalfOfTheLivingMembers(int partySize, int votes, bool shouldCashOut)
-        {
-            var run = PartyOf(partySize);
-            bool result = false;
-            for (int i = 1; i <= votes; i++)
-                result = run.VoteCashOut((ulong)i);
-
-            Assert.Equal(shouldCashOut, result);
-        }
-
-        [Fact]
-        public void VoteCashOut_CountsOnlyLivingMembers()
-        {
-            var run = PartyOf(3);
-            run.Member(3).Alive = false;
-
-            Assert.Throws<InvalidOperationException>(() => run.VoteCashOut(3));
-            Assert.False(run.VoteCashOut(1)); //1 of 2 living is not more than half
-            Assert.True(run.VoteCashOut(2));
-        }
-
-        [Fact]
         public void Buying_WithNothingOnOffer_Fails()
         {
-            var run = PartyOf(1);
+            var run = RunFor(1);
 
-            Assert.False(run.TryBuyOffer(1, out _));
-        }
-
-        [Fact]
-        public void Buying_ByANonMember_Fails()
-        {
-            var run = PartyOf(1, seed: 2);
-            run.Descend();
-
-            Assert.False(run.TryBuyOffer(999, out _));
+            Assert.False(run.TryBuyOffer(out _));
         }
 
         [Fact]
         public void Drinking_WithNoPotions_Fails()
         {
-            var run = PartyOf(1);
+            var run = RunFor(1);
 
-            Assert.False(run.TryDrink(1, out _));
+            Assert.False(run.TryDrink(out _));
         }
 
         [Fact]
         public void PotionPrice_ScalesWithBuyIn()
         {
-            Assert.True(new DungeonRun(10000, new Random(1)).PotionPrice > new DungeonRun(1000, new Random(1)).PotionPrice);
+            Assert.True(RunFor(1, 10000).PotionPrice > RunFor(1, 1000).PotionPrice);
+        }
+
+        [Fact]
+        public void ApplyLoot_BoostsStatsAndUsesUpTheRoomsBox()
+        {
+            DungeonRun run = null;
+            for (int seed = 1; seed <= 100 && run == null; seed++)
+            {
+                var candidate = RunFor(seed);
+                candidate.Descend();
+                if (candidate.Alive) run = candidate;
+            }
+            Assert.NotNull(run);
+            Assert.True(run.CanLoot);
+
+            var loot = new LootResult { Tier = LootTier.Rare, Name = "Test", AttackGain = 2, DefenseGain = 1, MaxHpGain = 5 };
+            int attack = run.Attack, defense = run.Defense, maxHp = run.MaxHp;
+            run.ApplyLoot(loot);
+
+            Assert.Equal(attack + 2, run.Attack);
+            Assert.Equal(defense + 1, run.Defense);
+            Assert.Equal(maxHp + 5, run.MaxHp);
+            Assert.False(run.CanLoot);
+            Assert.Throws<InvalidOperationException>(() => run.ApplyLoot(loot));
+        }
+
+        [Fact]
+        public void ApplyLoot_BeforeAnyRoom_Throws()
+        {
+            var run = RunFor(8);
+
+            Assert.Throws<InvalidOperationException>(() => run.ApplyLoot(new LootResult()));
         }
     }
 }

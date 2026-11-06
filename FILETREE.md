@@ -29,10 +29,11 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            the one open dungeon (global): lobby, join/start, majority cash out, idle timeout
+      DungeonManager.cs            the one open session (global): lobby, 5-min solo crawl timer, PvP at the end, loot
     Models/
-      Dungeon/DungeonRun.cs        one shared party run: rooms, multi-target fights, offers, haul split
-      Dungeon/DungeonMember.cs     one party member: HP, gear, potions, alive flag
+      Dungeon/DungeonRun.cs        one solo crawl: rooms, fights, offers, loot boosts, haul
+      Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls
+      Dungeon/LootBox.cs           loot box tiers and stat boosts
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
@@ -41,7 +42,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by StockChart and DungeonCardRenderer
-    DungeonCardRenderer.cs     PNG card for a dungeon party: header, haul, one HP panel per member
+    DungeonCardRenderer.cs     PNG card for one solo run: header, haul, HP and stats, optional footer
+    LootCardRenderer.cs        PNG of a loot box result
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search
