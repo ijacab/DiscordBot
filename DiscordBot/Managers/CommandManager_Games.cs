@@ -281,11 +281,11 @@ namespace DiscordBot.Managers
             {
                 case "":
                 case "status":
-                    reply = await _dungeonManager.Status(userId);
+                    reply = await _dungeonManager.Status();
                     break;
                 case "join":
                     CoinAccount joiner = await _coinService.Get(userId, name);
-                    reply = await _dungeonManager.Join(joiner, message.Channel);
+                    reply = await _dungeonManager.Join(joiner);
                     break;
                 case "start":
                     reply = await _dungeonManager.Start(userId);

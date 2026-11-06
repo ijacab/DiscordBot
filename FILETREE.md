@@ -29,7 +29,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            shared dungeon parties: lobby, join/start, majority cash out, idle timeout
+      DungeonManager.cs            the one open dungeon (global): lobby, join/start, majority cash out, idle timeout
     Models/
       Dungeon/DungeonRun.cs        one shared party run: rooms, multi-target fights, offers, haul split
       Dungeon/DungeonMember.cs     one party member: HP, gear, potions, alive flag

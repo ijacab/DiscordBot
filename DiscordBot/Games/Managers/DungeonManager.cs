@@ -20,15 +20,16 @@ namespace DiscordBot.Games.Managers
     }
 
     /// <summary>
-    /// Runs shared dungeon parties. Each member's buy-in comes out of cash. The haul is shared, cash out splits it
-    /// among the living, and a wiped party loses the haul. Sessions are in memory, so a bot restart ends them.
+    /// Runs one shared dungeon party at a time, across all channels. Each member's buy-in comes out of cash.
+    /// The haul is shared, cash out splits it among the living, and a wiped party loses the haul.
+    /// The session is in memory, so a bot restart ends it.
     /// </summary>
     public class DungeonManager
     {
         public const double MinBuyIn = 100;
         public static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(15);
         public static readonly TimeSpan LobbyWait = TimeSpan.FromSeconds(60);
-        private const string NoRunMessage = "You're not in a dungeon. Open a lobby with `.dng 1000`, where 1000 is the buy-in for each player.";
+        private const string NoRunMessage = "No dungeon is open. Open a lobby with `.dng 1000`, where 1000 is the buy-in for each player.";
 
         private sealed class Session
         {
@@ -41,7 +42,8 @@ namespace DiscordBot.Games.Managers
         }
 
         private readonly CoinService _coinService;
-        private readonly Dictionary<ulong, Session> _sessionByUser = new Dictionary<ulong, Session>();
+        /// <summary>The only dungeon open at a time, or null when none is open.</summary>
+        private Session _session;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private int _generationCounter;
 
@@ -50,15 +52,15 @@ namespace DiscordBot.Games.Managers
             _coinService = coinService;
         }
 
-        /// <summary>Opens a lobby in this channel. The host pays the buy-in. The lobby starts by itself after <see cref="LobbyWait"/>.</summary>
+        /// <summary>Opens the lobby. Only one dungeon can be open at a time, so this is refused while another is open.</summary>
         public async Task<DungeonReply> Open(CoinAccount host, double buyIn, IMessageChannel channel)
         {
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(host.UserId);
-                if (_sessionByUser.ContainsKey(host.UserId))
-                    throw new BadInputException("You're already in a dungeon. Use `.dng` to see where you are.");
+                string notice = await ExpireIfIdle();
+                if (_session != null)
+                    throw new BadInputException($"A dungeon is already {StateOf(_session)} in <#{_session.Channel.Id}>. Join it with `.dng join`, or wait for it to end.");
                 if (buyIn < MinBuyIn)
                     throw new BadInputException($"The dungeon needs at least ${FormatHelper.GetCommaNumber(MinBuyIn)} to enter.");
                 if (buyIn > host.NetWorth)
@@ -69,7 +71,7 @@ namespace DiscordBot.Games.Managers
 
                 var run = new DungeonRun(buyIn);
                 run.AddMember(host.UserId, host.Name);
-                var session = new Session
+                _session = new Session
                 {
                     Run = run,
                     Channel = channel,
@@ -77,13 +79,12 @@ namespace DiscordBot.Games.Managers
                     Generation = ++_generationCounter,
                     OpenedUtc = DateTime.UtcNow
                 };
-                _sessionByUser[host.UserId] = session;
-                _ = AutoStartLater(session.Generation, host.UserId);
+                _ = AutoStartLater(_session.Generation);
 
                 return new DungeonReply
                 {
                     Text = notice + $"{host.Name} opens a dungeon lobby with a ${FormatHelper.GetCommaNumber(buyIn)} buy-in.\n" +
-                        $"Others can type `.dng join` for the next {LobbyWait.TotalSeconds} seconds, or the host can type `.dng start` to begin early.\n" +
+                        $"Anyone can type `.dng join` from any channel for the next {LobbyWait.TotalSeconds} seconds, or the host can type `.dng start` to begin early.\n" +
                         "Nothing is banked until the party votes to cash out, so every floor is money at risk."
                 };
             }
@@ -93,35 +94,34 @@ namespace DiscordBot.Games.Managers
             }
         }
 
-        /// <summary>Joins the open lobby in this channel, paying the same buy-in as the host.</summary>
-        public async Task<DungeonReply> Join(CoinAccount account, IMessageChannel channel)
+        /// <summary>Joins the open lobby, from any channel, paying the same buy-in as the host.</summary>
+        public async Task<DungeonReply> Join(CoinAccount account)
         {
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(account.UserId);
-                if (_sessionByUser.ContainsKey(account.UserId))
-                    throw new BadInputException("You're already in a dungeon.");
-
-                Session session = _sessionByUser.Values.FirstOrDefault(s => !s.Started && s.Channel.Id == channel.Id);
-                if (session == null)
-                    throw new BadInputException("No dungeon lobby is open here. Open one with `.dng 1000`.");
-                if (session.Run.Members.Count >= DungeonRun.MaxPartySize)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
+                    throw new BadInputException("No dungeon is open. Open one with `.dng 1000`.");
+                if (_session.Started)
+                    throw new BadInputException($"The dungeon in <#{_session.Channel.Id}> is already running.");
+                if (_session.Run.Member(account.UserId) != null)
+                    throw new BadInputException("You're already in this dungeon.");
+                if (_session.Run.Members.Count >= DungeonRun.MaxPartySize)
                     throw new BadInputException($"The party is full at {DungeonRun.MaxPartySize} players.");
 
-                double buyIn = session.Run.BuyIn;
+                double buyIn = _session.Run.BuyIn;
                 if (buyIn > account.NetWorth)
                     throw new BadInputException($"The buy-in is ${FormatHelper.GetCommaNumber(buyIn)} and you only have ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
 
                 account.NetWorth -= buyIn;
                 await _coinService.Update(account.UserId, account.NetWorth, account.Name);
-                session.Run.AddMember(account.UserId, account.Name);
-                _sessionByUser[account.UserId] = session;
+                _session.Run.AddMember(account.UserId, account.Name);
 
                 return new DungeonReply
                 {
                     Text = notice + $"{account.Name} joins the party and pays the ${FormatHelper.GetCommaNumber(buyIn)} buy-in. " +
-                        $"Party: {session.Run.Members.Count}/{DungeonRun.MaxPartySize}."
+                        $"Party: {_session.Run.Members.Count}/{DungeonRun.MaxPartySize}."
                 };
             }
             finally
@@ -136,16 +136,17 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
-                if (session.Started)
+                if (_session.Run.Member(userId) == null)
+                    return new DungeonReply { Text = notice + NotInThisDungeon() };
+                if (_session.Started)
                     return new DungeonReply { Text = notice + "The dungeon has already started." };
-                if (session.HostId != userId)
+                if (_session.HostId != userId)
                     throw new BadInputException("Only the host can start the lobby early. Otherwise it starts on its own.");
 
-                return new DungeonReply { Text = notice + BeginRun(session) };
+                return new DungeonReply { Text = notice + BeginRun(_session) };
             }
             finally
             {
@@ -158,33 +159,35 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
-                if (!session.Started)
+                if (_session.Run.Member(userId) == null)
+                    return new DungeonReply { Text = notice + NotInThisDungeon() };
+                if (!_session.Started)
                     return new DungeonReply { Text = notice + "The lobby is still open. Wait for it to start, or type `.dng start`." };
-                if (!IsLiving(session.Run, userId))
+                if (!IsLiving(_session.Run, userId))
                     return new DungeonReply { Text = notice + "You are down. You can only watch from here." };
 
-                session.Run.LastActivityUtc = DateTime.UtcNow;
-                RoomResult room = session.Run.Descend();
+                _session.Run.LastActivityUtc = DateTime.UtcNow;
+                RoomResult room = _session.Run.Descend();
                 string body = string.Join("\n", room.Lines);
 
-                if (session.Run.IsOver)
+                if (_session.Run.IsOver)
                 {
-                    Remove(session);
+                    DungeonRun lost = _session.Run;
+                    EndSession();
                     return new DungeonReply
                     {
-                        Text = notice + body + $"\nThe haul of ${FormatHelper.GetCommaNumber(session.Run.Haul)} and every buy-in are lost.",
-                        Run = session.Run
+                        Text = notice + body + $"\nThe haul of ${FormatHelper.GetCommaNumber(lost.Haul)} and every buy-in are lost.",
+                        Run = lost
                     };
                 }
 
                 return new DungeonReply
                 {
-                    Text = notice + body + "\n" + StatusLine(session.Run) + "\n" + ActionsLine(session.Run),
-                    Run = session.Run
+                    Text = notice + body + "\n" + StatusLine(_session.Run) + "\n" + ActionsLine(_session.Run),
+                    Run = _session.Run
                 };
             }
             finally
@@ -199,36 +202,38 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
-                if (!session.Started)
+                if (_session.Run.Member(userId) == null)
+                    return new DungeonReply { Text = notice + NotInThisDungeon() };
+                if (!_session.Started)
                     return new DungeonReply { Text = notice + "The lobby hasn't started yet, so there's nothing to cash out." };
-                if (!IsLiving(session.Run, userId))
+                if (!IsLiving(_session.Run, userId))
                     return new DungeonReply { Text = notice + "You are down, so you can't vote." };
 
-                session.Run.LastActivityUtc = DateTime.UtcNow;
-                if (!session.Run.VoteCashOut(userId))
+                _session.Run.LastActivityUtc = DateTime.UtcNow;
+                if (!_session.Run.VoteCashOut(userId))
                 {
                     return new DungeonReply
                     {
-                        Text = notice + $"Cash out vote recorded: {session.Run.CashOutVotes.Count} of {session.Run.LivingCount} living members. " +
-                            $"More than half must vote. Votes reset when the party enters the next room.",
-                        Run = session.Run
+                        Text = notice + $"Cash out vote recorded: {_session.Run.CashOutVotes.Count} of {_session.Run.LivingCount} living members. " +
+                            "More than half must vote. Votes reset when the party enters the next room.",
+                        Run = _session.Run
                     };
                 }
 
-                IReadOnlyDictionary<ulong, double> payouts = session.Run.CashOut();
-                Remove(session);
-                await PayOut(session.Run, payouts);
+                DungeonRun run = _session.Run;
+                IReadOnlyDictionary<ulong, double> payouts = run.CashOut();
+                EndSession();
+                await PayOut(run, payouts);
 
-                var lines = payouts.Select(p => $"{session.Run.Member(p.Key).Name} takes ${FormatHelper.GetCommaNumber(p.Value)}");
+                var lines = payouts.Select(p => $"{run.Member(p.Key).Name} takes ${FormatHelper.GetCommaNumber(p.Value)}");
                 return new DungeonReply
                 {
-                    Text = notice + $"The party climbs out alive after {session.Run.Floor} rooms and {session.Run.Kills} kills.\n" +
+                    Text = notice + $"The party climbs out alive after {run.Floor} rooms and {run.Kills} kills.\n" +
                         string.Join("\n", lines) + "\n" +
-                        $"Buy-ins were ${FormatHelper.GetCommaNumber(session.Run.BuyIn)} each. Living members split the ${FormatHelper.GetCommaNumber(session.Run.Haul)} haul."
+                        $"Buy-ins were ${FormatHelper.GetCommaNumber(run.BuyIn)} each. Living members split the ${FormatHelper.GetCommaNumber(run.Haul)} haul."
                 };
             }
             finally
@@ -242,19 +247,20 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
-                if (!session.Started)
+                if (_session.Run.Member(userId) == null)
+                    return new DungeonReply { Text = notice + NotInThisDungeon() };
+                if (!_session.Started)
                     return new DungeonReply { Text = notice + "The lobby hasn't started yet." };
 
-                session.Run.LastActivityUtc = DateTime.UtcNow;
-                bool bought = session.Run.TryBuyOffer(userId, out string message);
+                _session.Run.LastActivityUtc = DateTime.UtcNow;
+                bool bought = _session.Run.TryBuyOffer(userId, out string message);
                 return new DungeonReply
                 {
-                    Text = notice + message + (bought ? "\n" + StatusLine(session.Run) : ""),
-                    Run = bought ? session.Run : null
+                    Text = notice + message + (bought ? "\n" + StatusLine(_session.Run) : ""),
+                    Run = bought ? _session.Run : null
                 };
             }
             finally
@@ -268,19 +274,20 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
-                if (!session.Started)
+                if (_session.Run.Member(userId) == null)
+                    return new DungeonReply { Text = notice + NotInThisDungeon() };
+                if (!_session.Started)
                     return new DungeonReply { Text = notice + "The lobby hasn't started yet." };
 
-                session.Run.LastActivityUtc = DateTime.UtcNow;
-                session.Run.TryDrink(userId, out string message);
+                _session.Run.LastActivityUtc = DateTime.UtcNow;
+                _session.Run.TryDrink(userId, out string message);
                 return new DungeonReply
                 {
-                    Text = notice + message + "\n" + StatusLine(session.Run),
-                    Run = session.Run
+                    Text = notice + message + "\n" + StatusLine(_session.Run),
+                    Run = _session.Run
                 };
             }
             finally
@@ -289,30 +296,30 @@ namespace DiscordBot.Games.Managers
             }
         }
 
-        public async Task<DungeonReply> Status(ulong userId)
+        /// <summary>Shows the open dungeon to anyone, from any channel.</summary>
+        public async Task<DungeonReply> Status()
         {
             await _gate.WaitAsync();
             try
             {
-                string notice = await ExpireIfIdle(userId);
-                Session session = SessionOf(userId);
-                if (session == null)
+                string notice = await ExpireIfIdle();
+                if (_session == null)
                     return new DungeonReply { Text = notice + NoRunMessage };
 
-                if (!session.Started)
+                if (!_session.Started)
                 {
-                    double secondsLeft = Math.Max(0, (LobbyWait - (DateTime.UtcNow - session.OpenedUtc)).TotalSeconds);
+                    double secondsLeft = Math.Max(0, (LobbyWait - (DateTime.UtcNow - _session.OpenedUtc)).TotalSeconds);
                     return new DungeonReply
                     {
-                        Text = notice + $"Lobby open: {session.Run.Members.Count}/{DungeonRun.MaxPartySize} players, ${FormatHelper.GetCommaNumber(session.Run.BuyIn)} buy-in each. " +
-                            $"Starts in {Math.Ceiling(secondsLeft)} seconds. Type `.dng join` to enter."
+                        Text = notice + $"Lobby open in <#{_session.Channel.Id}>: {_session.Run.Members.Count}/{DungeonRun.MaxPartySize} players, " +
+                            $"${FormatHelper.GetCommaNumber(_session.Run.BuyIn)} buy-in each. Starts in {Math.Ceiling(secondsLeft)} seconds. Type `.dng join` to enter."
                     };
                 }
 
                 return new DungeonReply
                 {
-                    Text = notice + StatusLine(session.Run) + "\n" + ActionsLine(session.Run),
-                    Run = session.Run
+                    Text = notice + $"Running in <#{_session.Channel.Id}>.\n" + StatusLine(_session.Run) + "\n" + ActionsLine(_session.Run),
+                    Run = _session.Run
                 };
             }
             finally
@@ -322,7 +329,7 @@ namespace DiscordBot.Games.Managers
         }
 
         /// <summary>Starts the lobby after <see cref="LobbyWait"/>, unless it was already started or replaced by a newer lobby.</summary>
-        private async Task AutoStartLater(int generation, ulong hostId)
+        private async Task AutoStartLater(int generation)
         {
             await Task.Delay(LobbyWait);
 
@@ -331,12 +338,11 @@ namespace DiscordBot.Games.Managers
             await _gate.WaitAsync();
             try
             {
-                Session session = SessionOf(hostId);
-                if (session == null || session.Started || session.Generation != generation)
+                if (_session == null || _session.Started || _session.Generation != generation)
                     return;
 
-                channel = session.Channel;
-                text = BeginRun(session);
+                channel = _session.Channel;
+                text = BeginRun(_session);
             }
             finally
             {
@@ -361,9 +367,14 @@ namespace DiscordBot.Games.Managers
             return $"The dungeon opens for {names}. Use `.dng go` to enter the first room.";
         }
 
-        private Session SessionOf(ulong userId)
+        private string NotInThisDungeon()
         {
-            return _sessionByUser.TryGetValue(userId, out Session session) ? session : null;
+            return $"You're not in this dungeon. It is {StateOf(_session)} in <#{_session.Channel.Id}>.";
+        }
+
+        private static string StateOf(Session session)
+        {
+            return session.Started ? "running" : "in the lobby";
         }
 
         private static bool IsLiving(DungeonRun run, ulong userId)
@@ -372,27 +383,26 @@ namespace DiscordBot.Games.Managers
             return member != null && member.Alive;
         }
 
-        private void Remove(Session session)
+        private void EndSession()
         {
-            foreach (DungeonMember member in session.Run.Members)
-                _sessionByUser.Remove(member.UserId);
+            _session = null;
         }
 
         /// <summary>
         /// Ends a started run that has sat idle too long and pays out the living members, so an abandoned party keeps what it earned.
-        /// This is checked lazily when a party member next uses a dungeon command, so the payout can wait that long.
+        /// Runs at the top of every public method, so any dungeon command from anyone frees an idle slot.
         /// </summary>
-        private async Task<string> ExpireIfIdle(ulong userId)
+        private async Task<string> ExpireIfIdle()
         {
-            Session session = SessionOf(userId);
-            if (session == null || !session.Started || session.Run.IsOver)
+            if (_session == null || !_session.Started || _session.Run.IsOver)
                 return "";
-            if (DateTime.UtcNow - session.Run.LastActivityUtc < IdleLimit)
+            if (DateTime.UtcNow - _session.Run.LastActivityUtc < IdleLimit)
                 return "";
 
-            IReadOnlyDictionary<ulong, double> payouts = session.Run.CashOut();
-            Remove(session);
-            await PayOut(session.Run, payouts);
+            DungeonRun run = _session.Run;
+            IReadOnlyDictionary<ulong, double> payouts = run.CashOut();
+            EndSession();
+            await PayOut(run, payouts);
             return $"The party's run timed out after {IdleLimit.TotalMinutes} idle minutes, so the living members were pulled out with their share of the haul.\n\n";
         }
 
