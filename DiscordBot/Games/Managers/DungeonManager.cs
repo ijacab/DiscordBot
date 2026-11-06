@@ -14,9 +14,10 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Games.Managers
 {
     /// <summary>
-    /// One session at a time, across all channels. Players join a lobby, then each crawls a solo run for
-    /// <see cref="CrawlLength"/>. When the timer ends, the survivors who haven't cashed out enter a winner-takes-all PvP.
-    /// The whole session is shown on one dashboard message that is edited after every action, so the channel stays quiet.
+    /// One session at a time, across all channels. Players join a lobby, then each crawls their own run in blocks of 10 floors.
+    /// After each block a run waits at a checkpoint to cash out or fight. Fighters wait in a pool until every run in the
+    /// session has decided, then a winner-takes-all PvP runs. Winners crawl on. A run that stalls for 15 minutes is cashed out.
+    /// The whole session is shown on one dashboard message, reposted with its picture after each action.
     /// The session is in memory, so a bot restart ends it.
     /// </summary>
     public class DungeonManager
@@ -25,14 +26,16 @@ namespace DiscordBot.Games.Managers
         public const int MaxPlayers = 4;
         public const int LogLines = 8;
         public static readonly TimeSpan LobbyWait = TimeSpan.FromSeconds(60);
-        public static readonly TimeSpan CrawlLength = TimeSpan.FromMinutes(5);
+        public static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan TransientLifetime = TimeSpan.FromSeconds(15);
         private const string NoRunMessage = "No dungeon is open. Open a lobby with `.dng 1000`, where 1000 is the buy-in for each player.";
 
         private sealed class Session
         {
             public readonly Dictionary<ulong, DungeonRun> Runs = new Dictionary<ulong, DungeonRun>();
-            /// <summary>Players who cashed out, died, or went into PvP. Shown on the dashboard.</summary>
+            /// <summary>When each player last acted. Runs that stall too long are cashed out.</summary>
+            public readonly Dictionary<ulong, DateTime> LastAction = new Dictionary<ulong, DateTime>();
+            /// <summary>Players who cashed out, went down, or lost a pool. Shown on the dashboard.</summary>
             public readonly List<ScenePlayer> Departed = new List<ScenePlayer>();
             public readonly List<string> Log = new List<string>();
             public IMessageChannel Channel;
@@ -41,7 +44,6 @@ namespace DiscordBot.Games.Managers
             public bool Started;
             public int Generation;
             public DateTime OpenedUtc;
-            public DateTime CrawlEndsUtc;
             public double BuyIn;
             public SpriteKind Sprite;
             public string Caption;
@@ -66,7 +68,7 @@ namespace DiscordBot.Games.Managers
         /// <summary>Opens the lobby and posts the dashboard. Refused while another session is open.</summary>
         public Task Open(CoinAccount host, double buyIn, IMessageChannel channel)
         {
-            return Attempt(host.Name, channel, async () =>
+            return Attempt(host.UserId, host.Name, channel, async () =>
             {
                 if (_session != null)
                     throw new BadInputException($"A dungeon is already {StateOf(_session)} in <#{_session.Channel.Id}>. Join it with `.dng join`, or wait for it to end.");
@@ -87,6 +89,7 @@ namespace DiscordBot.Games.Managers
                     BuyIn = buyIn
                 };
                 _session.Runs[host.UserId] = new DungeonRun(host.UserId, host.Name, buyIn, _random);
+                _session.LastAction[host.UserId] = DateTime.UtcNow;
                 _ = AutoStartLater(_session.Generation);
                 return $"{host.Name} opens a lobby with a ${FormatHelper.GetCommaNumber(buyIn)} buy-in.";
             });
@@ -94,7 +97,7 @@ namespace DiscordBot.Games.Managers
 
         public Task Join(CoinAccount account, IMessageChannel channel)
         {
-            return Attempt(account.Name, channel, async () =>
+            return Attempt(account.UserId, account.Name, channel, async () =>
             {
                 if (_session == null)
                     throw new BadInputException("No dungeon is open. Open one with `.dng 1000`.");
@@ -112,13 +115,14 @@ namespace DiscordBot.Games.Managers
                 account.NetWorth -= buyIn;
                 await _coinService.Update(account.UserId, account.NetWorth, account.Name);
                 _session.Runs[account.UserId] = new DungeonRun(account.UserId, account.Name, buyIn, _random);
+                _session.LastAction[account.UserId] = DateTime.UtcNow;
                 return $"{account.Name} joins and pays the ${FormatHelper.GetCommaNumber(buyIn)} buy-in.";
             });
         }
 
         public Task Start(ulong userId, string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, () =>
+            return Attempt(userId, name, channel, () =>
             {
                 if (_session == null)
                     throw new BadInputException(NoRunMessage);
@@ -130,62 +134,96 @@ namespace DiscordBot.Games.Managers
             });
         }
 
+        /// <summary>Crawls the next block of 10 floors. The run then waits at a checkpoint.</summary>
         public Task Go(ulong userId, string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, async () =>
+            return Attempt(userId, name, channel, async () =>
             {
                 DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
                     throw new BadInputException("The lobby is still open. Wait for it to start, or the host types `.dng start`.");
+                if (run.Phase == RunPhase.AtCheckpoint)
+                    throw new BadInputException("You're at a checkpoint. Use `.dng cash` to bank your haul, or `.dng fight` to enter the PvP pool.");
+                if (run.Phase == RunPhase.InPool)
+                    throw new BadInputException("You're waiting in the PvP pool for the others to decide.");
 
-                RoomResult room = run.Descend();
-                _session.Sprite = room.Enemy;
-                _session.Caption = room.EnemyName ?? RoomLabel(room.Type);
-                _session.EnemyHp = room.EnemyHp;
-                _session.EnemyMaxHp = room.EnemyMaxHp;
-                if (room.Drop != null)
-                    _session.PictureOverride = LootCardRenderer.Render(room.Drop).ToArray();
+                int blockNumber = run.NextBlockNumber;
+                List<RoomResult> rooms = run.RunBlock();
+                RoomResult last = rooms[rooms.Count - 1];
+                _session.Sprite = last.Enemy;
+                _session.Caption = last.EnemyName ?? RoomLabel(last.Type);
+                _session.EnemyHp = last.EnemyHp;
+                _session.EnemyMaxHp = last.EnemyMaxHp;
 
-                foreach (string line in room.Lines)
-                    AddLog($"{run.Name}: {line}");
+                RoomResult drop = rooms.LastOrDefault(r => r.Drop != null);
+                if (drop != null)
+                    _session.PictureOverride = LootCardRenderer.Render(drop.Drop).ToArray();
 
-                if (room.Died)
+                foreach (RoomResult room in rooms)
+                    foreach (string line in room.Lines)
+                        AddLog($"{run.Name}: {line}");
+
+                if (!run.Alive)
                 {
                     _session.Runs.Remove(userId);
+                    _session.LastAction.Remove(userId);
                     _session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = 0, MaxHp = run.MaxHp, Haul = 0, Status = "DOWN" });
                     AddLog($"{run.Name}'s haul of ${FormatHelper.GetCommaNumber(run.Haul)} and buy-in are lost.");
-                    await CheckEarlyEnd();
+                    await TryResolvePool();
+                    return null;
                 }
-                return null;
+
+                return $"{run.Name} clears block {blockNumber}. Use `.dng cash` to bank ${run.Haul:N2}, or `.dng fight` to enter the PvP pool.";
             });
         }
 
-        /// <summary>Banks your own haul and leaves the crawl. You don't take part in PvP.</summary>
+        /// <summary>Banks your haul and leaves. Allowed while crawling or at a checkpoint.</summary>
         public Task Cash(ulong userId, string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, async () =>
+            return Attempt(userId, name, channel, async () =>
             {
                 DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
                     throw new BadInputException("The lobby hasn't started yet, so there's nothing to cash out.");
+                if (run.Phase == RunPhase.InPool)
+                    throw new BadInputException("You're in the PvP pool, so you can't cash out now.");
 
                 double payout = run.CashOut();
                 _session.Runs.Remove(userId);
+                _session.LastAction.Remove(userId);
                 _session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = run.Hp, MaxHp = run.MaxHp, Haul = payout, Status = "CASHED OUT" });
                 await PayOut(userId, run.Name, payout);
-                AddLog($"{run.Name} cashes out ${payout:N2} after {run.Floor} rooms and {run.Kills} kills.");
-                await CheckEarlyEnd();
+                AddLog($"{run.Name} cashes out ${payout:N2} after {run.Floor} floors and {run.Kills} kills.");
+                await TryResolvePool();
+                return null;
+            });
+        }
+
+        /// <summary>At a checkpoint, the run enters the PvP pool.</summary>
+        public Task Fight(ulong userId, string name, IMessageChannel channel)
+        {
+            return Attempt(userId, name, channel, async () =>
+            {
+                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
+                if (run.Phase != RunPhase.AtCheckpoint)
+                    throw new BadInputException("You can only fight at a checkpoint, after clearing a block with `.dng go`.");
+
+                run.EnterPool();
+                AddLog($"{run.Name} enters the PvP pool with ${run.Haul:N2} at stake.");
+                await TryResolvePool();
                 return null;
             });
         }
 
         public Task Buy(ulong userId, string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, () =>
+            return Attempt(userId, name, channel, () =>
             {
                 DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
                     throw new BadInputException("The lobby hasn't started yet.");
+                if (run.Phase == RunPhase.InPool)
+                    throw new BadInputException("You're in the PvP pool, so you can't shop.");
 
                 run.TryBuyOffer(out string message);
                 return Task.FromResult($"{run.Name}: {message}");
@@ -194,11 +232,13 @@ namespace DiscordBot.Games.Managers
 
         public Task Drink(ulong userId, string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, () =>
+            return Attempt(userId, name, channel, () =>
             {
                 DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
                     throw new BadInputException("The lobby hasn't started yet.");
+                if (run.Phase == RunPhase.InPool)
+                    throw new BadInputException("You're in the PvP pool, so you can't drink now.");
 
                 run.TryDrink(out string message);
                 return Task.FromResult($"{run.Name}: {message}");
@@ -208,18 +248,23 @@ namespace DiscordBot.Games.Managers
         /// <summary>Refreshes the dashboard. Anyone can use it, and it works from any channel.</summary>
         public Task Status(string name, IMessageChannel channel)
         {
-            return Attempt(name, channel, () => Task.FromResult<string>(null));
+            return Attempt(0, name, channel, () => Task.FromResult<string>(null));
         }
 
         /// <summary>
         /// Runs one player action under the lock, adds its result to the event log, and refreshes the dashboard.
-        /// A refused action becomes a log line. If there's no session, the refusal is posted briefly and then deleted.
+        /// Stalled runs are cashed out first. A refused action becomes a log line. If there's no session, the refusal is posted briefly and then deleted.
         /// </summary>
-        private async Task Attempt(string actor, IMessageChannel channel, Func<Task<string>> action)
+        private async Task Attempt(ulong userId, string actor, IMessageChannel channel, Func<Task<string>> action)
         {
             await _gate.WaitAsync();
             try
             {
+                await ExpireIdleRuns();
+
+                if (_session != null && userId != 0 && _session.LastAction.ContainsKey(userId))
+                    _session.LastAction[userId] = DateTime.UtcNow;
+
                 string line;
                 try
                 {
@@ -270,74 +315,101 @@ namespace DiscordBot.Games.Managers
             }
         }
 
-        /// <summary>Ends the crawl when its timer runs out, and starts PvP among the survivors.</summary>
-        private async Task CrawlTimerLater(int generation)
-        {
-            await Task.Delay(CrawlLength);
-
-            await _gate.WaitAsync();
-            try
-            {
-                if (_session == null || _session.Generation != generation)
-                    return;
-
-                await ResolveSession();
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
-
         private string BeginCrawl(Session session)
         {
             session.Started = true;
-            session.CrawlEndsUtc = DateTime.UtcNow + CrawlLength;
-            _ = CrawlTimerLater(session.Generation);
-            return $"The crawl begins. Everyone has {CrawlLength.TotalMinutes} minutes. Use `.dng go` to enter the first room.";
+            foreach (ulong id in session.Runs.Keys.ToList())
+                session.LastAction[id] = DateTime.UtcNow;
+            return "The crawl begins. Use `.dng go` to crawl your first block of 10 floors.";
         }
 
         /// <summary>
-        /// Ends the session. Every run still going enters PvP, and the winner takes the pot of their hauls.
-        /// Called when the crawl timer runs out, or early when fewer than two runs are still going.
+        /// Cashes out runs that have sat in crawling or at a checkpoint for too long, so a stalled player doesn't hold up the pool.
+        /// Runs waiting in the pool are not expired, because they are waiting on the others.
         /// </summary>
-        private async Task ResolveSession()
+        private async Task ExpireIdleRuns()
+        {
+            if (_session == null || !_session.Started)
+                return;
+
+            var stalled = _session.Runs.Values
+                .Where(r => r.Phase != RunPhase.InPool && _session.LastAction.TryGetValue(r.UserId, out DateTime last) && DateTime.UtcNow - last >= IdleLimit)
+                .ToList();
+            if (stalled.Count == 0)
+                return;
+
+            foreach (DungeonRun run in stalled)
+            {
+                double payout = run.CashOut();
+                _session.Runs.Remove(run.UserId);
+                _session.LastAction.Remove(run.UserId);
+                _session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = run.Hp, MaxHp = run.MaxHp, Haul = payout, Status = "IDLE CASH OUT" });
+                await PayOut(run.UserId, run.Name, payout);
+                AddLog($"{run.Name} has been idle for {IdleLimit.TotalMinutes} minutes, so their ${payout:N2} is banked.");
+            }
+            await TryResolvePool();
+        }
+
+        /// <summary>
+        /// Runs the PvP pool once every run in the session has decided. The pot is the fighters' hauls, and the winner or
+        /// winners crawl on with it. Losers are out. The session ends when no runs are left.
+        /// </summary>
+        private async Task TryResolvePool()
         {
             Session session = _session;
+            if (session == null)
+                return;
+            if (session.Runs.Count == 0)
+            {
+                await EndSession(session, "Nobody is left. Nothing else is paid out.");
+                return;
+            }
+            if (!session.Runs.Values.All(r => r.Phase == RunPhase.InPool))
+                return;
+
             var fighters = session.Runs.Values.Select(run => new PvpFighter
             {
                 UserId = run.UserId,
                 Name = run.Name,
                 Stats = run.CloneStats(),
-                Haul = run.TakeHaulForPvp()
+                Haul = run.TakeHaulIntoPool()
             }).ToList();
-            foreach (PvpFighter fighter in fighters)
-                session.Departed.Add(new ScenePlayer { Name = fighter.Name, Hp = fighter.Stats.Hp, MaxHp = fighter.Stats.MaxHp, Haul = fighter.Haul, Status = "IN PVP" });
-            session.Runs.Clear();
-            _session = null;
 
             PvpResult result = PvpArena.Resolve(fighters, _random);
-            foreach (KeyValuePair<ulong, double> payout in result.Payouts)
-                await PayOut(payout.Key, fighters.First(f => f.UserId == payout.Key).Name, payout.Value);
-
-            foreach (ScenePlayer player in session.Departed.Where(p => p.Status == "IN PVP").ToList())
-            {
-                double won = result.Payouts.Where(p => fighters.First(f => f.UserId == p.Key).Name == player.Name).Sum(p => p.Value);
-                player.Status = won > 0 ? $"WON ${won:N0}" : "LOST";
-            }
-
             foreach (string line in result.Lines.Skip(Math.Max(0, result.Lines.Count - 4)))
                 AddLog(line);
 
-            string winners = result.Winners.Count == 0 ? "Nobody is paid." : $"Winner{(result.Winners.Count > 1 ? "s" : "")}: {string.Join(", ", result.Winners)}. Pot ${result.Pot:N2}.";
-            await RenderAndEdit(session, ended: true, resultText: winners);
+            foreach (PvpFighter fighter in fighters)
+            {
+                DungeonRun run = session.Runs[fighter.UserId];
+                if (result.Payouts.TryGetValue(fighter.UserId, out double won))
+                {
+                    run.ReturnFromPool(won, fighter.Stats.Hp);
+                    AddLog($"{run.Name} wins ${won:N2} and crawls on.");
+                }
+                else
+                {
+                    run.Eliminate();
+                    session.Runs.Remove(run.UserId);
+                    session.LastAction.Remove(run.UserId);
+                    session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = 0, MaxHp = run.MaxHp, Haul = 0, Status = "LOST PVP" });
+                }
+            }
+
+            if (session.Runs.Count == 0)
+            {
+                await EndSession(session, "Nobody is left standing. The pot is lost.");
+                return;
+            }
+            foreach (ulong id in session.Runs.Keys)
+                session.LastAction[id] = DateTime.UtcNow;
+            await RenderAndEdit(session, ended: false, resultText: null);
         }
 
-        /// <summary>Ends the session early when fewer than two runs are still going.</summary>
-        private async Task CheckEarlyEnd()
+        private async Task EndSession(Session session, string resultText)
         {
-            if (_session != null && _session.Started && _session.Runs.Count < 2)
-                await ResolveSession();
+            _session = null;
+            await RenderAndEdit(session, ended: true, resultText: resultText);
         }
 
         private async Task RenderAndEdit(Session session, bool ended, string resultText)
@@ -376,15 +448,15 @@ namespace DiscordBot.Games.Managers
         {
             var scene = new DungeonScene
             {
-                Title = ended ? "DUNGEON OVER" : session.Started ? $"CRAWL: {MinutesLeft(session)} MIN" : "LOBBY",
+                Title = ended ? "DUNGEON OVER" : session.Started ? "CRAWL" : "LOBBY",
                 Caption = session.Started ? session.Caption : "DUNGEON DOOR",
                 Sprite = session.Started ? session.Sprite : SpriteKind.None,
                 EnemyHp = session.EnemyHp,
                 EnemyMaxHp = session.EnemyMaxHp,
-                Footer = ended ? "Thanks for playing" : session.Started ? "Use .dng go, .dng cash, .dng drink, .dng buy" : $"Use .dng join. Buy-in ${session.BuyIn:N0}"
+                Footer = ended ? "Thanks for playing" : session.Started ? "Use .dng go, .dng cash, .dng fight, .dng drink, .dng buy" : $"Use .dng join. Buy-in ${session.BuyIn:N0}"
             };
             foreach (DungeonRun run in session.Runs.Values)
-                scene.Players.Add(new ScenePlayer { Name = run.Name, Hp = run.Hp, MaxHp = run.MaxHp, Floor = run.Floor, Haul = run.Haul });
+                scene.Players.Add(new ScenePlayer { Name = run.Name, Hp = run.Hp, MaxHp = run.MaxHp, Floor = run.Floor, Haul = run.Haul, Status = PhaseLabel(run) });
             scene.Players.AddRange(session.Departed);
             return DungeonSceneRenderer.Render(scene);
         }
@@ -392,7 +464,7 @@ namespace DiscordBot.Games.Managers
         private EmbedBuilder BuildDashboard(Session session, bool ended, string resultText)
         {
             string title = ended ? "Dungeon over"
-                : session.Started ? $"Dungeon crawl: {MinutesLeft(session)} min left"
+                : session.Started ? $"Dungeon crawl: {session.Runs.Count} still in"
                 : $"Dungeon lobby: {session.Runs.Count}/{MaxPlayers} players";
 
             var embed = new EmbedBuilder()
@@ -406,7 +478,7 @@ namespace DiscordBot.Games.Managers
 
             var players = new StringBuilder();
             foreach (DungeonRun run in session.Runs.Values)
-                players.AppendLine($"**{run.Name}** · floor {run.Floor} · HP {run.Hp}/{run.MaxHp} · ${run.Haul:N2}");
+                players.AppendLine($"**{run.Name}** · block {run.NextBlockNumber} · floor {run.Floor} · HP {run.Hp}/{run.MaxHp} · ${run.Haul:N2} · {PhaseLabel(run)}");
             foreach (ScenePlayer player in session.Departed)
                 players.AppendLine($"**{player.Name}** · {player.Status}");
             if (players.Length == 0)
@@ -416,8 +488,18 @@ namespace DiscordBot.Games.Managers
             if (session.Log.Count > 0)
                 embed.AddField("Log", Trim(string.Join("\n", session.Log), 1000));
 
-            embed.WithFooter(ended ? "Session finished" : "Commands: .dng go · .dng cash · .dng drink · .dng buy · .dng status");
+            embed.WithFooter(ended ? "Session finished" : "Commands: .dng go · .dng cash · .dng fight · .dng drink · .dng buy · .dng status");
             return embed;
+        }
+
+        private static string PhaseLabel(DungeonRun run)
+        {
+            switch (run.Phase)
+            {
+                case RunPhase.AtCheckpoint: return "CHECKPOINT";
+                case RunPhase.InPool: return "IN POOL";
+                default: return "";
+            }
         }
 
         private static string Trim(string text, int max)
@@ -432,11 +514,6 @@ namespace DiscordBot.Games.Managers
             _session.Log.Add(line);
             while (_session.Log.Count > LogLines)
                 _session.Log.RemoveAt(0);
-        }
-
-        private static int MinutesLeft(Session session)
-        {
-            return (int)Math.Ceiling(Math.Max(0, (session.CrawlEndsUtc - DateTime.UtcNow).TotalMinutes));
         }
 
         private DungeonRun RunOf(ulong userId)

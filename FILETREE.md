@@ -29,9 +29,9 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            the one open session (global): lobby, 5-min solo crawl, PvP at the end, one edited dashboard message
+      DungeonManager.cs            the one open session (global): lobby, 10-floor blocks, checkpoints, PvP pool, idle cash out
     Models/
-      Dungeon/DungeonRun.cs        one solo crawl: rooms, fights, offers, automatic loot, haul
+      Dungeon/DungeonRun.cs        one solo run in 10-floor blocks: rooms, fights, checkpoints, automatic loot, haul
       Dungeon/Combat.cs            shared attack rules: hit, d10 damage, crit, lifesteal, thorns, Second Wind, round cap
       Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls (10 rounds max)
       Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances

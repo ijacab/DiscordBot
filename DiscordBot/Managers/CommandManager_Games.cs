@@ -304,6 +304,9 @@ namespace DiscordBot.Managers
                 case "drink":
                     await _dungeonManager.Drink(userId, name, channel);
                     break;
+                case "fight":
+                    await _dungeonManager.Fight(userId, name, channel);
+                    break;
                 default:
                     CoinAccount host = await _coinService.Get(userId, name);
                     if (!TryExtractBetAmount(args, host, out double buyIn))

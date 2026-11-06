@@ -9,6 +9,12 @@ namespace DiscordBot.Games.Models.Dungeon
     /// <summary>What the merchant or shrine is offering right now. Cleared as soon as the next room is entered.</summary>
     public enum PendingOffer { None, Potion, Blessing }
 
+    /// <summary>
+    /// Where a run is. A run crawls a block of 10 floors, then waits at a checkpoint to cash out or fight.
+    /// Fighters wait in the pool until every run in the session has decided. Losers are out, and winners crawl on.
+    /// </summary>
+    public enum RunPhase { Crawling, AtCheckpoint, InPool, Out }
+
     public class RoomResult
     {
         public RoomType Type { get; set; }
@@ -26,18 +32,25 @@ namespace DiscordBot.Games.Models.Dungeon
     }
 
     /// <summary>
-    /// One player's solo crawl. The buy-in is paid up front, gold found on the way is the haul, and cashing out banks it.
+    /// One player's solo crawl, in blocks of 10 floors. The buy-in is paid up front, gold found on the way is the haul,
+    /// and cashing out banks it. Monsters get tougher with each block, which keeps every block's odds near 50%.
     /// Fights use the shared <see cref="Combat"/> rules. Loot drops automatically and applies its effects straight away.
     /// Pure game logic with no Discord or money calls, so it can be tested with a seeded Random.
     /// </summary>
     public class DungeonRun
     {
+        public const int FloorsPerBlock = 10;
         public const int BossEvery = 5;
         public const int StartingHp = 30;
         public const int StartingAttack = 6;
         public const int PotionHealing = 12;
         public const int BlessingAttackBonus = 2;
         public const double BlessingHaulCost = 0.20;
+        /// <summary>
+        /// Extra monster strength per block. Loot piles up for players who survive, so each block gets harder to hold the odds near 50%, 25%, 12.5%.
+        /// Tuned with the balance sim, and checked by the seeded odds test.
+        /// </summary>
+        public const double BlockDifficultyStep = 1.12;
 
         private static readonly (string Name, SpriteKind Sprite)[] Monsters =
         {
@@ -73,6 +86,12 @@ namespace DiscordBot.Games.Models.Dungeon
         public double Haul { get; private set; }
         /// <summary>Rooms entered so far. The next room is Floor + 1.</summary>
         public int Floor { get; private set; }
+        /// <summary>Blocks of 10 floors survived so far.</summary>
+        public int BlocksCleared { get; private set; }
+        /// <summary>The block that the next <see cref="RunBlock"/> will crawl.</summary>
+        public int NextBlockNumber => BlocksCleared + 1;
+        /// <summary>Where the run is: crawling, at a checkpoint, in the pool, or out.</summary>
+        public RunPhase Phase { get; private set; } = RunPhase.Crawling;
         /// <summary>Type of the most recent room, or null before the first room.</summary>
         public RoomType? LastRoom { get; private set; }
         public int Hp => _me.Hp;
@@ -92,6 +111,10 @@ namespace DiscordBot.Games.Models.Dungeon
         /// <summary>True once the run is finished, by death or by cashing out.</summary>
         public bool IsOver { get; private set; }
 
+        /// <summary>Floor within the current block, 1 to 10. Monsters are tuned on this, so every block plays the same way.</summary>
+        public int FloorInBlock => (Floor - 1) % FloorsPerBlock + 1;
+        /// <summary>Zero-based index of the block the floor is in.</summary>
+        public int BlockIndex => Floor <= 0 ? 0 : (Floor - 1) / FloorsPerBlock;
         public int NextFloor => Floor + 1;
         public bool NextIsBoss => NextFloor % BossEvery == 0;
 
@@ -110,71 +133,66 @@ namespace DiscordBot.Games.Models.Dungeon
             };
         }
 
-        /// <summary>Enters the next room and resolves it.</summary>
-        public RoomResult Descend()
+        /// <summary>
+        /// Crawls the next block of 10 floors in one go. If the player goes down, the run is out.
+        /// Otherwise the run waits at a checkpoint for a choice to cash out or fight.
+        /// </summary>
+        public List<RoomResult> RunBlock()
         {
-            if (IsOver)
-                throw new InvalidOperationException("This run is over.");
+            if (Phase != RunPhase.Crawling)
+                throw new InvalidOperationException("This run isn't ready for another block.");
 
-            Offer = PendingOffer.None;
-            Floor++;
-            var result = new RoomResult { Type = PickRoom() };
-            LastRoom = result.Type;
-
-            switch (result.Type)
-            {
-                case RoomType.Boss:
-                    (string bossName, SpriteKind bossSprite) = Pick(Bosses);
-                    result.Enemy = bossSprite;
-                    result.EnemyName = bossName;
-                    result.Lines.Add($"**Floor {Floor}: BOSS.** {bossName} blocks the way.");
-                    Fight(result, bossName, bossSprite, boss: true, dropChance: 1);
-                    break;
-                case RoomType.Monster:
-                    (string monsterName, SpriteKind monsterSprite) = Pick(Monsters);
-                    result.Enemy = monsterSprite;
-                    result.EnemyName = monsterName;
-                    result.Lines.Add($"**Floor {Floor}:** a {monsterName} lunges out of the dark.");
-                    Fight(result, monsterName, monsterSprite, boss: false, dropChance: Loot.MonsterDropChance);
-                    break;
-                case RoomType.Treasure:
-                    FindTreasure(result);
-                    break;
-                case RoomType.Trap:
-                    SpringTrap(result);
-                    break;
-                case RoomType.Merchant:
-                    Offer = PendingOffer.Potion;
-                    result.Lines.Add($"**Floor {Floor}:** a merchant sells potions for ${PotionPrice:N2}. Use `.dng buy` to take one.");
-                    break;
-                case RoomType.Shrine:
-                    if (Haul >= 1)
-                    {
-                        Offer = PendingOffer.Blessing;
-                        result.Lines.Add($"**Floor {Floor}:** a shrine offers +{BlessingAttackBonus} attack for ${BlessingPrice:N2} of your haul. Use `.dng buy` to accept.");
-                    }
-                    else
-                    {
-                        result.Lines.Add($"**Floor {Floor}:** an empty shrine. It wants gold you don't have, so you walk on.");
-                    }
-                    break;
-                case RoomType.Gear:
-                    FindGear(result);
-                    break;
-                default:
-                    int rested = Math.Min(4, MaxHp - Hp);
-                    _me.Heal(4);
-                    result.Lines.Add($"**Floor {Floor}:** an empty room. You rest for {rested} HP.");
-                    break;
-            }
+            var rooms = new List<RoomResult>();
+            for (int i = 0; i < FloorsPerBlock && Alive; i++)
+                rooms.Add(Descend());
 
             if (!Alive)
             {
-                IsOver = true;
-                result.Died = true;
-                result.Lines.Add($"You went down on floor {Floor}.");
+                Phase = RunPhase.Out;
             }
-            return result;
+            else
+            {
+                Phase = RunPhase.AtCheckpoint;
+                BlocksCleared++;
+            }
+            return rooms;
+        }
+
+        /// <summary>The player chooses to fight at the checkpoint, which puts the run in the pool.</summary>
+        public void EnterPool()
+        {
+            if (Phase != RunPhase.AtCheckpoint)
+                throw new InvalidOperationException("Only a run at a checkpoint can fight.");
+            Phase = RunPhase.InPool;
+        }
+
+        /// <summary>Takes the haul into the pool. The haul is the fighter's pot share, so it's emptied here.</summary>
+        public double TakeHaulIntoPool()
+        {
+            if (Phase != RunPhase.InPool)
+                throw new InvalidOperationException("Only a fighter in the pool can take a haul.");
+            double taken = Haul;
+            Haul = 0;
+            return taken;
+        }
+
+        /// <summary>A winner returns to crawling with their winnings and the HP they have left after the fight.</summary>
+        public void ReturnFromPool(double winnings, int hp)
+        {
+            if (Phase != RunPhase.InPool)
+                throw new InvalidOperationException("Only a fighter in the pool can return.");
+            Haul = Math.Round(Haul + winnings, 2);
+            _me.Hp = Math.Clamp(hp, 1, MaxHp);
+            Phase = RunPhase.Crawling;
+        }
+
+        /// <summary>A loser in the pool is out. Their haul is already in the pot.</summary>
+        public void Eliminate()
+        {
+            if (Phase != RunPhase.InPool)
+                throw new InvalidOperationException("Only a fighter in the pool can be eliminated.");
+            Phase = RunPhase.Out;
+            IsOver = true;
         }
 
         /// <summary>Spends the pending merchant or shrine offer. Returns false if nothing is for sale or the haul can't cover it.</summary>
@@ -243,19 +261,11 @@ namespace DiscordBot.Games.Models.Dungeon
         /// <summary>Ends the run and returns the haul to bank. The caller pays it out.</summary>
         public double CashOut()
         {
-            if (IsOver || !Alive)
-                throw new InvalidOperationException("This run is over.");
+            if (IsOver || Phase == RunPhase.InPool)
+                throw new InvalidOperationException("This run can't cash out right now.");
             IsOver = true;
+            Phase = RunPhase.Out;
             return Haul;
-        }
-
-        /// <summary>Takes the haul out of this run, for a PvP pot. The run is finished afterwards.</summary>
-        public double TakeHaulForPvp()
-        {
-            double taken = Haul;
-            Haul = 0;
-            IsOver = true;
-            return taken;
         }
 
         /// <summary>Splits an amount evenly among the given players, rounded to cents, with the remainder to the first.</summary>
@@ -272,19 +282,91 @@ namespace DiscordBot.Games.Models.Dungeon
             return payouts;
         }
 
-        /// <summary>Combat stats for a monster or boss on this floor. Tuned with the balance sim.</summary>
+        /// <summary>
+        /// Combat stats for a monster or boss on the current floor. Tuned by floor within the block,
+        /// then scaled by block so each block keeps its odds. Tuned with the balance sim.
+        /// </summary>
         public Combatant MonsterFor(string name, bool boss)
         {
-            int hp = boss ? 14 + Floor * 3 : 6 + Floor * 2;
-            hp += _random.Next(0, 6);
+            int f = FloorInBlock;
+            double scale = 1 + BlockDifficultyStep * BlockIndex;
+            int hp = (int)Math.Round((boss ? 10 + 2 * f : 6 + 2 * f) * scale) + _random.Next(0, 6);
+            int attack = (int)Math.Round((boss ? 3 + f / 3 : f / 4) * scale);
             return new Combatant
             {
                 Name = name,
                 Hp = hp,
                 MaxHp = hp,
-                Attack = boss ? 2 + Floor / 2 : Floor / 4,
-                Defense = Floor / 3
+                Attack = attack,
+                Defense = f / 3
             };
+        }
+
+        /// <summary>Enters the next room and resolves it. Only the block crawl calls this.</summary>
+        private RoomResult Descend()
+        {
+            if (IsOver)
+                throw new InvalidOperationException("This run is over.");
+
+            Offer = PendingOffer.None;
+            Floor++;
+            var result = new RoomResult { Type = PickRoom() };
+            LastRoom = result.Type;
+
+            switch (result.Type)
+            {
+                case RoomType.Boss:
+                    (string bossName, SpriteKind bossSprite) = Pick(Bosses);
+                    result.Enemy = bossSprite;
+                    result.EnemyName = bossName;
+                    result.Lines.Add($"**Floor {Floor}: BOSS.** {bossName} blocks the way.");
+                    Fight(result, bossName, bossSprite, boss: true, dropChance: 1);
+                    break;
+                case RoomType.Monster:
+                    (string monsterName, SpriteKind monsterSprite) = Pick(Monsters);
+                    result.Enemy = monsterSprite;
+                    result.EnemyName = monsterName;
+                    result.Lines.Add($"**Floor {Floor}:** a {monsterName} lunges out of the dark.");
+                    Fight(result, monsterName, monsterSprite, boss: false, dropChance: Loot.MonsterDropChance);
+                    break;
+                case RoomType.Treasure:
+                    FindTreasure(result);
+                    break;
+                case RoomType.Trap:
+                    SpringTrap(result);
+                    break;
+                case RoomType.Merchant:
+                    Offer = PendingOffer.Potion;
+                    result.Lines.Add($"**Floor {Floor}:** a merchant sells potions for ${PotionPrice:N2}. Use `.dng buy` to take one.");
+                    break;
+                case RoomType.Shrine:
+                    if (Haul >= 1)
+                    {
+                        Offer = PendingOffer.Blessing;
+                        result.Lines.Add($"**Floor {Floor}:** a shrine offers +{BlessingAttackBonus} attack for ${BlessingPrice:N2} of your haul. Use `.dng buy` to accept.");
+                    }
+                    else
+                    {
+                        result.Lines.Add($"**Floor {Floor}:** an empty shrine. It wants gold you don't have, so you walk on.");
+                    }
+                    break;
+                case RoomType.Gear:
+                    FindGear(result);
+                    break;
+                default:
+                    int rested = Math.Min(4, MaxHp - Hp);
+                    _me.Heal(4);
+                    result.Lines.Add($"**Floor {Floor}:** an empty room. You rest for {rested} HP.");
+                    break;
+            }
+
+            if (!Alive)
+            {
+                IsOver = true;
+                result.Died = true;
+                result.Lines.Add($"You went down on floor {Floor}.");
+            }
+            return result;
         }
 
         private RoomType PickRoom()
@@ -371,7 +453,7 @@ namespace DiscordBot.Games.Models.Dungeon
         {
             if (_random.NextDouble() < 0.5)
             {
-                int damage = Math.Max(1, 3 + Floor / 2 + _random.Next(1, 11) - Defense / 2);
+                int damage = Math.Max(1, 3 + FloorInBlock / 2 + _random.Next(1, 11) - Defense / 2);
                 _me.Hp -= damage;
                 result.Lines.Add($"**Floor {Floor}:** a spike trap. You take {damage} damage.");
             }
