@@ -27,6 +27,7 @@ namespace DiscordBot.Managers
         private readonly BetManager _betManager;
         private readonly BattleArenaManager _battleArenaManager;
         private readonly DuckRaceManager _duckRaceManager;
+        private readonly DungeonManager _dungeonManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
         private readonly TranslationService _translationService;
@@ -43,7 +44,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, GPTService gptService, ConvoService convoService,
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
             _logger = logger;
@@ -58,6 +59,7 @@ namespace DiscordBot.Managers
             _betManager = betManager;
             _battleArenaManager = battleArenaManager;
             _duckRaceManager = duckRaceManager;
+            _dungeonManager = dungeonManager;
             _gptService = gptService;
             _convoService = convoService;
             _translationService = translationService;
@@ -77,6 +79,7 @@ namespace DiscordBot.Managers
                 new Command("fo", GameFaceOff) { Hidden = true, Syntax = "`.fo betAmount` to start where betAmount is the amount you want to bet. For example `.fo 1000`" },
                 new Command("duckrace", GameDuckRace) { Description = "Plays a multiplayer duck race using virtual money. You race against the other players and one bot, so more players means a bigger payout. Type '.leaderboard' to see how much money you have", Syntax = "`.duckrace betAmount` to start where betAmount is the amount you want to bet. For example `.duckrace 1000`" },
                 new Command("duck", GameDuckRace) { Hidden = true, Syntax = "`.duckrace betAmount` to start where betAmount is the amount you want to bet. For example `.duckrace 1000`" },
+                new Command("dungeon", GameDungeon) { Description = "Enter a solo dungeon crawl. Your buy-in comes out of your cash, and gold found on the way is your haul. Cash out to bank it. Dying loses the haul and the buy-in. Merchants sell potions and shrines sell attack, both paid from your haul. A boss waits every 5 floors. Idle runs cash out after 15 minutes.", Syntax = "`.dungeon 1000` to enter with a 1000 buy-in, then `.dungeon go`, `.dungeon cash`, `.dungeon buy`, `.dungeon drink` or `.dungeon status`" },
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },

@@ -29,7 +29,9 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
+      DungeonManager.cs            solo dungeon runs: buy-in, cash out, idle timeout
     Models/
+      Dungeon/DungeonRun.cs        one dungeon crawl: rooms, fights, merchant/shrine offers
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits

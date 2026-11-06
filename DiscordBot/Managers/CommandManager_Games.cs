@@ -267,6 +267,44 @@ namespace DiscordBot.Managers
             }
         }
 
+        private async Task GameDungeon(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            ulong userId = message.Author.Id;
+            string name = message.Author.Username;
+            string action = args.Count > 0 ? args[0].ToLowerInvariant() : "";
+
+            string text;
+            switch (action)
+            {
+                case "":
+                case "status":
+                    text = _dungeonManager.IsActive(userId)
+                        ? await _dungeonManager.Status(userId, name)
+                        : "Enter a dungeon with a buy-in, for example `.dungeon 1000`. Gold found in each room builds your haul. Cash out to bank it. Dying loses the haul and the buy-in. Bosses come every 5 floors.";
+                    break;
+                case "go":
+                    text = await _dungeonManager.Go(userId, name);
+                    break;
+                case "cash":
+                    text = await _dungeonManager.Cash(userId, name);
+                    break;
+                case "buy":
+                    text = await _dungeonManager.Buy(userId, name);
+                    break;
+                case "drink":
+                    text = await _dungeonManager.Drink(userId, name);
+                    break;
+                default:
+                    CoinAccount account = await _coinService.Get(userId, name);
+                    if (!TryExtractBetAmount(args, account, out double buyIn))
+                        throw new BadSyntaxException();
+                    text = await _dungeonManager.Start(account, buyIn);
+                    break;
+            }
+
+            await message.SendRichEmbedMessage("Dungeon", text);
+        }
+
         private bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)
         {
             betAmount = 0;
