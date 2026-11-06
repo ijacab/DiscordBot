@@ -5,43 +5,58 @@ using System.IO;
 
 namespace DiscordBot.Services
 {
-    /// <summary>Draws a loot box result as a PNG: the tier band, the item name, and the stat boosts.</summary>
+    /// <summary>Draws a loot item as a PNG: a tier band, the item's pixel-art icon, its name, and each effect on its own line.</summary>
     public static class LootCardRenderer
     {
         public const int Width = 800;
         public const int Height = 240;
 
-        private const int BandHeight = 56;
-        private const int TitleScale = 3;
-        private const int TextScale = 2;
+        private const int BandHeight = 52;
+        private const int IconScale = 8;
 
         private static readonly Rgba32 Background = new Rgba32(30, 31, 34);
         private static readonly Rgba32 TextColor = new Rgba32(181, 186, 193);
         private static readonly Rgba32 BrightColor = new Rgba32(255, 255, 255);
-        private static readonly Rgba32 GainColor = new Rgba32(87, 242, 135);
+        private static readonly Rgba32 EffectColor = new Rgba32(87, 242, 135);
 
-        public static MemoryStream Render(LootResult loot)
+        public static MemoryStream Render(LootItem item)
         {
             using var image = new Image<Rgba32>(Width, Height);
             PixelFont.FillRect(image, 0, 0, Width, Height, Background);
+            PixelFont.FillRect(image, 0, 0, Width, BandHeight, TierColor(item.Tier));
 
-            Rgba32 tierColor = TierColor(loot.Tier);
-            PixelFont.FillRect(image, 0, 0, Width, BandHeight, tierColor);
-            string band = $"LOOT BOX - {loot.Tier.ToString().ToUpperInvariant()}";
-            PixelFont.DrawText(image, band, 16, (BandHeight - PixelFont.GlyphHeight * TitleScale) / 2, BrightColor, TitleScale);
+            PixelFont.DrawText(image, $"LOOT - {item.Tier.ToString().ToUpperInvariant()}", 16, (BandHeight - PixelFont.GlyphHeight * 3) / 2, BrightColor, 3);
 
-            PixelFont.DrawText(image, loot.Name.ToUpperInvariant(), 16, BandHeight + 20, BrightColor, TitleScale);
+            int iconX = 24, iconY = BandHeight + (Height - BandHeight - PixelSprites.Size * IconScale) / 2;
+            PixelSprites.Draw(image, SpriteFor(item.Sprite), iconX, iconY, IconScale);
+
+            int textX = iconX + PixelSprites.Size * IconScale + 32;
+            PixelFont.DrawText(image, item.Name.ToUpperInvariant(), textX, BandHeight + 16, BrightColor, 3);
 
             int y = BandHeight + 64;
-            PixelFont.DrawText(image, $"ATTACK +{loot.AttackGain}", 16, y, GainColor, TextScale);
-            PixelFont.DrawText(image, $"DEFENSE +{loot.DefenseGain}", 16, y + 28, GainColor, TextScale);
-            PixelFont.DrawText(image, $"MAX HP +{loot.MaxHpGain}", 16, y + 56, GainColor, TextScale);
-            PixelFont.DrawText(image, "THE BOOST LASTS UNTIL THE RUN ENDS", 16, Height - 24, TextColor, TextScale);
+            foreach (LootEffectRoll roll in item.Effects)
+            {
+                PixelFont.DrawText(image, roll.Describe().ToUpperInvariant(), textX, y, EffectColor, 2);
+                y += 26;
+            }
 
             var stream = new MemoryStream();
             image.SaveAsPng(stream);
             stream.Position = 0;
             return stream;
+        }
+
+        public static SpriteKind SpriteFor(ItemSprite sprite)
+        {
+            switch (sprite)
+            {
+                case ItemSprite.Sword: return SpriteKind.Sword;
+                case ItemSprite.Shield: return SpriteKind.Shield;
+                case ItemSprite.Amulet: return SpriteKind.Amulet;
+                case ItemSprite.Boots: return SpriteKind.Boots;
+                case ItemSprite.Ring: return SpriteKind.Ring;
+                default: return SpriteKind.Potion;
+            }
         }
 
         private static Rgba32 TierColor(LootTier tier)

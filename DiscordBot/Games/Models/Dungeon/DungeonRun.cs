@@ -1,3 +1,4 @@
+using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
 
@@ -14,28 +15,47 @@ namespace DiscordBot.Games.Models.Dungeon
         public List<string> Lines { get; } = new List<string>();
         /// <summary>True when the player went down in this room. The run is over and the haul is lost.</summary>
         public bool Died { get; set; }
+        /// <summary>The enemy this room fought, for the scene picture. None when the room has no fight.</summary>
+        public SpriteKind Enemy { get; set; } = SpriteKind.None;
+        public string EnemyName { get; set; }
+        /// <summary>The enemy's HP when the fight ended, and its maximum, for the HP bar on the dashboard.</summary>
+        public int? EnemyHp { get; set; }
+        public int? EnemyMaxHp { get; set; }
+        /// <summary>Loot that dropped in this room, or null.</summary>
+        public LootItem Drop { get; set; }
     }
 
     /// <summary>
     /// One player's solo crawl. The buy-in is paid up front, gold found on the way is the haul, and cashing out banks it.
-    /// Dying loses the haul and the buy-in. Surviving runs can be entered into PvP when the session timer ends.
+    /// Fights use the shared <see cref="Combat"/> rules. Loot drops automatically and applies its effects straight away.
     /// Pure game logic with no Discord or money calls, so it can be tested with a seeded Random.
     /// </summary>
     public class DungeonRun
     {
         public const int BossEvery = 5;
         public const int StartingHp = 30;
+        public const int StartingAttack = 6;
         public const int PotionHealing = 12;
         public const int BlessingAttackBonus = 2;
         public const double BlessingHaulCost = 0.20;
-        public const int MaxRoundsPerFight = 20;
 
-        private static readonly string[] MonsterNames = { "Cave Rat", "Skeleton", "Goblin Thief", "Slime", "Bog Wight", "Giant Bat", "Orc Scout", "Crypt Ghoul" };
-        private static readonly string[] BossNames = { "The Loan Shark", "Margin Call Golem", "The Tax Dragon", "Hedge Fund Hydra", "Stock Crash Wraith" };
+        private static readonly (string Name, SpriteKind Sprite)[] Monsters =
+        {
+            ("Cave Rat", SpriteKind.Rat), ("Skeleton", SpriteKind.Skeleton), ("Goblin Thief", SpriteKind.Skeleton),
+            ("Slime", SpriteKind.Slime), ("Bog Wight", SpriteKind.Slime), ("Giant Bat", SpriteKind.Bat),
+            ("Orc Scout", SpriteKind.Skeleton), ("Crypt Ghoul", SpriteKind.Skeleton),
+        };
+        private static readonly (string Name, SpriteKind Sprite)[] Bosses =
+        {
+            ("The Loan Shark", SpriteKind.Skull), ("Margin Call Golem", SpriteKind.Golem), ("The Tax Dragon", SpriteKind.Dragon),
+            ("Hedge Fund Hydra", SpriteKind.Dragon), ("Stock Crash Wraith", SpriteKind.Skull),
+        };
         private static readonly string[] WeaponNames = { "Rusty Sword", "Notched Axe", "Bent Spear" };
         private static readonly string[] ArmorNames = { "Dented Shield", "Patched Leather", "Cracked Helm" };
 
         private readonly Random _random;
+        private readonly Combatant _me;
+        private readonly List<LootItem> _items = new List<LootItem>();
 
         public DungeonRun(ulong userId, string name, double buyIn, Random random = null)
         {
@@ -43,8 +63,7 @@ namespace DiscordBot.Games.Models.Dungeon
             Name = name;
             BuyIn = buyIn;
             _random = random ?? new Random();
-            Hp = StartingHp;
-            MaxHp = StartingHp;
+            _me = new Combatant { Name = name, Hp = StartingHp, MaxHp = StartingHp, Attack = StartingAttack, Defense = 1 };
         }
 
         public ulong UserId { get; }
@@ -56,17 +75,20 @@ namespace DiscordBot.Games.Models.Dungeon
         public int Floor { get; private set; }
         /// <summary>Type of the most recent room, or null before the first room.</summary>
         public RoomType? LastRoom { get; private set; }
-        public int Hp { get; private set; }
-        public int MaxHp { get; private set; }
-        public int Attack { get; private set; } = 4;
-        public int Defense { get; private set; } = 1;
+        public int Hp => _me.Hp;
+        public int MaxHp => _me.MaxHp;
+        public int Attack => _me.Attack;
+        public int Defense => _me.Defense;
         public int Potions { get; private set; }
         public int Kills { get; private set; }
         public PendingOffer Offer { get; private set; } = PendingOffer.None;
-        /// <summary>True when the player can open one loot box before the next room.</summary>
-        public bool CanLoot { get; private set; }
-        /// <summary>False once the player is down.</summary>
-        public bool Alive { get; private set; } = true;
+        /// <summary>Loot picked up so far, in drop order.</summary>
+        public IReadOnlyList<LootItem> Items => _items;
+        /// <summary>Percent more gold from rooms, from loot.</summary>
+        public int GoldFinderPercent { get; private set; }
+        /// <summary>Extra HP each potion heals, from loot.</summary>
+        public int PotionPowerBonus { get; private set; }
+        public bool Alive => _me.Alive;
         /// <summary>True once the run is finished, by death or by cashing out.</summary>
         public bool IsOver { get; private set; }
 
@@ -77,27 +99,43 @@ namespace DiscordBot.Games.Models.Dungeon
         public double PotionPrice => Math.Max(1, Math.Round(BuyIn * 0.04, 2));
         public double BlessingPrice => Math.Round(Haul * BlessingHaulCost, 2);
 
+        /// <summary>A copy of this run's combat stats, for PvP. Changing the copy doesn't change the run.</summary>
+        public Combatant CloneStats()
+        {
+            return new Combatant
+            {
+                Name = _me.Name, Hp = _me.Hp, MaxHp = _me.MaxHp, Attack = _me.Attack, Defense = _me.Defense,
+                CritBonus = _me.CritBonus, Dodge = _me.Dodge, Accuracy = _me.Accuracy, Lifesteal = _me.Lifesteal,
+                Thorns = _me.Thorns, Regen = _me.Regen, SecondWindHeal = _me.SecondWindHeal
+            };
+        }
+
         /// <summary>Enters the next room and resolves it.</summary>
         public RoomResult Descend()
         {
-            if (IsOver || !Alive)
+            if (IsOver)
                 throw new InvalidOperationException("This run is over.");
 
             Offer = PendingOffer.None;
             Floor++;
             var result = new RoomResult { Type = PickRoom() };
             LastRoom = result.Type;
-            CanLoot = true;
 
             switch (result.Type)
             {
                 case RoomType.Boss:
-                    result.Lines.Add($"**Floor {Floor}: BOSS.** {Pick(BossNames)} blocks the way.");
-                    Fight(result, boss: true);
+                    (string bossName, SpriteKind bossSprite) = Pick(Bosses);
+                    result.Enemy = bossSprite;
+                    result.EnemyName = bossName;
+                    result.Lines.Add($"**Floor {Floor}: BOSS.** {bossName} blocks the way.");
+                    Fight(result, bossName, bossSprite, boss: true, dropChance: 1);
                     break;
                 case RoomType.Monster:
-                    result.Lines.Add($"**Floor {Floor}:** a {Pick(MonsterNames)} lunges out of the dark.");
-                    Fight(result, boss: false);
+                    (string monsterName, SpriteKind monsterSprite) = Pick(Monsters);
+                    result.Enemy = monsterSprite;
+                    result.EnemyName = monsterName;
+                    result.Lines.Add($"**Floor {Floor}:** a {monsterName} lunges out of the dark.");
+                    Fight(result, monsterName, monsterSprite, boss: false, dropChance: Loot.MonsterDropChance);
                     break;
                 case RoomType.Treasure:
                     FindTreasure(result);
@@ -125,14 +163,13 @@ namespace DiscordBot.Games.Models.Dungeon
                     break;
                 default:
                     int rested = Math.Min(4, MaxHp - Hp);
-                    Hp += rested;
+                    _me.Heal(4);
                     result.Lines.Add($"**Floor {Floor}:** an empty room. You rest for {rested} HP.");
                     break;
             }
 
-            if (Hp <= 0)
+            if (!Alive)
             {
-                Alive = false;
                 IsOver = true;
                 result.Died = true;
                 result.Lines.Add($"You went down on floor {Floor}.");
@@ -166,7 +203,7 @@ namespace DiscordBot.Games.Models.Dungeon
                 case PendingOffer.Blessing:
                     double cost = BlessingPrice;
                     Haul = Math.Round(Haul - cost, 2);
-                    Attack += BlessingAttackBonus;
+                    _me.Attack += BlessingAttackBonus;
                     Offer = PendingOffer.None;
                     message = $"The shrine takes ${cost:N2} from your haul. Your attack rises to {Attack}.";
                     return true;
@@ -198,24 +235,9 @@ namespace DiscordBot.Games.Models.Dungeon
 
             Potions--;
             int before = Hp;
-            Hp = Math.Min(MaxHp, Hp + PotionHealing);
+            _me.Heal(PotionHealing + PotionPowerBonus);
             message = $"You drink a potion and heal {Hp - before} HP.";
             return true;
-        }
-
-        /// <summary>Applies a loot box's boosts to this run and uses up this room's box.</summary>
-        public void ApplyLoot(LootResult loot)
-        {
-            if (!Alive)
-                throw new InvalidOperationException("You are down.");
-            if (!CanLoot)
-                throw new InvalidOperationException("You already opened a loot box this room.");
-
-            Attack += loot.AttackGain;
-            Defense += loot.DefenseGain;
-            MaxHp += loot.MaxHpGain;
-            Hp = Math.Min(MaxHp, Hp + loot.MaxHpGain);
-            CanLoot = false;
         }
 
         /// <summary>Ends the run and returns the haul to bank. The caller pays it out.</summary>
@@ -250,6 +272,21 @@ namespace DiscordBot.Games.Models.Dungeon
             return payouts;
         }
 
+        /// <summary>Combat stats for a monster or boss on this floor. Tuned with the balance sim.</summary>
+        public Combatant MonsterFor(string name, bool boss)
+        {
+            int hp = boss ? 14 + Floor * 3 : 6 + Floor * 2;
+            hp += _random.Next(0, 6);
+            return new Combatant
+            {
+                Name = name,
+                Hp = hp,
+                MaxHp = hp,
+                Attack = boss ? 2 + Floor / 2 : Floor / 4,
+                Defense = Floor / 3
+            };
+        }
+
         private RoomType PickRoom()
         {
             if (NextIsBoss)
@@ -267,7 +304,8 @@ namespace DiscordBot.Games.Models.Dungeon
 
         private double Gold(double fraction)
         {
-            return Math.Round(BuyIn * fraction * (1 + Floor * 0.08), 2);
+            double gold = BuyIn * fraction * (1 + Floor * 0.08) * (1 + GoldFinderPercent / 100.0);
+            return Math.Round(gold, 2);
         }
 
         private void AddGold(RoomResult result, double amount)
@@ -276,24 +314,65 @@ namespace DiscordBot.Games.Models.Dungeon
             result.Lines.Add($"You pick up ${amount:N2}.");
         }
 
+        /// <summary>Rolls for a drop and applies it straight away.</summary>
+        private void MaybeDrop(RoomResult result, double chance, bool bossDrop = false)
+        {
+            if (chance < 1 && _random.NextDouble() >= chance)
+                return;
+
+            LootItem item = Loot.Roll(_random, bossDrop);
+            ApplyItem(item);
+            result.Drop = item;
+            result.Lines.Add($"You find {item.Name} ({item.Tier}): {string.Join(", ", item.Effects.ConvertAll(e => e.Describe()))}.");
+        }
+
+        private void ApplyItem(LootItem item)
+        {
+            _items.Add(item);
+            foreach (LootEffectRoll roll in item.Effects)
+            {
+                switch (roll.Effect)
+                {
+                    case LootEffect.Attack: _me.Attack += roll.Amount; break;
+                    case LootEffect.Defense: _me.Defense += roll.Amount; break;
+                    case LootEffect.MaxHp:
+                        _me.MaxHp += roll.Amount;
+                        _me.Heal(roll.Amount);
+                        break;
+                    case LootEffect.CritBonus: _me.CritBonus += roll.Amount; break;
+                    case LootEffect.Dodge: _me.Dodge += roll.Amount; break;
+                    case LootEffect.Accuracy: _me.Accuracy += roll.Amount; break;
+                    case LootEffect.Lifesteal: _me.Lifesteal += roll.Amount; break;
+                    case LootEffect.Thorns: _me.Thorns += roll.Amount; break;
+                    case LootEffect.Regen: _me.Regen += roll.Amount; break;
+                    case LootEffect.GoldFinder: GoldFinderPercent += roll.Amount; break;
+                    case LootEffect.PotionPower: PotionPowerBonus += roll.Amount; break;
+                    case LootEffect.SecondWind: _me.SecondWindHeal = Math.Max(_me.SecondWindHeal, roll.Amount); break;
+                }
+            }
+        }
+
         private void FindTreasure(RoomResult result)
         {
             if (_random.NextDouble() < 0.15)
             {
+                result.Enemy = SpriteKind.Slime;
+                result.EnemyName = "Mimic";
                 result.Lines.Add($"**Floor {Floor}:** a treasure chest. It bites. It's a mimic!");
-                Fight(result, boss: false);
+                Fight(result, "Mimic", SpriteKind.Slime, boss: false, dropChance: Loot.TreasureDropChance);
                 return;
             }
             result.Lines.Add($"**Floor {Floor}:** a treasure chest, unlocked.");
             AddGold(result, Gold(0.12 + _random.NextDouble() * 0.18));
+            MaybeDrop(result, Loot.TreasureDropChance);
         }
 
         private void SpringTrap(RoomResult result)
         {
             if (_random.NextDouble() < 0.5)
             {
-                int damage = Math.Max(1, 3 + Floor / 2 + _random.Next(1, 7) - Defense);
-                Hp -= damage;
+                int damage = Math.Max(1, 3 + Floor / 2 + _random.Next(1, 11) - Defense / 2);
+                _me.Hp -= damage;
                 result.Lines.Add($"**Floor {Floor}:** a spike trap. You take {damage} damage.");
             }
             else
@@ -308,61 +387,68 @@ namespace DiscordBot.Games.Models.Dungeon
         {
             if (_random.NextDouble() < 0.5)
             {
-                Attack++;
+                _me.Attack++;
                 result.Lines.Add($"**Floor {Floor}:** a {Pick(WeaponNames)}. Attack +1 (now {Attack}).");
             }
             else
             {
-                Defense++;
-                MaxHp += 2;
-                Hp += 2;
+                _me.Defense++;
+                _me.MaxHp += 2;
+                _me.Heal(2);
                 result.Lines.Add($"**Floor {Floor}:** a {Pick(ArmorNames)}. Defense +1 (now {Defense}), max HP +2.");
             }
         }
 
         /// <summary>
-        /// Auto-resolves a fight, round by round. Stops when the monster dies, you go down, or the round cap is reached.
+        /// Fights round by round using the shared combat rules. The player strikes first each round.
+        /// Stops when the enemy dies, the player goes down, or the round cap is reached.
         /// </summary>
-        private void Fight(RoomResult result, bool boss)
+        private void Fight(RoomResult result, string enemyName, SpriteKind enemySprite, bool boss, double dropChance)
         {
-            int monsterHp = (boss ? 16 + Floor * 2 : 5 + Floor * 2) + _random.Next(0, 5);
-            int monsterAttack = boss ? 2 + Floor / 4 : 1 + Floor / 3;
-            int enrageAt = monsterHp / 2;
+            Combatant enemy = MonsterFor(enemyName, boss);
             bool enraged = false;
-            int dealt = 0, taken = 0, rounds = 0;
+            int dealt = 0, taken = 0, rounds = 0, misses = 0, crits = 0;
 
-            while (rounds < MaxRoundsPerFight && Hp > 0)
+            for (int round = 1; round <= Combat.MaxRounds && Alive && enemy.Alive; round++)
             {
-                rounds++;
-                int hit = Attack + _random.Next(1, 7);
-                monsterHp -= hit;
-                dealt += hit;
-                if (monsterHp <= 0)
+                rounds = round;
+                Combat.StartRound(_me);
+
+                AttackOutcome mine = Combat.Attack(_me, enemy, _random);
+                Tally(mine, ref dealt, ref misses, ref crits);
+                if (!enemy.Alive)
                     break;
 
-                if (boss && !enraged && monsterHp <= enrageAt)
+                if (boss && !enraged && enemy.Hp <= enemy.MaxHp / 2)
                 {
                     enraged = true;
-                    monsterAttack += 1;
-                    result.Lines.Add($"The boss enrages at {monsterHp} HP!");
+                    enemy.Attack += 1;
+                    result.Lines.Add($"{enemyName} enrages at {enemy.Hp} HP!");
                 }
 
-                int counter = Math.Max(1, monsterAttack + _random.Next(1, 5) - Defense);
-                Hp -= counter;
-                taken += counter;
+                AttackOutcome theirs = Combat.Attack(enemy, _me, _random);
+                taken += theirs.Damage;
+                if (Combat.TrySecondWind(_me))
+                    result.Lines.Add($"Second Wind heals you to {Hp} HP.");
             }
 
-            if (monsterHp <= 0)
+            result.EnemyHp = Math.Max(0, enemy.Hp);
+            result.EnemyMaxHp = enemy.MaxHp;
+
+            string roundsText = $"{rounds} round{(rounds == 1 ? "" : "s")}";
+            string critText = crits > 0 ? $", {crits} crit{(crits == 1 ? "" : "s")}" : "";
+            if (!enemy.Alive)
             {
                 Kills++;
-                result.Lines.Add($"Won in {rounds} round{(rounds == 1 ? "" : "s")}. You dealt {dealt} and took {taken}.");
+                result.Lines.Add($"{enemyName} falls in {roundsText}. You dealt {dealt} and took {taken}{critText}.");
                 if (boss)
                 {
-                    MaxHp += 5;
-                    Hp = MaxHp;
+                    _me.MaxHp += 5;
+                    _me.Hp = _me.MaxHp;
                     Potions++;
                     result.Lines.Add("The boss drops a potion, you are fully healed, and max HP rises by 5.");
                     AddGold(result, Gold(0.6 + _random.NextDouble() * 0.3));
+                    MaybeDrop(result, 1, bossDrop: true);
                 }
                 else
                 {
@@ -372,16 +458,34 @@ namespace DiscordBot.Games.Models.Dungeon
                         Potions++;
                         result.Lines.Add("It drops a potion.");
                     }
+                    MaybeDrop(result, dropChance);
                 }
             }
-            else if (Hp <= 0)
+            else if (!Alive)
             {
-                result.Lines.Add($"It wore you down in {rounds} round{(rounds == 1 ? "" : "s")}.");
+                result.Lines.Add($"{enemyName} wears you down in {roundsText}. You dealt {dealt} and took {taken}{critText}.");
             }
             else
             {
-                result.Lines.Add($"The fight drags on. You slip away after {rounds} rounds.");
+                result.Lines.Add($"The fight drags on for {roundsText}. You slip away from {enemyName}.");
             }
+        }
+
+        private static void Tally(AttackOutcome outcome, ref int dealt, ref int misses, ref int crits)
+        {
+            if (!outcome.Hit)
+            {
+                misses++;
+                return;
+            }
+            dealt += outcome.Damage;
+            if (outcome.Crit) crits++;
+        }
+
+        private (string, SpriteKind) Pick((string Name, SpriteKind Sprite)[] options)
+        {
+            var choice = options[_random.Next(options.Length)];
+            return (choice.Name, choice.Sprite);
         }
 
         private string Pick(string[] options)

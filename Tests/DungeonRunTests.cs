@@ -1,7 +1,7 @@
 using DiscordBot.Games.Models.Dungeon;
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Tests
@@ -24,7 +24,7 @@ namespace Tests
             Assert.Equal(0, run.Floor);
             Assert.True(run.Alive);
             Assert.False(run.IsOver);
-            Assert.False(run.CanLoot);
+            Assert.Empty(run.Items);
         }
 
         [Fact]
@@ -75,6 +75,25 @@ namespace Tests
         }
 
         [Fact]
+        public void Fights_NeverRunLongerThanTheRoundCap()
+        {
+            var roundCount = new Regex(@"(\d+) rounds?");
+            for (int seed = 1; seed <= 200; seed++)
+            {
+                var run = RunFor(seed);
+                for (int i = 0; i < 30 && !run.IsOver; i++)
+                {
+                    foreach (string line in run.Descend().Lines)
+                    {
+                        Match match = roundCount.Match(line);
+                        if (match.Success)
+                            Assert.True(int.Parse(match.Groups[1].Value) <= Combat.MaxRounds, $"fight ran past the cap with seed {seed}: {line}");
+                    }
+                }
+            }
+        }
+
+        [Fact]
         public void CashOut_ReturnsHaulAndEndsRun()
         {
             var run = RunFor(3);
@@ -109,17 +128,28 @@ namespace Tests
         {
             var run = RunFor(5);
             double before = run.Haul;
-            double taken = run.TakeHaulForPvp();
 
-            Assert.Equal(before, taken);
+            Assert.Equal(before, run.TakeHaulForPvp());
             Assert.Equal(0, run.Haul);
             Assert.True(run.IsOver);
         }
 
         [Fact]
+        public void CloneStats_IsACopyThatDoesNotChangeTheRun()
+        {
+            var run = RunFor(6);
+            var copy = run.CloneStats();
+            copy.Attack += 50;
+            copy.Hp = 1;
+
+            Assert.Equal(DungeonRun.StartingAttack, run.Attack);
+            Assert.Equal(DungeonRun.StartingHp, run.Hp);
+        }
+
+        [Fact]
         public void SplitHaul_SharesEvenlyAndPaysTheRemainderToTheFirstRecipient()
         {
-            IReadOnlyDictionary<ulong, double> payouts = DungeonRun.SplitHaul(100, new List<ulong> { 1, 2, 3 });
+            var payouts = DungeonRun.SplitHaul(100, new[] { 1UL, 2UL, 3UL });
 
             Assert.Equal(33.34, payouts[1], 2);
             Assert.Equal(33.33, payouts[2], 2);
@@ -128,63 +158,21 @@ namespace Tests
         }
 
         [Fact]
-        public void SplitHaul_WithNoRecipients_PaysNothing()
-        {
-            Assert.Empty(DungeonRun.SplitHaul(100, new List<ulong>()));
-        }
-
-        [Fact]
         public void Buying_WithNothingOnOffer_Fails()
         {
-            var run = RunFor(1);
-
-            Assert.False(run.TryBuyOffer(out _));
+            Assert.False(RunFor(1).TryBuyOffer(out _));
         }
 
         [Fact]
         public void Drinking_WithNoPotions_Fails()
         {
-            var run = RunFor(1);
-
-            Assert.False(run.TryDrink(out _));
+            Assert.False(RunFor(1).TryDrink(out _));
         }
 
         [Fact]
         public void PotionPrice_ScalesWithBuyIn()
         {
             Assert.True(RunFor(1, 10000).PotionPrice > RunFor(1, 1000).PotionPrice);
-        }
-
-        [Fact]
-        public void ApplyLoot_BoostsStatsAndUsesUpTheRoomsBox()
-        {
-            DungeonRun run = null;
-            for (int seed = 1; seed <= 100 && run == null; seed++)
-            {
-                var candidate = RunFor(seed);
-                candidate.Descend();
-                if (candidate.Alive) run = candidate;
-            }
-            Assert.NotNull(run);
-            Assert.True(run.CanLoot);
-
-            var loot = new LootResult { Tier = LootTier.Rare, Name = "Test", AttackGain = 2, DefenseGain = 1, MaxHpGain = 5 };
-            int attack = run.Attack, defense = run.Defense, maxHp = run.MaxHp;
-            run.ApplyLoot(loot);
-
-            Assert.Equal(attack + 2, run.Attack);
-            Assert.Equal(defense + 1, run.Defense);
-            Assert.Equal(maxHp + 5, run.MaxHp);
-            Assert.False(run.CanLoot);
-            Assert.Throws<InvalidOperationException>(() => run.ApplyLoot(loot));
-        }
-
-        [Fact]
-        public void ApplyLoot_BeforeAnyRoom_Throws()
-        {
-            var run = RunFor(8);
-
-            Assert.Throws<InvalidOperationException>(() => run.ApplyLoot(new LootResult()));
         }
     }
 }

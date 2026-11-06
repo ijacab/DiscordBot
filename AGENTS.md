@@ -18,6 +18,9 @@ CI/CD: `azure-pipelines.yml` publishes linux-arm64 to a Pi and restarts the `Dis
 
 ## Env vars (see `Common/Helpers/EnvironmentHelper.cs`)
 `DiscordBotToken`, `GITHUB_PAT_TOKEN`, `GITHUB_USERNAME`, `GITHUB_GIST_ID`, `S_U`, `S_P`, `PORT` (default 5000), `IS_HEROKU`. Never commit secrets.
+`DUNGEON_IMAGE_BASE_URL` (optional): public base URL of this web host, e.g. `https://bot.example.com`. The dungeon dashboard embeds `{base}/dungeon/latest.png`, so Discord must be able to reach it. Unset means the dashboard has no picture, and everything else still works.
+
+The dungeon deletes players' command messages to keep the channel clean. That needs the bot's **Manage Messages** permission in the server. Without it the commands stay, and the dashboard still works.
 
 ## Architecture
 - Entry: `Program.cs` (Kestrel web host + generic host) → `Startup.cs` (**all DI registration**) → `ChatWorker` (hosted service; starts Ollama installer + `MessageHandler`).

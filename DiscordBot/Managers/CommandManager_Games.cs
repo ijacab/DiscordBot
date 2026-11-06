@@ -274,71 +274,55 @@ namespace DiscordBot.Managers
         {
             ulong userId = message.Author.Id;
             string name = message.Author.Username;
+            IMessageChannel channel = message.Channel;
             string action = args.Count > 0 ? args[0].ToLowerInvariant() : "";
 
-            DungeonReply reply;
+            //the dashboard shows the result, so the command itself is just noise in the channel
+            await TryDeleteMessageAsync(message);
+
             switch (action)
             {
                 case "":
                 case "status":
-                    reply = await _dungeonManager.Status(userId);
-                    break;
-                case "loot":
-                    reply = await _dungeonManager.Loot(userId);
+                    await _dungeonManager.Status(name, channel);
                     break;
                 case "join":
-                    CoinAccount joiner = await _coinService.Get(userId, name);
-                    reply = await _dungeonManager.Join(joiner);
+                    await _dungeonManager.Join(await _coinService.Get(userId, name), channel);
                     break;
                 case "start":
-                    reply = await _dungeonManager.Start(userId);
+                    await _dungeonManager.Start(userId, name, channel);
                     break;
                 case "go":
-                    reply = await _dungeonManager.Go(userId);
+                    await _dungeonManager.Go(userId, name, channel);
                     break;
                 case "cash":
-                    reply = await _dungeonManager.Cash(userId);
+                    await _dungeonManager.Cash(userId, name, channel);
                     break;
                 case "buy":
-                    reply = await _dungeonManager.Buy(userId);
+                    await _dungeonManager.Buy(userId, name, channel);
                     break;
                 case "drink":
-                    reply = await _dungeonManager.Drink(userId);
+                    await _dungeonManager.Drink(userId, name, channel);
                     break;
                 default:
                     CoinAccount host = await _coinService.Get(userId, name);
                     if (!TryExtractBetAmount(args, host, out double buyIn))
                         throw new BadSyntaxException();
-                    reply = await _dungeonManager.Open(host, buyIn, message.Channel);
+                    await _dungeonManager.Open(host, buyIn, channel);
                     break;
             }
-
-            await SendDungeonReply(message, reply);
         }
 
-        /// <summary>Sends the reply as an embed. If the reply has a run, the party card image is attached.</summary>
-        private static async Task SendDungeonReply(SocketMessage message, DungeonReply reply)
+        /// <summary>Needs the Manage Messages permission to delete other people's messages. Without it the command stays, and the dashboard still updates.</summary>
+        private static async Task TryDeleteMessageAsync(SocketMessage message)
         {
-            EmbedBuilder embed = DiscordHelper.GetEmbedBuilder("Dungeon", reply.Text);
-            if (reply.Run != null)
+            try
             {
-                embed.WithImageUrl("attachment://dungeon.png");
-                using (var card = DungeonCardRenderer.Render(reply.Run, reply.CardFooter))
-                {
-                    await message.Channel.SendFileAsync(stream: card, "dungeon.png", embed: embed.Build());
-                }
+                await message.DeleteAsync();
             }
-            else
+            catch (Exception)
             {
-                await message.Channel.SendMessageAsync(embed: embed.Build());
-            }
-
-            if (reply.LootImage != null)
-            {
-                using (reply.LootImage)
-                {
-                    await message.Channel.SendFileAsync(stream: reply.LootImage, "loot.png");
-                }
+                //missing permission or the message is already gone, so there's nothing else to do
             }
         }
 

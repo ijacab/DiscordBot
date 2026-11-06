@@ -29,11 +29,12 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            the one open session (global): lobby, 5-min solo crawl timer, PvP at the end, loot
+      DungeonManager.cs            the one open session (global): lobby, 5-min solo crawl, PvP at the end, one edited dashboard message
     Models/
-      Dungeon/DungeonRun.cs        one solo crawl: rooms, fights, offers, loot boosts, haul
-      Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls
-      Dungeon/LootBox.cs           loot box tiers and stat boosts
+      Dungeon/DungeonRun.cs        one solo crawl: rooms, fights, offers, automatic loot, haul
+      Dungeon/Combat.cs            shared attack rules: hit, d10 damage, crit, lifesteal, thorns, Second Wind, round cap
+      Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls (10 rounds max)
+      Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
@@ -41,9 +42,11 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CoinService.cs             accounts, interest, leaderboard, top account
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
-    PixelFont.cs               5x7 bitmap font + rectangle fill, shared by StockChart and DungeonCardRenderer
-    DungeonCardRenderer.cs     PNG card for one solo run: header, haul, HP and stats, optional footer
-    LootCardRenderer.cs        PNG of a loot box result
+    PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
+    PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
+    DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player
+    LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
+    DungeonImageStore.cs       latest dashboard picture and its version, served by the web host
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search

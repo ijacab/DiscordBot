@@ -5,65 +5,72 @@ using DiscordBot.Games.Models.Dungeon;
 using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
 
 namespace DiscordBot.Games.Managers
 {
-    /// <summary>A reply for the command handler. The handler sends the card, the loot image, or both when they are set.</summary>
-    public class DungeonReply
-    {
-        public string Text { get; set; }
-        public DungeonRun Run { get; set; }
-        /// <summary>Footer drawn on the run card, such as the time left in the crawl.</summary>
-        public string CardFooter { get; set; }
-        public MemoryStream LootImage { get; set; }
-    }
-
     /// <summary>
     /// One session at a time, across all channels. Players join a lobby, then each crawls a solo run for
     /// <see cref="CrawlLength"/>. When the timer ends, the survivors who haven't cashed out enter a winner-takes-all PvP.
+    /// The whole session is shown on one dashboard message that is edited after every action, so the channel stays quiet.
     /// The session is in memory, so a bot restart ends it.
     /// </summary>
     public class DungeonManager
     {
         public const double MinBuyIn = 100;
         public const int MaxPlayers = 4;
+        public const int LogLines = 8;
         public static readonly TimeSpan LobbyWait = TimeSpan.FromSeconds(60);
         public static readonly TimeSpan CrawlLength = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan TransientLifetime = TimeSpan.FromSeconds(15);
         private const string NoRunMessage = "No dungeon is open. Open a lobby with `.dng 1000`, where 1000 is the buy-in for each player.";
 
         private sealed class Session
         {
             public readonly Dictionary<ulong, DungeonRun> Runs = new Dictionary<ulong, DungeonRun>();
+            /// <summary>Players who cashed out, died, or went into PvP. Shown on the dashboard.</summary>
+            public readonly List<ScenePlayer> Departed = new List<ScenePlayer>();
+            public readonly List<string> Log = new List<string>();
             public IMessageChannel Channel;
+            public IUserMessage Dashboard;
             public ulong HostId;
             public bool Started;
             public int Generation;
             public DateTime OpenedUtc;
             public DateTime CrawlEndsUtc;
+            public double BuyIn;
+            public SpriteKind Sprite;
+            public string Caption;
+            public int? EnemyHp;
+            public int? EnemyMaxHp;
+            /// <summary>A loot card shown for one refresh after a drop.</summary>
+            public byte[] PictureOverride;
         }
 
         private readonly CoinService _coinService;
+        private readonly DungeonImageStore _images;
+        private readonly string _pictureBaseUrl;
         /// <summary>The only session open at a time, or null when none is open.</summary>
         private Session _session;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private readonly Random _random = new Random();
         private int _generationCounter;
 
-        public DungeonManager(CoinService coinService)
+        public DungeonManager(CoinService coinService, DungeonImageStore images)
         {
             _coinService = coinService;
+            _images = images;
+            _pictureBaseUrl = Environment.GetEnvironmentVariable("DUNGEON_IMAGE_BASE_URL");
         }
 
-        /// <summary>Opens the lobby. Refused while another session is open.</summary>
-        public async Task<DungeonReply> Open(CoinAccount host, double buyIn, IMessageChannel channel)
+        /// <summary>Opens the lobby and posts the dashboard. Refused while another session is open.</summary>
+        public Task Open(CoinAccount host, double buyIn, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(host.Name, channel, async () =>
             {
                 if (_session != null)
                     throw new BadInputException($"A dungeon is already {StateOf(_session)} in <#{_session.Channel.Id}>. Join it with `.dng join`, or wait for it to end.");
@@ -80,267 +87,167 @@ namespace DiscordBot.Games.Managers
                     Channel = channel,
                     HostId = host.UserId,
                     Generation = ++_generationCounter,
-                    OpenedUtc = DateTime.UtcNow
+                    OpenedUtc = DateTime.UtcNow,
+                    BuyIn = buyIn
                 };
                 _session.Runs[host.UserId] = new DungeonRun(host.UserId, host.Name, buyIn, _random);
                 _ = AutoStartLater(_session.Generation);
-
-                return new DungeonReply
-                {
-                    Text = $"{host.Name} opens a dungeon lobby with a ${FormatHelper.GetCommaNumber(buyIn)} buy-in.\n" +
-                        $"Anyone can type `.dng join` from any channel for the next {LobbyWait.TotalSeconds} seconds, or the host can type `.dng start` to begin early.\n" +
-                        $"Once the crawl starts, everyone crawls alone for {CrawlLength.TotalMinutes} minutes. The survivors who haven't cashed out then fight for the pot."
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                return $"{host.Name} opens a lobby with a ${FormatHelper.GetCommaNumber(buyIn)} buy-in.";
+            });
         }
 
-        /// <summary>Joins the open lobby, from any channel, paying the same buy-in as the host.</summary>
-        public async Task<DungeonReply> Join(CoinAccount account)
+        public Task Join(CoinAccount account, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(account.Name, channel, async () =>
             {
                 if (_session == null)
                     throw new BadInputException("No dungeon is open. Open one with `.dng 1000`.");
                 if (_session.Started)
-                    throw new BadInputException($"The dungeon in <#{_session.Channel.Id}> is already running.");
+                    throw new BadInputException("The crawl has already started.");
                 if (_session.Runs.ContainsKey(account.UserId))
                     throw new BadInputException("You're already in this dungeon.");
                 if (_session.Runs.Count >= MaxPlayers)
                     throw new BadInputException($"The lobby is full at {MaxPlayers} players.");
 
-                double buyIn = _session.Runs.Values.First().BuyIn;
+                double buyIn = _session.BuyIn;
                 if (buyIn > account.NetWorth)
                     throw new BadInputException($"The buy-in is ${FormatHelper.GetCommaNumber(buyIn)} and you only have ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
 
                 account.NetWorth -= buyIn;
                 await _coinService.Update(account.UserId, account.NetWorth, account.Name);
                 _session.Runs[account.UserId] = new DungeonRun(account.UserId, account.Name, buyIn, _random);
-
-                return new DungeonReply
-                {
-                    Text = $"{account.Name} joins and pays the ${FormatHelper.GetCommaNumber(buyIn)} buy-in. Players: {_session.Runs.Count}/{MaxPlayers}."
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                return $"{account.Name} joins and pays the ${FormatHelper.GetCommaNumber(buyIn)} buy-in.";
+            });
         }
 
-        /// <summary>The host starts the crawl early.</summary>
-        public async Task<DungeonReply> Start(ulong userId)
+        public Task Start(ulong userId, string name, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(name, channel, () =>
             {
                 if (_session == null)
-                    return new DungeonReply { Text = NoRunMessage };
-                if (!_session.Runs.ContainsKey(userId))
-                    return new DungeonReply { Text = NotInThisDungeon() };
-                if (_session.Started)
-                    return new DungeonReply { Text = "The crawl has already started." };
+                    throw new BadInputException(NoRunMessage);
                 if (_session.HostId != userId)
                     throw new BadInputException("Only the host can start the lobby early. Otherwise it starts on its own.");
-
-                return new DungeonReply { Text = BeginCrawl(_session) };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                if (_session.Started)
+                    return Task.FromResult<string>(null);
+                return Task.FromResult(BeginCrawl(_session));
+            });
         }
 
-        public async Task<DungeonReply> Go(ulong userId)
+        public Task Go(ulong userId, string name, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(name, channel, async () =>
             {
-                DungeonRun run = RunOf(userId);
-                if (run == null)
-                    return new DungeonReply { Text = _session == null ? NoRunMessage : NotInThisDungeon() };
+                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
-                    return new DungeonReply { Text = "The lobby is still open. Wait for it to start, or type `.dng start`." };
+                    throw new BadInputException("The lobby is still open. Wait for it to start, or the host types `.dng start`.");
 
                 RoomResult room = run.Descend();
-                string body = string.Join("\n", room.Lines);
+                _session.Sprite = room.Enemy;
+                _session.Caption = room.EnemyName ?? RoomLabel(room.Type);
+                _session.EnemyHp = room.EnemyHp;
+                _session.EnemyMaxHp = room.EnemyMaxHp;
+                if (room.Drop != null)
+                    _session.PictureOverride = LootCardRenderer.Render(room.Drop).ToArray();
 
-                if (run.IsOver)
+                foreach (string line in room.Lines)
+                    AddLog($"{run.Name}: {line}");
+
+                if (room.Died)
                 {
                     _session.Runs.Remove(userId);
-                    string lost = $"{body}\nThe haul of ${FormatHelper.GetCommaNumber(run.Haul)} and your buy-in are lost.";
-                    return new DungeonReply
-                    {
-                        Text = lost + "\n" + await CheckEarlyEnd(),
-                        Run = run,
-                        CardFooter = CrawlFooter()
-                    };
+                    _session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = 0, MaxHp = run.MaxHp, Haul = 0, Status = "DOWN" });
+                    AddLog($"{run.Name}'s haul of ${FormatHelper.GetCommaNumber(run.Haul)} and buy-in are lost.");
+                    await CheckEarlyEnd();
                 }
-
-                return new DungeonReply
-                {
-                    Text = body + "\n" + StatusLine(run) + "\n" + ActionsLine(run),
-                    Run = run,
-                    CardFooter = CrawlFooter()
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                return null;
+            });
         }
 
         /// <summary>Banks your own haul and leaves the crawl. You don't take part in PvP.</summary>
-        public async Task<DungeonReply> Cash(ulong userId)
+        public Task Cash(ulong userId, string name, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(name, channel, async () =>
             {
-                DungeonRun run = RunOf(userId);
-                if (run == null)
-                    return new DungeonReply { Text = _session == null ? NoRunMessage : NotInThisDungeon() };
+                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
-                    return new DungeonReply { Text = "The lobby hasn't started yet, so there's nothing to cash out." };
+                    throw new BadInputException("The lobby hasn't started yet, so there's nothing to cash out.");
 
                 double payout = run.CashOut();
                 _session.Runs.Remove(userId);
+                _session.Departed.Add(new ScenePlayer { Name = run.Name, Floor = run.Floor, Hp = run.Hp, MaxHp = run.MaxHp, Haul = payout, Status = "CASHED OUT" });
                 await PayOut(userId, run.Name, payout);
-
-                return new DungeonReply
-                {
-                    Text = $"You climb out alive with ${payout:N2} after {run.Floor} rooms and {run.Kills} kills. " +
-                        $"Your buy-in was ${run.BuyIn:N2}, so you {(payout >= run.BuyIn ? "made" : "lost")} ${Math.Abs(payout - run.BuyIn):N2}.\n" +
-                        await CheckEarlyEnd()
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                AddLog($"{run.Name} cashes out ${payout:N2} after {run.Floor} rooms and {run.Kills} kills.");
+                await CheckEarlyEnd();
+                return null;
+            });
         }
 
-        public async Task<DungeonReply> Buy(ulong userId)
+        public Task Buy(ulong userId, string name, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(name, channel, () =>
             {
-                DungeonRun run = RunOf(userId);
-                if (run == null)
-                    return new DungeonReply { Text = _session == null ? NoRunMessage : NotInThisDungeon() };
+                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
-                    return new DungeonReply { Text = "The lobby hasn't started yet." };
+                    throw new BadInputException("The lobby hasn't started yet.");
 
-                bool bought = run.TryBuyOffer(out string message);
-                return new DungeonReply
-                {
-                    Text = message + (bought ? "\n" + StatusLine(run) : ""),
-                    Run = bought ? run : null,
-                    CardFooter = CrawlFooter()
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                run.TryBuyOffer(out string message);
+                return Task.FromResult($"{run.Name}: {message}");
+            });
         }
 
-        public async Task<DungeonReply> Drink(ulong userId)
+        public Task Drink(ulong userId, string name, IMessageChannel channel)
         {
-            await _gate.WaitAsync();
-            try
+            return Attempt(name, channel, () =>
             {
-                DungeonRun run = RunOf(userId);
-                if (run == null)
-                    return new DungeonReply { Text = _session == null ? NoRunMessage : NotInThisDungeon() };
+                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
                 if (!_session.Started)
-                    return new DungeonReply { Text = "The lobby hasn't started yet." };
+                    throw new BadInputException("The lobby hasn't started yet.");
 
                 run.TryDrink(out string message);
-                return new DungeonReply
-                {
-                    Text = message + "\n" + StatusLine(run),
-                    Run = run,
-                    CardFooter = CrawlFooter()
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
+                return Task.FromResult($"{run.Name}: {message}");
+            });
         }
 
-        /// <summary>Buys a loot box for your run, once per room. The cost comes from cash, not the haul.</summary>
-        public async Task<DungeonReply> Loot(ulong userId)
+        /// <summary>Refreshes the dashboard. Anyone can use it, and it works from any channel.</summary>
+        public Task Status(string name, IMessageChannel channel)
+        {
+            return Attempt(name, channel, () => Task.FromResult<string>(null));
+        }
+
+        /// <summary>
+        /// Runs one player action under the lock, adds its result to the event log, and refreshes the dashboard.
+        /// A refused action becomes a log line. If there's no session, the refusal is posted briefly and then deleted.
+        /// </summary>
+        private async Task Attempt(string actor, IMessageChannel channel, Func<Task<string>> action)
         {
             await _gate.WaitAsync();
             try
             {
-                DungeonRun run = RunOf(userId);
-                if (run == null)
-                    return new DungeonReply { Text = _session == null ? NoRunMessage : NotInThisDungeon() };
-                if (!_session.Started)
-                    return new DungeonReply { Text = "The lobby hasn't started yet." };
-                if (!run.CanLoot)
-                    return new DungeonReply { Text = "You've already opened a loot box in this room. Use `.dng go` to enter the next one." };
-
-                double cost = LootBox.Cost(run.BuyIn);
-                CoinAccount account = await _coinService.Get(userId, run.Name);
-                if (account.NetWorth < cost)
-                    throw new BadInputException($"A loot box costs ${FormatHelper.GetCommaNumber(cost)} and you only have ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
-
-                account.NetWorth -= cost;
-                await _coinService.Update(userId, account.NetWorth, account.Name);
-
-                LootResult loot = LootBox.Roll(_random);
-                run.ApplyLoot(loot);
-
-                return new DungeonReply
+                string line;
+                try
                 {
-                    Text = $"You spend ${cost:N2} on a loot box and find {loot.Name} ({loot.Tier}). " +
-                        $"Attack +{loot.AttackGain}, defense +{loot.DefenseGain}, max HP +{loot.MaxHpGain}.\n" + StatusLine(run),
-                    LootImage = LootCardRenderer.Render(loot)
-                };
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
-
-        /// <summary>Shows the session to anyone, and your own run as a card if you're in it.</summary>
-        public async Task<DungeonReply> Status(ulong userId)
-        {
-            await _gate.WaitAsync();
-            try
-            {
-                if (_session == null)
-                    return new DungeonReply { Text = NoRunMessage };
-
-                if (!_session.Started)
+                    line = await action();
+                }
+                catch (BadInputException ex)
                 {
-                    double secondsLeft = Math.Max(0, (LobbyWait - (DateTime.UtcNow - _session.OpenedUtc)).TotalSeconds);
-                    return new DungeonReply
-                    {
-                        Text = $"Lobby open in <#{_session.Channel.Id}>: {_session.Runs.Count}/{MaxPlayers} players, " +
-                            $"${FormatHelper.GetCommaNumber(_session.Runs.Values.First().BuyIn)} buy-in each. Starts in {Math.Ceiling(secondsLeft)} seconds. Type `.dng join` to enter."
-                    };
+                    line = $"{actor}: {ex.Message}";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    line = $"{actor}: {ex.Message}";
                 }
 
-                DungeonRun run = RunOf(userId);
-                string text = $"Crawl running in <#{_session.Channel.Id}>. {CrawlFooter()}. {_session.Runs.Count} still crawling.";
-                if (run == null)
-                    return new DungeonReply { Text = text };
-
-                return new DungeonReply
+                if (line != null)
                 {
-                    Text = text + "\n" + StatusLine(run) + "\n" + ActionsLine(run),
-                    Run = run,
-                    CardFooter = CrawlFooter()
-                };
+                    if (_session == null)
+                        _ = PostTransientAsync(channel, line);
+                    else
+                        AddLog(line);
+                }
+
+                if (_session != null)
+                    await RenderAndEdit(_session, ended: false, resultText: null);
             }
             finally
             {
@@ -348,28 +255,23 @@ namespace DiscordBot.Games.Managers
             }
         }
 
-        /// <summary>Starts the lobby after <see cref="LobbyWait"/>, unless it was already started or replaced.</summary>
         private async Task AutoStartLater(int generation)
         {
             await Task.Delay(LobbyWait);
 
-            string text;
-            IMessageChannel channel;
             await _gate.WaitAsync();
             try
             {
                 if (_session == null || _session.Started || _session.Generation != generation)
                     return;
 
-                channel = _session.Channel;
-                text = BeginCrawl(_session);
+                AddLog(BeginCrawl(_session));
+                await RenderAndEdit(_session, ended: false, resultText: null);
             }
             finally
             {
                 _gate.Release();
             }
-
-            await PostToChannel(channel, text);
         }
 
         /// <summary>Ends the crawl when its timer runs out, and starts PvP among the survivors.</summary>
@@ -377,34 +279,17 @@ namespace DiscordBot.Games.Managers
         {
             await Task.Delay(CrawlLength);
 
-            string text;
-            IMessageChannel channel;
             await _gate.WaitAsync();
             try
             {
                 if (_session == null || _session.Generation != generation)
                     return;
 
-                channel = _session.Channel;
-                text = await ResolveSession();
+                await ResolveSession();
             }
             finally
             {
                 _gate.Release();
-            }
-
-            await PostToChannel(channel, text);
-        }
-
-        private static async Task PostToChannel(IMessageChannel channel, string text)
-        {
-            try
-            {
-                await channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Dungeon", text).Build());
-            }
-            catch (Exception)
-            {
-                //the session still ran, so a failed announcement just means nobody sees the message
             }
         }
 
@@ -413,50 +298,140 @@ namespace DiscordBot.Games.Managers
             session.Started = true;
             session.CrawlEndsUtc = DateTime.UtcNow + CrawlLength;
             _ = CrawlTimerLater(session.Generation);
-            string names = string.Join(", ", session.Runs.Values.Select(r => r.Name));
-            return $"The crawl begins for {names}. You have {CrawlLength.TotalMinutes} minutes. Use `.dng go` to enter your first room.";
+            return $"The crawl begins. Everyone has {CrawlLength.TotalMinutes} minutes. Use `.dng go` to enter the first room.";
         }
 
         /// <summary>
-        /// Ends the session. Every run still going is an entrant, and the winner takes the pot of their hauls.
+        /// Ends the session. Every run still going enters PvP, and the winner takes the pot of their hauls.
         /// Called when the crawl timer runs out, or early when fewer than two runs are still going.
         /// </summary>
-        private async Task<string> ResolveSession()
+        private async Task ResolveSession()
         {
-            var fighters = _session.Runs.Values.Select(run => new PvpFighter
+            Session session = _session;
+            var fighters = session.Runs.Values.Select(run => new PvpFighter
             {
                 UserId = run.UserId,
                 Name = run.Name,
-                Hp = run.Hp,
-                Attack = run.Attack,
-                Defense = run.Defense,
+                Stats = run.CloneStats(),
                 Haul = run.TakeHaulForPvp()
             }).ToList();
+            foreach (PvpFighter fighter in fighters)
+                session.Departed.Add(new ScenePlayer { Name = fighter.Name, Hp = fighter.Stats.Hp, MaxHp = fighter.Stats.MaxHp, Haul = fighter.Haul, Status = "IN PVP" });
+            session.Runs.Clear();
             _session = null;
 
             PvpResult result = PvpArena.Resolve(fighters, _random);
             foreach (KeyValuePair<ulong, double> payout in result.Payouts)
                 await PayOut(payout.Key, fighters.First(f => f.UserId == payout.Key).Name, payout.Value);
 
-            var winnings = result.Payouts.Where(p => p.Value > 0)
-                .Select(p => $"{fighters.First(f => f.UserId == p.Key).Name} takes ${FormatHelper.GetCommaNumber(p.Value)}");
-            return "The crawl is over. PvP for the survivors:\n" +
-                string.Join("\n", result.Lines) + "\n" +
-                (winnings.Any() ? string.Join("\n", winnings) : "Nothing is paid out.");
+            foreach (ScenePlayer player in session.Departed.Where(p => p.Status == "IN PVP").ToList())
+            {
+                double won = result.Payouts.Where(p => fighters.First(f => f.UserId == p.Key).Name == player.Name).Sum(p => p.Value);
+                player.Status = won > 0 ? $"WON ${won:N0}" : "LOST";
+            }
+
+            foreach (string line in result.Lines.Skip(Math.Max(0, result.Lines.Count - 4)))
+                AddLog(line);
+
+            string winners = result.Winners.Count == 0 ? "Nobody is paid." : $"Winner{(result.Winners.Count > 1 ? "s" : "")}: {string.Join(", ", result.Winners)}. Pot ${result.Pot:N2}.";
+            await RenderAndEdit(session, ended: true, resultText: winners);
         }
 
-        /// <summary>Resolves the session early when fewer than two runs are still going.</summary>
-        private async Task<string> CheckEarlyEnd()
+        /// <summary>Ends the session early when fewer than two runs are still going.</summary>
+        private async Task CheckEarlyEnd()
         {
-            if (_session == null || !_session.Started || _session.Runs.Count >= 2)
-                return "";
-            return await ResolveSession();
+            if (_session != null && _session.Started && _session.Runs.Count < 2)
+                await ResolveSession();
         }
 
-        private string CrawlFooter()
+        private async Task RenderAndEdit(Session session, bool ended, string resultText)
         {
-            int minutesLeft = (int)Math.Ceiling(Math.Max(0, (_session.CrawlEndsUtc - DateTime.UtcNow).TotalMinutes));
-            return $"Crawl ends in {minutesLeft} min. {_session.Runs.Count} still crawling";
+            byte[] picture = session.PictureOverride ?? RenderScene(session, ended).ToArray();
+            session.PictureOverride = null;
+            _images.Update(picture);
+
+            var embed = BuildDashboard(session, ended, resultText);
+            if (!string.IsNullOrEmpty(_pictureBaseUrl))
+                embed.WithImageUrl($"{_pictureBaseUrl.TrimEnd('/')}/dungeon/latest.png?v={_images.Version}");
+
+            try
+            {
+                if (session.Dashboard == null)
+                    session.Dashboard = await session.Channel.SendMessageAsync(embed: embed.Build());
+                else
+                    await session.Dashboard.ModifyAsync(props => props.Embed = embed.Build());
+            }
+            catch (Exception)
+            {
+                //the dashboard can be missing or unreachable, and the game state is still correct
+            }
+        }
+
+        private System.IO.MemoryStream RenderScene(Session session, bool ended)
+        {
+            var scene = new DungeonScene
+            {
+                Title = ended ? "DUNGEON OVER" : session.Started ? $"CRAWL: {MinutesLeft(session)} MIN" : "LOBBY",
+                Caption = session.Started ? session.Caption : "DUNGEON DOOR",
+                Sprite = session.Started ? session.Sprite : SpriteKind.None,
+                EnemyHp = session.EnemyHp,
+                EnemyMaxHp = session.EnemyMaxHp,
+                Footer = ended ? "Thanks for playing" : session.Started ? "Use .dng go, .dng cash, .dng drink, .dng buy" : $"Use .dng join. Buy-in ${session.BuyIn:N0}"
+            };
+            foreach (DungeonRun run in session.Runs.Values)
+                scene.Players.Add(new ScenePlayer { Name = run.Name, Hp = run.Hp, MaxHp = run.MaxHp, Floor = run.Floor, Haul = run.Haul });
+            scene.Players.AddRange(session.Departed);
+            return DungeonSceneRenderer.Render(scene);
+        }
+
+        private EmbedBuilder BuildDashboard(Session session, bool ended, string resultText)
+        {
+            string title = ended ? "Dungeon over"
+                : session.Started ? $"Dungeon crawl: {MinutesLeft(session)} min left"
+                : $"Dungeon lobby: {session.Runs.Count}/{MaxPlayers} players";
+
+            var embed = new EmbedBuilder()
+                .WithTitle(title)
+                .WithColor(ended ? Color.LightGrey : Color.DarkPurple);
+
+            if (!session.Started && !ended)
+                embed.WithDescription($"Type `.dng join` for the next {LobbyWait.TotalSeconds} seconds. The host can type `.dng start` to begin early. Buy-in ${session.BuyIn:N2} each.");
+            if (resultText != null)
+                embed.AddField("Result", resultText);
+
+            var players = new StringBuilder();
+            foreach (DungeonRun run in session.Runs.Values)
+                players.AppendLine($"**{run.Name}** · floor {run.Floor} · HP {run.Hp}/{run.MaxHp} · ${run.Haul:N2}");
+            foreach (ScenePlayer player in session.Departed)
+                players.AppendLine($"**{player.Name}** · {player.Status}");
+            if (players.Length == 0)
+                players.Append("No one yet.");
+            embed.AddField("Players", Trim(players.ToString(), 1000));
+
+            if (session.Log.Count > 0)
+                embed.AddField("Log", Trim(string.Join("\n", session.Log), 1000));
+
+            embed.WithFooter(ended ? "Session finished" : "Commands: .dng go · .dng cash · .dng drink · .dng buy · .dng status");
+            return embed;
+        }
+
+        private static string Trim(string text, int max)
+        {
+            return text.Length <= max ? text : "…" + text.Substring(text.Length - max + 1);
+        }
+
+        private void AddLog(string line)
+        {
+            if (_session == null || string.IsNullOrEmpty(line))
+                return;
+            _session.Log.Add(line);
+            while (_session.Log.Count > LogLines)
+                _session.Log.RemoveAt(0);
+        }
+
+        private static int MinutesLeft(Session session)
+        {
+            return (int)Math.Ceiling(Math.Max(0, (session.CrawlEndsUtc - DateTime.UtcNow).TotalMinutes));
         }
 
         private DungeonRun RunOf(ulong userId)
@@ -464,14 +439,29 @@ namespace DiscordBot.Games.Managers
             return _session != null && _session.Runs.TryGetValue(userId, out DungeonRun run) ? run : null;
         }
 
-        private string NotInThisDungeon()
+        private string NotInDungeonText()
         {
-            return $"You're not in this dungeon. It is {StateOf(_session)} in <#{_session.Channel.Id}>.";
+            return _session == null
+                ? NoRunMessage
+                : $"You're not in this dungeon. It is {StateOf(_session)} in <#{_session.Channel.Id}>.";
         }
 
         private static string StateOf(Session session)
         {
             return session.Started ? "running" : "in the lobby";
+        }
+
+        private static string RoomLabel(RoomType type)
+        {
+            switch (type)
+            {
+                case RoomType.Treasure: return "TREASURE";
+                case RoomType.Trap: return "TRAP";
+                case RoomType.Merchant: return "MERCHANT";
+                case RoomType.Shrine: return "SHRINE";
+                case RoomType.Gear: return "GEAR";
+                default: return "EMPTY ROOM";
+            }
         }
 
         private async Task PayOut(ulong userId, string name, double amount)
@@ -482,20 +472,19 @@ namespace DiscordBot.Games.Managers
             await _coinService.Update(userId, account.NetWorth, name);
         }
 
-        private static string StatusLine(DungeonRun run)
+        /// <summary>Posts a short message, then deletes it, so refusals don't stay in the channel.</summary>
+        private static async Task PostTransientAsync(IMessageChannel channel, string text)
         {
-            return $"Floor {run.Floor} | HP {Math.Max(0, run.Hp)} of {run.MaxHp} | Attack {run.Attack} | Defense {run.Defense} | " +
-                $"Haul ${run.Haul:N2} | Buy-in ${run.BuyIn:N2}";
-        }
-
-        private static string ActionsLine(DungeonRun run)
-        {
-            var actions = new List<string> { "`.dng go`", $"`.dng cash` to bank ${run.Haul:N2}", "`.dng drink`" };
-            if (run.CanLoot)
-                actions.Add($"`.dng loot` for ${LootBox.Cost(run.BuyIn):N2}");
-            if (run.Offer != PendingOffer.None)
-                actions.Add("`.dng buy`");
-            return "Next: " + string.Join(", ", actions) + ".";
+            try
+            {
+                IUserMessage note = await channel.SendMessageAsync(text);
+                await Task.Delay(TransientLifetime);
+                await note.DeleteAsync();
+            }
+            catch (Exception)
+            {
+                //the note is only a hint, so failing to post or delete it doesn't matter
+            }
         }
     }
 }
