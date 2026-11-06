@@ -28,6 +28,8 @@ namespace DiscordBot.Games.Managers
         public static readonly TimeSpan LobbyWait = TimeSpan.FromSeconds(60);
         public static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan TransientLifetime = TimeSpan.FromSeconds(15);
+        /// <summary>The PvP id of a solo run's shadow rival. It's never a player's id, since no player is 0.</summary>
+        private const ulong ShadowId = 0;
         private const string NoRunMessage = "No dungeon is open. Open a lobby with `.dng 1000`, where 1000 is the buy-in for each player.";
 
         private sealed class Session
@@ -215,36 +217,6 @@ namespace DiscordBot.Games.Managers
             });
         }
 
-        public Task Buy(ulong userId, string name, IMessageChannel channel)
-        {
-            return Attempt(userId, name, channel, () =>
-            {
-                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
-                if (!_session.Started)
-                    throw new BadInputException("The lobby hasn't started yet.");
-                if (run.Phase == RunPhase.InPool)
-                    throw new BadInputException("You're in the PvP pool, so you can't shop.");
-
-                run.TryBuyOffer(out string message);
-                return Task.FromResult($"{run.Name}: {message}");
-            });
-        }
-
-        public Task Drink(ulong userId, string name, IMessageChannel channel)
-        {
-            return Attempt(userId, name, channel, () =>
-            {
-                DungeonRun run = RunOf(userId) ?? throw new BadInputException(NotInDungeonText());
-                if (!_session.Started)
-                    throw new BadInputException("The lobby hasn't started yet.");
-                if (run.Phase == RunPhase.InPool)
-                    throw new BadInputException("You're in the PvP pool, so you can't drink now.");
-
-                run.TryDrink(out string message);
-                return Task.FromResult($"{run.Name}: {message}");
-            });
-        }
-
         /// <summary>Refreshes the dashboard. Anyone can use it, and it works from any channel.</summary>
         public Task Status(string name, IMessageChannel channel)
         {
@@ -367,22 +339,30 @@ namespace DiscordBot.Games.Managers
             if (!session.Runs.Values.All(r => r.Phase == RunPhase.InPool))
                 return;
 
-            var fighters = session.Runs.Values.Select(run => new PvpFighter
+            //a solo run has no rival in the pool, so its shadow with the same stats and HP takes the other side
+            var pooled = session.Runs.Values.ToList();
+            var fighters = pooled.Select(run => new PvpFighter
             {
                 UserId = run.UserId,
                 Name = run.Name,
                 Stats = run.CloneStats(),
                 Haul = run.TakeHaulIntoPool()
             }).ToList();
+            if (pooled.Count == 1)
+            {
+                DungeonRun solo = pooled[0];
+                fighters.Add(new PvpFighter { UserId = ShadowId, Name = $"{solo.Name}'s shadow", Stats = solo.CloneStats() });
+                AddLog($"{solo.Name} has no rival in the pool, so they face their own shadow.");
+            }
 
             PvpResult result = PvpArena.Resolve(fighters, _random);
             foreach (string line in result.Lines.Skip(Math.Max(0, result.Lines.Count - 4)))
                 AddLog(line);
 
-            foreach (PvpFighter fighter in fighters)
+            foreach (DungeonRun run in pooled)
             {
-                DungeonRun run = session.Runs[fighter.UserId];
-                if (result.Payouts.TryGetValue(fighter.UserId, out double won))
+                PvpFighter fighter = fighters.First(f => f.UserId == run.UserId);
+                if (result.Payouts.TryGetValue(run.UserId, out double won))
                 {
                     run.ReturnFromPool(won, fighter.Stats.Hp);
                     AddLog($"{run.Name} wins ${won:N2} and crawls on.");
@@ -453,7 +433,7 @@ namespace DiscordBot.Games.Managers
                 Sprite = session.Started ? session.Sprite : SpriteKind.None,
                 EnemyHp = session.EnemyHp,
                 EnemyMaxHp = session.EnemyMaxHp,
-                Footer = ended ? "Thanks for playing" : session.Started ? "Use .dng go, .dng cash, .dng fight, .dng drink, .dng buy" : $"Use .dng join. Buy-in ${session.BuyIn:N0}"
+                Footer = ended ? "Thanks for playing" : session.Started ? "Use .dng go, .dng cash, .dng fight" : $"Use .dng join. Buy-in ${session.BuyIn:N0}"
             };
             foreach (DungeonRun run in session.Runs.Values)
                 scene.Players.Add(new ScenePlayer { Name = run.Name, Hp = run.Hp, MaxHp = run.MaxHp, Floor = run.Floor, Haul = run.Haul, Status = PhaseLabel(run) });
@@ -488,7 +468,7 @@ namespace DiscordBot.Games.Managers
             if (session.Log.Count > 0)
                 embed.AddField("Log", Trim(string.Join("\n", session.Log), 1000));
 
-            embed.WithFooter(ended ? "Session finished" : "Commands: .dng go · .dng cash · .dng fight · .dng drink · .dng buy · .dng status");
+            embed.WithFooter(ended ? "Session finished" : "Commands: .dng go · .dng cash · .dng fight · .dng status");
             return embed;
         }
 
@@ -539,8 +519,7 @@ namespace DiscordBot.Games.Managers
             {
                 case RoomType.Treasure: return "TREASURE";
                 case RoomType.Trap: return "TRAP";
-                case RoomType.Merchant: return "MERCHANT";
-                case RoomType.Shrine: return "SHRINE";
+                case RoomType.Quiet: return "QUIET";
                 case RoomType.Gear: return "GEAR";
                 default: return "EMPTY ROOM";
             }

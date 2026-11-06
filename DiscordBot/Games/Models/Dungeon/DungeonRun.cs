@@ -4,10 +4,7 @@ using System.Collections.Generic;
 
 namespace DiscordBot.Games.Models.Dungeon
 {
-    public enum RoomType { Monster, Boss, Treasure, Trap, Merchant, Shrine, Gear, Empty }
-
-    /// <summary>What the merchant or shrine is offering right now. Cleared as soon as the next room is entered.</summary>
-    public enum PendingOffer { None, Potion, Blessing }
+    public enum RoomType { Monster, Boss, Treasure, Trap, Quiet, Gear, Empty }
 
     /// <summary>
     /// Where a run is. A run crawls a block of 10 floors, then waits at a checkpoint to cash out or fight.
@@ -43,9 +40,6 @@ namespace DiscordBot.Games.Models.Dungeon
         public const int BossEvery = 5;
         public const int StartingHp = 30;
         public const int StartingAttack = 6;
-        public const int PotionHealing = 12;
-        public const int BlessingAttackBonus = 2;
-        public const double BlessingHaulCost = 0.20;
         /// <summary>
         /// Extra monster strength per block. Loot piles up for players who survive, so each block gets harder to hold the odds near 50%, 25%, 12.5%.
         /// Tuned with the balance sim, and checked by the seeded odds test.
@@ -98,15 +92,11 @@ namespace DiscordBot.Games.Models.Dungeon
         public int MaxHp => _me.MaxHp;
         public int Attack => _me.Attack;
         public int Defense => _me.Defense;
-        public int Potions { get; private set; }
         public int Kills { get; private set; }
-        public PendingOffer Offer { get; private set; } = PendingOffer.None;
         /// <summary>Loot picked up so far, in drop order.</summary>
         public IReadOnlyList<LootItem> Items => _items;
         /// <summary>Percent more gold from rooms, from loot.</summary>
         public int GoldFinderPercent { get; private set; }
-        /// <summary>Extra HP each potion heals, from loot.</summary>
-        public int PotionPowerBonus { get; private set; }
         public bool Alive => _me.Alive;
         /// <summary>True once the run is finished, by death or by cashing out.</summary>
         public bool IsOver { get; private set; }
@@ -117,10 +107,6 @@ namespace DiscordBot.Games.Models.Dungeon
         public int BlockIndex => Floor <= 0 ? 0 : (Floor - 1) / FloorsPerBlock;
         public int NextFloor => Floor + 1;
         public bool NextIsBoss => NextFloor % BossEvery == 0;
-
-        /// <summary>Potions cost a slice of the buy-in, so a bigger stake buys more useful potions.</summary>
-        public double PotionPrice => Math.Max(1, Math.Round(BuyIn * 0.04, 2));
-        public double BlessingPrice => Math.Round(Haul * BlessingHaulCost, 2);
 
         /// <summary>A copy of this run's combat stats, for PvP. Changing the copy doesn't change the run.</summary>
         public Combatant CloneStats()
@@ -195,69 +181,6 @@ namespace DiscordBot.Games.Models.Dungeon
             IsOver = true;
         }
 
-        /// <summary>Spends the pending merchant or shrine offer. Returns false if nothing is for sale or the haul can't cover it.</summary>
-        public bool TryBuyOffer(out string message)
-        {
-            message = null;
-            if (!Alive)
-            {
-                message = "You are down. Nothing can be bought.";
-                return false;
-            }
-
-            switch (Offer)
-            {
-                case PendingOffer.Potion:
-                    if (Haul < PotionPrice)
-                    {
-                        message = $"You need ${PotionPrice:N2} of haul for a potion. You have ${Haul:N2}.";
-                        return false;
-                    }
-                    Haul = Math.Round(Haul - PotionPrice, 2);
-                    Potions++;
-                    Offer = PendingOffer.None;
-                    message = $"You buy a potion for ${PotionPrice:N2}. You now have {Potions}.";
-                    return true;
-                case PendingOffer.Blessing:
-                    double cost = BlessingPrice;
-                    Haul = Math.Round(Haul - cost, 2);
-                    _me.Attack += BlessingAttackBonus;
-                    Offer = PendingOffer.None;
-                    message = $"The shrine takes ${cost:N2} from your haul. Your attack rises to {Attack}.";
-                    return true;
-                default:
-                    message = "Nothing is for sale right now.";
-                    return false;
-            }
-        }
-
-        /// <summary>Drinks a potion. Returns false if there are none or you're already at full health.</summary>
-        public bool TryDrink(out string message)
-        {
-            message = null;
-            if (!Alive)
-            {
-                message = "You are down. You can't drink.";
-                return false;
-            }
-            if (Potions <= 0)
-            {
-                message = "You have no potions.";
-                return false;
-            }
-            if (Hp >= MaxHp)
-            {
-                message = "You're already at full health.";
-                return false;
-            }
-
-            Potions--;
-            int before = Hp;
-            _me.Heal(PotionHealing + PotionPowerBonus);
-            message = $"You drink a potion and heal {Hp - before} HP.";
-            return true;
-        }
-
         /// <summary>Ends the run and returns the haul to bank. The caller pays it out.</summary>
         public double CashOut()
         {
@@ -308,7 +231,6 @@ namespace DiscordBot.Games.Models.Dungeon
             if (IsOver)
                 throw new InvalidOperationException("This run is over.");
 
-            Offer = PendingOffer.None;
             Floor++;
             var result = new RoomResult { Type = PickRoom() };
             LastRoom = result.Type;
@@ -335,20 +257,8 @@ namespace DiscordBot.Games.Models.Dungeon
                 case RoomType.Trap:
                     SpringTrap(result);
                     break;
-                case RoomType.Merchant:
-                    Offer = PendingOffer.Potion;
-                    result.Lines.Add($"**Floor {Floor}:** a merchant sells potions for ${PotionPrice:N2}. Use `.dng buy` to take one.");
-                    break;
-                case RoomType.Shrine:
-                    if (Haul >= 1)
-                    {
-                        Offer = PendingOffer.Blessing;
-                        result.Lines.Add($"**Floor {Floor}:** a shrine offers +{BlessingAttackBonus} attack for ${BlessingPrice:N2} of your haul. Use `.dng buy` to accept.");
-                    }
-                    else
-                    {
-                        result.Lines.Add($"**Floor {Floor}:** an empty shrine. It wants gold you don't have, so you walk on.");
-                    }
+                case RoomType.Quiet:
+                    result.Lines.Add($"**Floor {Floor}:** a quiet corridor. Nothing here.");
                     break;
                 case RoomType.Gear:
                     FindGear(result);
@@ -378,8 +288,7 @@ namespace DiscordBot.Games.Models.Dungeon
             if (roll < 0.40) return RoomType.Monster;
             if (roll < 0.52) return RoomType.Treasure;
             if (roll < 0.64) return RoomType.Trap;
-            if (roll < 0.72) return RoomType.Merchant;
-            if (roll < 0.80) return RoomType.Shrine;
+            if (roll < 0.80) return RoomType.Quiet;
             if (roll < 0.88) return RoomType.Gear;
             return RoomType.Empty;
         }
@@ -428,7 +337,6 @@ namespace DiscordBot.Games.Models.Dungeon
                     case LootEffect.Thorns: _me.Thorns += roll.Amount; break;
                     case LootEffect.Regen: _me.Regen += roll.Amount; break;
                     case LootEffect.GoldFinder: GoldFinderPercent += roll.Amount; break;
-                    case LootEffect.PotionPower: PotionPowerBonus += roll.Amount; break;
                     case LootEffect.SecondWind: _me.SecondWindHeal = Math.Max(_me.SecondWindHeal, roll.Amount); break;
                 }
             }
@@ -527,19 +435,13 @@ namespace DiscordBot.Games.Models.Dungeon
                 {
                     _me.MaxHp += 5;
                     _me.Hp = _me.MaxHp;
-                    Potions++;
-                    result.Lines.Add("The boss drops a potion, you are fully healed, and max HP rises by 5.");
+                    result.Lines.Add("The boss's hoard heals you to full, and max HP rises by 5.");
                     AddGold(result, Gold(0.6 + _random.NextDouble() * 0.3));
                     MaybeDrop(result, 1, bossDrop: true);
                 }
                 else
                 {
                     AddGold(result, Gold(0.05 + _random.NextDouble() * 0.07));
-                    if (_random.NextDouble() < 0.25)
-                    {
-                        Potions++;
-                        result.Lines.Add("It drops a potion.");
-                    }
                     MaybeDrop(result, dropChance);
                 }
             }

@@ -298,12 +298,6 @@ namespace DiscordBot.Managers
                 case "cash":
                     await _dungeonManager.Cash(userId, name, channel);
                     break;
-                case "buy":
-                    await _dungeonManager.Buy(userId, name, channel);
-                    break;
-                case "drink":
-                    await _dungeonManager.Drink(userId, name, channel);
-                    break;
                 case "fight":
                     await _dungeonManager.Fight(userId, name, channel);
                     break;

@@ -6,7 +6,7 @@ namespace DiscordBot.Games.Models.Dungeon
 {
     public enum LootTier { Common, Rare, Epic }
 
-    public enum LootEffect { Attack, Defense, MaxHp, CritBonus, Dodge, Accuracy, Lifesteal, Thorns, Regen, GoldFinder, PotionPower, SecondWind }
+    public enum LootEffect { Attack, Defense, MaxHp, CritBonus, Dodge, Accuracy, Lifesteal, Thorns, Regen, GoldFinder, SecondWind }
 
     public enum ItemSprite { Sword, Shield, Amulet, Boots, Ring, Potion }
 
@@ -29,7 +29,6 @@ namespace DiscordBot.Games.Models.Dungeon
                 case LootEffect.Thorns: return $"Thorns {Amount}% of damage taken";
                 case LootEffect.Regen: return $"Regenerates {Amount} HP each round";
                 case LootEffect.GoldFinder: return $"+{Amount}% gold from rooms";
-                case LootEffect.PotionPower: return $"Potions heal {Amount} more";
                 case LootEffect.SecondWind: return $"Second Wind: heals {Amount} HP once per fight at low HP";
                 default: return Effect.ToString();
             }
@@ -114,7 +113,6 @@ namespace DiscordBot.Games.Models.Dungeon
                 case LootEffect.Thorns: return tier == LootTier.Rare ? (10, 15) : (18, 25);
                 case LootEffect.Regen: return tier == LootTier.Common ? (1, 1) : tier == LootTier.Rare ? (2, 3) : (4, 6);
                 case LootEffect.GoldFinder: return tier == LootTier.Common ? (10, 15) : tier == LootTier.Rare ? (20, 30) : (40, 60);
-                case LootEffect.PotionPower: return tier == LootTier.Common ? (3, 5) : tier == LootTier.Rare ? (6, 10) : (14, 20);
                 case LootEffect.SecondWind: return tier == LootTier.Rare ? (12, 15) : (22, 28);
                 default: return (1, 1);
             }

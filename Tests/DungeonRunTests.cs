@@ -227,22 +227,5 @@ namespace Tests
             Assert.Equal(100, payouts.Values.Sum(), 2);
         }
 
-        [Fact]
-        public void Buying_WithNothingOnOffer_Fails()
-        {
-            Assert.False(RunFor(1).TryBuyOffer(out _));
-        }
-
-        [Fact]
-        public void Drinking_WithNoPotions_Fails()
-        {
-            Assert.False(RunFor(1).TryDrink(out _));
-        }
-
-        [Fact]
-        public void PotionPrice_ScalesWithBuyIn()
-        {
-            Assert.True(RunFor(1, 10000).PotionPrice > RunFor(1, 1000).PotionPrice);
-        }
     }
 }
