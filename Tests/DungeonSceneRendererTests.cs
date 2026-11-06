@@ -96,27 +96,4 @@ namespace Tests
             }
         }
     }
-
-    public class DungeonImageStoreTests
-    {
-        [Fact]
-        public void Store_HasNoPictureUntilOneIsSet()
-        {
-            var store = new DungeonImageStore();
-
-            Assert.Null(store.Latest());
-            Assert.Equal(0, store.Version);
-        }
-
-        [Fact]
-        public void Update_KeepsTheLatestPictureAndBumpsTheVersion()
-        {
-            var store = new DungeonImageStore();
-            store.Update(new byte[] { 1, 2, 3 });
-            store.Update(new byte[] { 9 });
-
-            Assert.Equal(new byte[] { 9 }, store.Latest());
-            Assert.Equal(2, store.Version);
-        }
-    }
 }

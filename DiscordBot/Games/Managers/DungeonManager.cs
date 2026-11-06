@@ -52,19 +52,15 @@ namespace DiscordBot.Games.Managers
         }
 
         private readonly CoinService _coinService;
-        private readonly DungeonImageStore _images;
-        private readonly string _pictureBaseUrl;
         /// <summary>The only session open at a time, or null when none is open.</summary>
         private Session _session;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private readonly Random _random = new Random();
         private int _generationCounter;
 
-        public DungeonManager(CoinService coinService, DungeonImageStore images)
+        public DungeonManager(CoinService coinService)
         {
             _coinService = coinService;
-            _images = images;
-            _pictureBaseUrl = Environment.GetEnvironmentVariable("DUNGEON_IMAGE_BASE_URL");
         }
 
         /// <summary>Opens the lobby and posts the dashboard. Refused while another session is open.</summary>
@@ -348,22 +344,31 @@ namespace DiscordBot.Games.Managers
         {
             byte[] picture = session.PictureOverride ?? RenderScene(session, ended).ToArray();
             session.PictureOverride = null;
-            _images.Update(picture);
 
-            var embed = BuildDashboard(session, ended, resultText);
-            if (!string.IsNullOrEmpty(_pictureBaseUrl))
-                embed.WithImageUrl($"{_pictureBaseUrl.TrimEnd('/')}/dungeon/latest.png?v={_images.Version}");
-
+            //Discord can't swap an attached file on an existing message, so each refresh posts a new dashboard and removes the old one
+            EmbedBuilder embed = BuildDashboard(session, ended, resultText).WithImageUrl("attachment://dungeon.png");
+            IUserMessage previous = session.Dashboard;
             try
             {
-                if (session.Dashboard == null)
-                    session.Dashboard = await session.Channel.SendMessageAsync(embed: embed.Build());
-                else
-                    await session.Dashboard.ModifyAsync(props => props.Embed = embed.Build());
+                using (var stream = new System.IO.MemoryStream(picture))
+                    session.Dashboard = await session.Channel.SendFileAsync(stream, "dungeon.png", embed: embed.Build());
             }
             catch (Exception)
             {
-                //the dashboard can be missing or unreachable, and the game state is still correct
+                //the new dashboard couldn't be posted, so keep the old one and the game state is still correct
+                return;
+            }
+
+            if (previous != null)
+            {
+                try
+                {
+                    await previous.DeleteAsync();
+                }
+                catch (Exception)
+                {
+                    //the old dashboard may already be gone
+                }
             }
         }
 

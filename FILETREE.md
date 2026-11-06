@@ -46,7 +46,6 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
     DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player
     LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
-    DungeonImageStore.cs       latest dashboard picture and its version, served by the web host
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search

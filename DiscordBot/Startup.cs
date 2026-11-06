@@ -54,7 +54,6 @@ namespace DiscordBot
             services.AddSingleton<BattleArenaManager>();
             services.AddSingleton<DuckRaceManager>();
             services.AddSingleton<DungeonManager>();
-            services.AddSingleton<DungeonImageStore>();
             services.AddScoped<DuckDuckGoService>();
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();
@@ -140,7 +139,6 @@ namespace DiscordBot
                 .UseCors("CorsPolicy")
                 .UseEndpoints(endpoints =>
                 {
-                    endpoints.MapControllers();
                     endpoints.MapDefaultControllerRoute();
                 });
         }
