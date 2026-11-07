@@ -209,7 +209,7 @@ namespace Tests
             Assert.Throws<InvalidOperationException>(() => market.AddShares(1, "SCORT", -1));
         }
 
-        /// <summary>Tier 3 has $50k depth, so a $50k trade moves the price by the full coefficient, 5%.</summary>
+        /// <summary>A stock with the default 100k shares, so trading 10% of them moves the price by about 5%.</summary>
         private static Stock Tradable(int tier = 3, double price = 50) =>
             new Stock { Symbol = "X", RiskTier = tier, Price = price, FairPrice = price, PreviousPrice = price, BasePrice = price };
 
@@ -235,6 +235,19 @@ namespace Tests
 
             //4x the shares is 2x the move, because the impact grows with the square root of the trade's value
             Assert.Equal(2 * small.Impact, big.Impact, 4);
+        }
+
+        [Fact]
+        public void Trading_SameShareCountMovesLessInAStockWithMoreShares()
+        {
+            var thin = Tradable();
+            var deep = Tradable();
+            deep.SharesOutstanding = 10 * thin.SharesOutstanding;
+            thin.ApplyTrade(1000);
+            deep.ApplyTrade(1000);
+
+            //ten times the shares in the market, so the same trade is a tenth of the size
+            Assert.Equal(thin.Impact / Math.Sqrt(10), deep.Impact, 6);
         }
 
         [Fact]

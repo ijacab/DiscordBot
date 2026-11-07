@@ -13,8 +13,8 @@ namespace DiscordBot.Models
         /// <summary>One price per 5 minute tick, so this is 7 days.</summary>
         public const int MaxHistoryPoints = 7 * 24 * 12;
 
-        /// <summary>How far a trade moves the price: impact = this × √(trade value ÷ depth for the tier).</summary>
-        public const double ImpactCoefficient = 0.05;
+        /// <summary>How far a trade moves the price: impact = this × √(shares traded ÷ shares outstanding). Trading 10% of the shares moves it about 5%.</summary>
+        public const double ImpactCoefficient = 0.16;
         /// <summary>Share of the temporary trading impact left after each 5 minute tick, so it fades over a few ticks.</summary>
         public const double ImpactDecayPerTick = 0.5;
         /// <summary>Largest move trading can cause in either direction, as a fraction of the fair price.</summary>
@@ -27,15 +27,8 @@ namespace DiscordBot.Models
         /// <summary>The sell tax on a gross sale value, to the cent.</summary>
         public static double TaxOn(double grossSale) => Math.Round(grossSale * SellTaxRate, 2);
 
-        /// <summary>Dollar value of trades that moves the price by <see cref="ImpactCoefficient"/>. Riskier tiers are thinner, so they move more.</summary>
-        public static readonly IReadOnlyDictionary<int, double> DepthByTier = new Dictionary<int, double>
-        {
-            { 1, 200_000 },
-            { 2, 100_000 },
-            { 3, 50_000 },
-            { 4, 25_000 },
-            { 5, 10_000 }
-        };
+        /// <summary>Shares a new stock is issued with. Trades are measured against this, so a bigger float takes more buying to move.</summary>
+        public const double DefaultSharesOutstanding = 100_000;
 
         /// <summary>Max swing (fraction of price, up or down) allowed in a single 5 minute tick for each risk tier.</summary>
         public static readonly IReadOnlyDictionary<int, double> MaxSwingByTier = new Dictionary<int, double>
@@ -59,6 +52,8 @@ namespace DiscordBot.Models
         public double FairPrice { get; set; }
         /// <summary>Signed temporary move caused by trading, as a fraction of <see cref="FairPrice"/>. Fades on each tick.</summary>
         public double Impact { get; set; }
+        /// <summary>Total shares in the market for this stock. Trades are sized against it.</summary>
+        public double SharesOutstanding { get; set; } = DefaultSharesOutstanding;
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
@@ -91,8 +86,7 @@ namespace DiscordBot.Models
         /// </summary>
         public (double Fill, double NewImpact) PreviewTrade(int shares)
         {
-            double value = Math.Abs(shares) * Price;
-            double move = ImpactCoefficient * Math.Sqrt(value / DepthByTier[RiskTier]) * Math.Sign(shares);
+            double move = ImpactCoefficient * Math.Sqrt(Math.Abs(shares) / SharesOutstanding) * Math.Sign(shares);
             double newImpact = Math.Max(-MaxImpact, Math.Min(MaxImpact, Impact + move));
             double after = PriceAt(FairPrice, newImpact);
             double mid = (Price + after) / 2;
