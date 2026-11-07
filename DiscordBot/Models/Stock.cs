@@ -13,6 +13,23 @@ namespace DiscordBot.Models
         /// <summary>One price per 5 minute tick, so this is 7 days.</summary>
         public const int MaxHistoryPoints = 7 * 24 * 12;
 
+        /// <summary>How far a trade moves the price: impact = this × √(trade value ÷ depth for the tier).</summary>
+        public const double ImpactCoefficient = 0.05;
+        /// <summary>Share of the temporary trading impact left after each 5 minute tick, so it fades over a few ticks.</summary>
+        public const double ImpactDecayPerTick = 0.5;
+        /// <summary>Largest move trading can cause in either direction, as a fraction of the fair price.</summary>
+        public const double MaxImpact = 0.5;
+
+        /// <summary>Dollar value of trades that moves the price by <see cref="ImpactCoefficient"/>. Riskier tiers are thinner, so they move more.</summary>
+        public static readonly IReadOnlyDictionary<int, double> DepthByTier = new Dictionary<int, double>
+        {
+            { 1, 200_000 },
+            { 2, 100_000 },
+            { 3, 50_000 },
+            { 4, 25_000 },
+            { 5, 10_000 }
+        };
+
         /// <summary>Max swing (fraction of price, up or down) allowed in a single 5 minute tick for each risk tier.</summary>
         public static readonly IReadOnlyDictionary<int, double> MaxSwingByTier = new Dictionary<int, double>
         {
@@ -26,31 +43,86 @@ namespace DiscordBot.Models
         public string Symbol { get; set; }
         public string Name { get; set; }
         public int RiskTier { get; set; }
+        /// <summary>The quoted price everyone sees and trades at. This is <see cref="FairPrice"/> plus the trading <see cref="Impact"/>.</summary>
         public double Price { get; set; }
         public double PreviousPrice { get; set; }
         /// <summary>The price the stock is pulled back towards, so percentage swings can't compound into a slide to zero.</summary>
         public double BasePrice { get; set; }
-        /// <summary>Price at each tick, oldest first.</summary>
+        /// <summary>The tick-driven price, before any move caused by trading.</summary>
+        public double FairPrice { get; set; }
+        /// <summary>Signed temporary move caused by trading, as a fraction of <see cref="FairPrice"/>. Fades on each tick.</summary>
+        public double Impact { get; set; }
+        /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
         public double PercentChange => PreviousPrice <= 0 ? 0 : (Price - PreviousPrice) / PreviousPrice * 100;
 
         /// <summary>
-        /// Moves the price by a random amount within this stock's tier swing, then pulls it back towards <see cref="BasePrice"/>.
-        /// <paramref name="random"/> returns a value in [0, 1).
+        /// Moves the fair price by a random amount within this stock's tier swing, pulls it back towards <see cref="BasePrice"/>,
+        /// then lets the trading impact fade. <paramref name="random"/> returns a value in [0, 1).
         /// </summary>
         public void ApplyTick(Func<double> random)
         {
             double maxSwing = MaxSwingByTier[RiskTier];
             double swing = (random() * 2 - 1) * maxSwing; //uniform in [-maxSwing, +maxSwing)
-            double moved = Price * (1 + swing);
+            double moved = FairPrice * (1 + swing);
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
             if (BasePrice > 0)
                 moved *= Math.Pow(BasePrice / moved, MeanReversionRate);
 
             PreviousPrice = Price;
-            Price = Math.Max(MinPrice, Math.Round(moved, 2));
+            FairPrice = Math.Max(MinPrice, Math.Round(moved, 2));
+            Impact *= ImpactDecayPerTick;
+            RefreshQuote();
         }
+
+        /// <summary>
+        /// The fill price for a trade of <paramref name="shares"/> (negative to sell) and the impact it would leave.
+        /// The fill is the midpoint of the quote before and after the move, so a big order pays for part of its own impact.
+        /// Does not change the stock.
+        /// </summary>
+        public (double Fill, double NewImpact) PreviewTrade(int shares)
+        {
+            double value = Math.Abs(shares) * Price;
+            double move = ImpactCoefficient * Math.Sqrt(value / DepthByTier[RiskTier]) * Math.Sign(shares);
+            double newImpact = Math.Max(-MaxImpact, Math.Min(MaxImpact, Impact + move));
+            double after = PriceAt(FairPrice, newImpact);
+            return (Math.Round((Price + after) / 2, 2), newImpact);
+        }
+
+        /// <summary>Records a trade's impact on the quoted price and returns the price it filled at.</summary>
+        public double ApplyTrade(int shares)
+        {
+            var (fill, newImpact) = PreviewTrade(shares);
+            Impact = newImpact;
+            RefreshQuote();
+            return fill;
+        }
+
+        /// <summary>
+        /// The largest number of shares whose cost fits in <paramref name="cash"/>. Cost rises with size because of impact,
+        /// so this searches rather than dividing. Buying pushes the fill up, so the price is an upper bound.
+        /// </summary>
+        public int MaxAffordableShares(double cash)
+        {
+            if (cash < Price) return 0;
+            int low = 0;
+            int high = (int)Math.Min(int.MaxValue, Math.Floor(cash / Price));
+            while (low < high)
+            {
+                int mid = low + (high - low + 1) / 2;
+                double cost = Math.Round(mid * PreviewTrade(mid).Fill, 2);
+                if (cost <= cash) low = mid;
+                else high = mid - 1;
+            }
+            return low;
+        }
+
+        /// <summary>The quote for a fair price and impact, never below <see cref="MinPrice"/>.</summary>
+        public static double PriceAt(double fairPrice, double impact) =>
+            Math.Max(MinPrice, Math.Round(fairPrice * (1 + impact), 2));
+
+        public void RefreshQuote() => Price = PriceAt(FairPrice, Impact);
 
         public void RecordHistory()
         {

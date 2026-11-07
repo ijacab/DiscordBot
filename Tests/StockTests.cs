@@ -24,7 +24,7 @@ namespace Tests
         {
             foreach (double roll in new[] { 0.0, 0.25, 0.5, 0.999999 })
             {
-                var stock = new Stock { Symbol = "X", RiskTier = tier, Price = 100, PreviousPrice = 100 };
+                var stock = new Stock { Symbol = "X", RiskTier = tier, Price = 100, PreviousPrice = 100, FairPrice = 100 };
                 stock.ApplyTick(() => roll);
                 Assert.InRange(stock.Price, 100 * (1 - maxSwing) - 0.01, 100 * (1 + maxSwing) + 0.01);
                 Assert.Equal(100, stock.PreviousPrice);
@@ -34,7 +34,7 @@ namespace Tests
         [Fact]
         public void Tick_NeverDropsBelowMinPrice()
         {
-            var stock = new Stock { Symbol = "X", RiskTier = 5, Price = 1.0, PreviousPrice = 1.0 };
+            var stock = new Stock { Symbol = "X", RiskTier = 5, Price = 1.0, PreviousPrice = 1.0, FairPrice = 1.0 };
             for (int i = 0; i < 50; i++)
                 stock.ApplyTick(() => 0.0); //worst case every time
             Assert.Equal(Stock.MinPrice, stock.Price);
@@ -43,7 +43,7 @@ namespace Tests
         [Fact]
         public void Tick_PullsTowardBasePrice()
         {
-            var stock = new Stock { Symbol = "X", RiskTier = 1, Price = 50, PreviousPrice = 50, BasePrice = 100 };
+            var stock = new Stock { Symbol = "X", RiskTier = 1, Price = 50, PreviousPrice = 50, FairPrice = 50, BasePrice = 100 };
             stock.ApplyTick(() => 0.5); //no swing, so only the pull back towards the base
             Assert.InRange(stock.Price, 50.01, 100);
         }
@@ -52,7 +52,7 @@ namespace Tests
         public void Tick_DoesNotDecayOverManyRandomTicks()
         {
             var random = new Random(42);
-            var stock = new Stock { Symbol = "X", RiskTier = 5, Price = 10, PreviousPrice = 10, BasePrice = 10 };
+            var stock = new Stock { Symbol = "X", RiskTier = 5, Price = 10, PreviousPrice = 10, FairPrice = 10, BasePrice = 10 };
             double logSum = 0;
             int count = 0;
             for (int i = 0; i < 100_000; i++)
@@ -207,6 +207,91 @@ namespace Tests
             market.AddShares(1, "SCORT", -3);
             Assert.Equal(0, market.GetShares(1, "SCORT"));
             Assert.Throws<InvalidOperationException>(() => market.AddShares(1, "SCORT", -1));
+        }
+
+        /// <summary>Tier 3 has $50k depth, so a $50k trade moves the price by the full coefficient, 5%.</summary>
+        private static Stock Tradable(int tier = 3, double price = 50) =>
+            new Stock { Symbol = "X", RiskTier = tier, Price = price, FairPrice = price, PreviousPrice = price, BasePrice = price };
+
+        [Fact]
+        public void Trading_BuyingPushesThePriceUpAndSellingPushesItDown()
+        {
+            var stock = Tradable();
+            stock.ApplyTrade(1000);
+            double afterBuy = stock.Price;
+            Assert.True(afterBuy > 50);
+
+            stock.ApplyTrade(-1000);
+            Assert.True(stock.Price < afterBuy);
+        }
+
+        [Fact]
+        public void Trading_BiggerTradesMoveThePriceFurther()
+        {
+            var small = Tradable();
+            var big = Tradable();
+            small.ApplyTrade(100);
+            big.ApplyTrade(400);
+
+            //4x the shares is 2x the move, because the impact grows with the square root of the trade's value
+            Assert.Equal(2 * small.Impact, big.Impact, 4);
+        }
+
+        [Fact]
+        public void Trading_ImpactFadesOnEachTick()
+        {
+            var stock = Tradable();
+            stock.ApplyTrade(1000);
+            double impact = stock.Impact;
+
+            stock.ApplyTick(() => 0.5); //no swing, so only the decay moves
+            Assert.Equal(impact * Stock.ImpactDecayPerTick, stock.Impact, 6);
+
+            for (int i = 0; i < 10; i++)
+                stock.ApplyTick(() => 0.5);
+            Assert.InRange(stock.Impact, 0, impact * 0.01);
+        }
+
+        [Fact]
+        public void Trading_ImpactIsCappedInBothDirections()
+        {
+            var stock = Tradable(tier: 5, price: 10);
+            stock.ApplyTrade(100_000_000);
+            Assert.Equal(Stock.MaxImpact, stock.Impact, 6);
+
+            stock.ApplyTrade(-300_000_000);
+            Assert.Equal(-Stock.MaxImpact, stock.Impact, 6);
+        }
+
+        [Fact]
+        public void Trading_FillIsBetweenThePriceBeforeAndAfterTheTrade()
+        {
+            var stock = Tradable();
+            double before = stock.Price;
+            double fill = stock.ApplyTrade(1000);
+
+            Assert.InRange(fill, before, stock.Price);
+        }
+
+        [Fact]
+        public void Trading_BuyingAndSellingInOneTickCostsAlmostNothing()
+        {
+            var stock = Tradable();
+            double bought = stock.ApplyTrade(1000);
+            double sold = stock.ApplyTrade(-1000);
+
+            Assert.True(Math.Abs(bought - sold) < 0.1, $"round trip cost {bought - sold:N2} a share");
+        }
+
+        [Fact]
+        public void Trading_MaxAffordableSharesNeverSpendsMoreThanTheCash()
+        {
+            var stock = Tradable(tier: 5, price: 10);
+            int max = stock.MaxAffordableShares(1000);
+
+            Assert.True(max >= 1);
+            Assert.True(Math.Round(max * stock.PreviewTrade(max).Fill, 2) <= 1000);
+            Assert.True(Math.Round((max + 1) * stock.PreviewTrade(max + 1).Fill, 2) > 1000);
         }
     }
 

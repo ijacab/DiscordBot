@@ -91,7 +91,7 @@ namespace DiscordBot.Models
         public static StockMarket CreateDefault()
         {
             Stock S(string symbol, string name, int tier, double price) =>
-                new Stock { Symbol = symbol, Name = name, RiskTier = tier, Price = price, PreviousPrice = price, BasePrice = price, History = new List<double> { price } };
+                new Stock { Symbol = symbol, Name = name, RiskTier = tier, Price = price, PreviousPrice = price, BasePrice = price, FairPrice = price, History = new List<double> { price } };
 
             return new StockMarket
             {

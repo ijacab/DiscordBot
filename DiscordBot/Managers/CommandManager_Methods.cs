@@ -387,7 +387,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (stock, shares, cost) = _stockService.Buy(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(cost)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {shares} share(s) of {stock.Symbol} at an average ${cost / shares:N2} for ${FormatHelper.GetCommaNumber(cost)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         private async Task SellStock(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -399,7 +399,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (stock, shares, proceeds) = _stockService.Sell(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at ${stock.Price:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${proceeds / shares:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         //circles matching StockChart.SeriesColors, in the same order

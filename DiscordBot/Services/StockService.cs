@@ -32,7 +32,7 @@ namespace DiscordBot.Services
             }
             else
             {
-                FillMissingBasePrices();
+                FillMissingFields();
             }
         }
 
@@ -82,18 +82,20 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? (int)Math.Floor(account.NetWorth / stock.Price)
+                    ? stock.MaxAffordableShares(account.NetWorth)
                     : ParseShares(amount);
 
                 if (shares < 1)
                     throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${stock.Price:N2}).");
 
-                double cost = Math.Round(shares * stock.Price, 2);
+                double fill = stock.PreviewTrade(shares).Fill;
+                double cost = Math.Round(shares * fill, 2);
                 if (cost > account.NetWorth)
                     throw new BadInputException($"{shares} shares of {stock.Symbol} cost ${cost:N2} but you only have ${account.NetWorth:N2}.");
 
+                stock.ApplyTrade(shares);
                 account.NetWorth -= cost;
-                _market.RecordPurchase(account.UserId, stock.Symbol, shares, stock.Price);
+                _market.RecordPurchase(account.UserId, stock.Symbol, shares, fill);
                 Save();
                 return PersistAccount(account, (stock, shares, cost));
             }
@@ -112,7 +114,9 @@ namespace DiscordBot.Services
                 if (shares > owned)
                     throw new BadInputException($"You only own {owned} shares of {stock.Symbol}.");
 
-                double proceeds = Math.Round(shares * stock.Price, 2);
+                double fill = stock.PreviewTrade(-shares).Fill;
+                double proceeds = Math.Round(shares * fill, 2);
+                stock.ApplyTrade(-shares);
                 account.NetWorth += proceeds;
                 _market.AddShares(account.UserId, stock.Symbol, -shares);
                 Save();
@@ -120,12 +124,20 @@ namespace DiscordBot.Services
             }
         }
 
-        /// <summary>Markets saved before base prices existed get the default base price for their symbol.</summary>
-        private void FillMissingBasePrices()
+        /// <summary>
+        /// Older markets lack base prices (given the default for their symbol) and fair prices. Their quote is the fair price,
+        /// because they never had trading impact.
+        /// </summary>
+        private void FillMissingFields()
         {
             var defaults = StockMarket.CreateDefault();
-            foreach (var stock in _market.Stocks.Where(s => s.BasePrice <= 0))
-                stock.BasePrice = defaults.Find(stock.Symbol)?.BasePrice ?? stock.Price;
+            foreach (var stock in _market.Stocks)
+            {
+                if (stock.BasePrice <= 0)
+                    stock.BasePrice = defaults.Find(stock.Symbol)?.BasePrice ?? stock.Price;
+                if (stock.FairPrice <= 0)
+                    stock.FairPrice = stock.Price;
+            }
         }
 
         private static int ParseShares(string amount)
