@@ -286,6 +286,27 @@ namespace Tests
         }
 
         [Fact]
+        public void SellTax_IsTwoPercentOfTheGrossSale()
+        {
+            Assert.Equal(20, Stock.TaxOn(1000));
+            Assert.Equal(0, Stock.TaxOn(0));
+        }
+
+        [Fact]
+        public void SellTax_MakesARoundTripCostAboutThreePercent()
+        {
+            var stock = Tradable();
+            double cost = Math.Round(1000 * stock.PreviewTrade(1000).Fill, 2);
+            stock.ApplyTrade(1000);
+            double gross = Math.Round(1000 * stock.PreviewTrade(-1000).Fill, 2);
+            double net = gross - Stock.TaxOn(gross);
+
+            //about 1% spread plus 2% tax, with the impact netting out
+            double loss = (cost - net) / cost;
+            Assert.InRange(loss, 0.025, 0.035);
+        }
+
+        [Fact]
         public void Trading_SpreadMakesBuysDearerThanSellsAtTheSameMoment()
         {
             var buy = Tradable().PreviewTrade(1);

@@ -397,9 +397,9 @@ namespace DiscordBot.Managers
                 throw new BadInputException("Finish your bet before trading stocks.");
 
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var (stock, shares, proceeds) = _stockService.Sell(account, args[0], args[1]);
+            var (stock, shares, gross, tax) = _stockService.Sell(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${proceeds / shares:N2} for ${FormatHelper.GetCommaNumber(proceeds)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         //circles matching StockChart.SeriesColors, in the same order

@@ -21,6 +21,11 @@ namespace DiscordBot.Models
         public const double MaxImpact = 0.5;
         /// <summary>Fixed bid-ask spread as a fraction of the price. Buys pay half of it above the mid, sells receive half below.</summary>
         public const double Spread = 0.01;
+        /// <summary>Tax taken from the gross value of every sale. The money leaves the economy, so churning the same stock costs.</summary>
+        public const double SellTaxRate = 0.02;
+
+        /// <summary>The sell tax on a gross sale value, to the cent.</summary>
+        public static double TaxOn(double grossSale) => Math.Round(grossSale * SellTaxRate, 2);
 
         /// <summary>Dollar value of trades that moves the price by <see cref="ImpactCoefficient"/>. Riskier tiers are thinner, so they move more.</summary>
         public static readonly IReadOnlyDictionary<int, double> DepthByTier = new Dictionary<int, double>

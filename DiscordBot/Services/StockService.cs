@@ -101,7 +101,7 @@ namespace DiscordBot.Services
             }
         }
 
-        public (Stock Stock, int Shares, double Proceeds) Sell(CoinAccount account, string symbol, string amount)
+        public (Stock Stock, int Shares, double Gross, double Tax) Sell(CoinAccount account, string symbol, string amount)
         {
             lock (_lock)
             {
@@ -115,12 +115,13 @@ namespace DiscordBot.Services
                     throw new BadInputException($"You only own {owned} shares of {stock.Symbol}.");
 
                 double fill = stock.PreviewTrade(-shares).Fill;
-                double proceeds = Math.Round(shares * fill, 2);
+                double gross = Math.Round(shares * fill, 2);
+                double tax = Stock.TaxOn(gross);
                 stock.ApplyTrade(-shares);
-                account.NetWorth += proceeds;
+                account.NetWorth += gross - tax;
                 _market.AddShares(account.UserId, stock.Symbol, -shares);
                 Save();
-                return PersistAccount(account, (stock, shares, proceeds));
+                return PersistAccount(account, (stock, shares, gross, tax));
             }
         }
 
