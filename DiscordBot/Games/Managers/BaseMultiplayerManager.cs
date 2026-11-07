@@ -296,6 +296,10 @@ namespace DiscordBot.Games.Managers
                     if (dailyRoll != null)
                         networthLine += $"\n\t{dailyRoll}";
 
+                    string jackpotWin = _betManager.TakeJackpotWin(player.UserId);
+                    if (jackpotWin != null)
+                        networthLine += $"\n\t{jackpotWin}";
+
                     output += GetEndMessage(player, networthLine);
                 }
 

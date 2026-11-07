@@ -93,6 +93,7 @@ namespace DiscordBot.Managers
                 new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks) over the last 30 days, sampled hourly. Pass a user to see theirs, or `all` to put everyone on the same graph. Shorthand: `.nw`", Syntax = "`.networth`, `.networth @person` or `.networth all`" },
                 new Command("nw", NetWorthGraph) { Description = "Shorthand for `.networth`.", Syntax = "`.nw`, `.nw @person` or `.nw all`", Hidden = true },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
+                new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in, and an all-in bet can win the lot.", Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },

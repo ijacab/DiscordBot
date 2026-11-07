@@ -104,6 +104,10 @@ namespace DiscordBot.Managers
             if (dailyRoll != null)
                 output += $"\n\n{dailyRoll}";
 
+            string jackpotWin = _betManager.TakeJackpotWin(userId);
+            if (jackpotWin != null)
+                output += $"\n\n{jackpotWin}";
+
             await message.Channel.SendMessageAsync(output);
 
         }

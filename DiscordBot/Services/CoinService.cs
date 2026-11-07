@@ -27,6 +27,23 @@ namespace DiscordBot.Services
             return _coinAccounts;
         }
 
+        public double JackpotPool => _coinAccounts.JackpotPool;
+
+        /// <summary>Adds a tax to the jackpot. It is saved with the next Update, which every tax-paying command already does.</summary>
+        public void AddToJackpot(double amount)
+        {
+            if (amount > 0)
+                _coinAccounts.JackpotPool += amount;
+        }
+
+        /// <summary>Empties the jackpot and returns what was in it. Saved with the next Update.</summary>
+        public double TakeJackpot()
+        {
+            double pool = _coinAccounts.JackpotPool;
+            _coinAccounts.JackpotPool = 0;
+            return pool;
+        }
+
         public async Task<CoinAccount> Get(ulong userId, string name, double amount = 10000)
         {
             if (!_coinAccounts.Accounts.Exists(a => a.UserId == userId))

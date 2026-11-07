@@ -399,7 +399,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (stock, shares, gross, tax) = _stockService.Sell(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         //circles matching StockChart.SeriesColors, in the same order
@@ -585,6 +585,7 @@ namespace DiscordBot.Managers
 
             account.NetWorth -= donationAmount;
             donationReceiverAccount.NetWorth += donationAmount * 0.8;
+            _coinService.AddToJackpot(donationAmount * 0.2); //the 20% tax goes to the jackpot
 
             //statsfor donater
             account.Stats.TotalMoneyDonated += donationAmount;
@@ -619,7 +620,7 @@ namespace DiscordBot.Managers
                 account.Stats.DonationBonusesEncountered += 1;
             }
 
-            output += $"{message.Author.Mention} you donated {FormatHelper.GetCommaNumber(donationAmount)} to {args[0]} (minus 20% tax)." +
+            output += $"{message.Author.Mention} you donated {FormatHelper.GetCommaNumber(donationAmount)} to {args[0]} (minus 20% tax, which goes to the jackpot)." +
             $"\n`Net worth:`" +
             $"\n{account.Name}: ${FormatHelper.GetCommaNumber(account.NetWorth)}" +
             $"\n{donationReceiverAccount.Name}: ${FormatHelper.GetCommaNumber(donationReceiverAccount.NetWorth)}";
@@ -628,6 +629,12 @@ namespace DiscordBot.Managers
             await _coinService.Update(donationReceiverAccount.UserId, donationReceiverAccount.NetWorth, donationReceiverAccount.Name);
 
             await message.Channel.SendMessageAsync(output);
+        }
+
+        private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. Every sell tax and donation tax goes in. " +
+                $"Bet your whole net worth (`max`) on a game and you have a {BetManager.JackpotWinChance:P0} chance to win it all.");
         }
 
         private async Task Start(DiscordSocketClient client, SocketMessage message, List<string> args)

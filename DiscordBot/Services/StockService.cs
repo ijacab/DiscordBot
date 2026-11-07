@@ -117,6 +117,7 @@ namespace DiscordBot.Services
                 double fill = stock.PreviewTrade(-shares).Fill;
                 double gross = Math.Round(shares * fill, 2);
                 double tax = Stock.TaxOn(gross);
+                _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
                 account.NetWorth += gross - tax;
                 _market.AddShares(account.UserId, stock.Symbol, -shares);

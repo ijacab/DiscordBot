@@ -13,6 +13,8 @@ namespace DiscordBot.Models
         public string DateDailyIncrementPaidFor { get; set; }
         public List<string> TimesInterestPaidForList { get; set; } = new List<string>();//looks like e.g. "20210202", "20210203"
         public string LastNetWorthSampleHour { get; set; } //yyyyMMddHH (UTC) of the most recent net worth history sample
+        /// <summary>Every tax collected (sell tax, donation tax). An all-in bet has a small chance to win the whole pool.</summary>
+        public double JackpotPool { get; set; }
 
         public class CoinAccount
         {

@@ -20,6 +20,10 @@ namespace DiscordBot.Managers
         private readonly Dictionary<ulong, DailyRollResult> _pendingDailyRolls = new Dictionary<ulong, DailyRollResult>();
         private const int StealRollNeeded = 10;
         private const double StealPercent = 0.10;
+        /// <summary>Chance that an all-in bet (the whole net worth) wins the jackpot pool.</summary>
+        public const double JackpotWinChance = 0.03;
+        private static readonly Random _random = new Random();
+        private readonly Dictionary<ulong, double> _pendingJackpotWins = new Dictionary<ulong, double>();
 
         public class DailyRollResult
         {
@@ -44,6 +48,28 @@ namespace DiscordBot.Managers
             if (!_pendingDailyRolls.Remove(userId, out var result))
                 return null;
             return result;
+        }
+
+        /// <summary>True when a jackpot roll lands. Kept separate from the random source so the odds can be tested.</summary>
+        public static bool RollsJackpot(double roll) => roll < JackpotWinChance;
+
+        /// <summary>Returns (and clears) the announcement for a jackpot won when the user's bet was last resolved, if any.</summary>
+        public string TakeJackpotWin(ulong userId)
+        {
+            if (!_pendingJackpotWins.Remove(userId, out double won))
+                return null;
+            return $"💰 **JACKPOT!** You went all in and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} tax pool!";
+        }
+
+        /// <summary>An all-in bet has a small chance to take the whole tax pool. The win is paid to the gambler.</summary>
+        private void RollJackpot(CoinAccount gambler)
+        {
+            if (_coinService.JackpotPool <= 0 || !RollsJackpot(_random.NextDouble()))
+                return;
+
+            double won = _coinService.TakeJackpot();
+            gambler.NetWorth += won;
+            _pendingJackpotWins[gambler.UserId] = won;
         }
 
         public BetManager(CoinService coinService, StockService stockService, AppSettings appSettings)
@@ -145,6 +171,10 @@ namespace DiscordBot.Managers
 
             if (firstGambleOfTheDay)
                 _pendingDailyRolls[userId] = RollDailySteal(coinAccount);
+
+            //betting the whole net worth is an all-in gamble, whether it wins or loses
+            if (betAmount >= netWorthBeforeBet - 1)
+                RollJackpot(coinAccount);
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
             InitiatedBetUserIds.Remove(userId);
