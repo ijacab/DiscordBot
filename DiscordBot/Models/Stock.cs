@@ -19,6 +19,8 @@ namespace DiscordBot.Models
         public const double ImpactDecayPerTick = 0.5;
         /// <summary>Largest move trading can cause in either direction, as a fraction of the fair price.</summary>
         public const double MaxImpact = 0.5;
+        /// <summary>Fixed bid-ask spread as a fraction of the price. Buys pay half of it above the mid, sells receive half below.</summary>
+        public const double Spread = 0.01;
 
         /// <summary>Dollar value of trades that moves the price by <see cref="ImpactCoefficient"/>. Riskier tiers are thinner, so they move more.</summary>
         public static readonly IReadOnlyDictionary<int, double> DepthByTier = new Dictionary<int, double>
@@ -78,7 +80,8 @@ namespace DiscordBot.Models
 
         /// <summary>
         /// The fill price for a trade of <paramref name="shares"/> (negative to sell) and the impact it would leave.
-        /// The fill is the midpoint of the quote before and after the move, so a big order pays for part of its own impact.
+        /// The mid fill is the midpoint of the quote before and after the move, so a big order pays for part of its own impact.
+        /// The spread is then added on a buy or taken off on a sell, so a round trip always costs <see cref="Spread"/>.
         /// Does not change the stock.
         /// </summary>
         public (double Fill, double NewImpact) PreviewTrade(int shares)
@@ -87,7 +90,9 @@ namespace DiscordBot.Models
             double move = ImpactCoefficient * Math.Sqrt(value / DepthByTier[RiskTier]) * Math.Sign(shares);
             double newImpact = Math.Max(-MaxImpact, Math.Min(MaxImpact, Impact + move));
             double after = PriceAt(FairPrice, newImpact);
-            return (Math.Round((Price + after) / 2, 2), newImpact);
+            double mid = (Price + after) / 2;
+            double fill = Math.Max(MinPrice, mid * (1 + Math.Sign(shares) * Spread / 2));
+            return (Math.Round(fill, 2), newImpact);
         }
 
         /// <summary>Records a trade's impact on the quoted price and returns the price it filled at.</summary>

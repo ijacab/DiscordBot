@@ -274,13 +274,24 @@ namespace Tests
         }
 
         [Fact]
-        public void Trading_BuyingAndSellingInOneTickCostsAlmostNothing()
+        public void Trading_BuyingAndSellingInOneTickCostsTheSpread()
         {
             var stock = Tradable();
             double bought = stock.ApplyTrade(1000);
             double sold = stock.ApplyTrade(-1000);
 
-            Assert.True(Math.Abs(bought - sold) < 0.1, $"round trip cost {bought - sold:N2} a share");
+            //the impact nets out, so what's left is the spread, plus a little from the square root curve
+            double cost = (bought - sold) / bought;
+            Assert.InRange(cost, Stock.Spread * 0.9, Stock.Spread * 1.2);
+        }
+
+        [Fact]
+        public void Trading_SpreadMakesBuysDearerThanSellsAtTheSameMoment()
+        {
+            var buy = Tradable().PreviewTrade(1);
+            var sell = Tradable().PreviewTrade(-1);
+
+            Assert.InRange(buy.Fill - sell.Fill, 0.4, 0.7); //about 1% of a $50 share
         }
 
         [Fact]
