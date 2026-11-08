@@ -1,4 +1,4 @@
-using DiscordBot;
+﻿using DiscordBot;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Common.Services;
@@ -83,14 +83,15 @@ namespace Tests
         public void Purchases_BlendAverageCost_AndResetWhenSoldOut()
         {
             var market = StockMarket.CreateDefault();
-            market.RecordPurchase(1, "SCORT", 2, 100);
-            market.RecordPurchase(1, "SCORT", 2, 200);
-            Assert.Equal(4, market.GetShares(1, "SCORT"));
-            Assert.Equal(150, market.GetAverageCost(1, "SCORT"));
+            string symbol = market.Stocks.First(s => s.RiskTier == 3).Symbol;
+            market.RecordPurchase(1, symbol, 2, 100);
+            market.RecordPurchase(1, symbol, 2, 200);
+            Assert.Equal(4, market.GetShares(1, symbol));
+            Assert.Equal(150, market.GetAverageCost(1, symbol));
 
-            market.AddShares(1, "SCORT", -4);
-            market.RecordPurchase(1, "SCORT", 1, 50);
-            Assert.Equal(50, market.GetAverageCost(1, "SCORT"));
+            market.AddShares(1, symbol, -4);
+            market.RecordPurchase(1, symbol, 1, 50);
+            Assert.Equal(50, market.GetAverageCost(1, symbol));
         }
 
         [Fact]
@@ -166,18 +167,19 @@ namespace Tests
         public void Unrealised_GainUsesAverageCostOfHeldShares()
         {
             var market = StockMarket.CreateDefault();
-            market.RecordPurchase(1, "SCORT", 2, 40);
+            var stock = market.Stocks.First(s => s.RiskTier == 3);
+            market.RecordPurchase(1, stock.Symbol, 2, stock.Price - 10);
             var (gain, cost) = market.GetUnrealisedGain(1);
 
-            Assert.Equal(20d, gain); //(50 - 40) * 2
-            Assert.Equal(80d, cost);
+            Assert.Equal(20d, gain, 6); //10 above the buy price, times 2 shares
+            Assert.Equal(2 * (stock.Price - 10), cost, 6);
         }
 
         [Fact]
         public void Unrealised_IgnoresHoldingsWithUnknownCost()
         {
             var market = StockMarket.CreateDefault();
-            market.AddShares(1, "SCORT", 3); //no purchase recorded, so no buy price
+            market.AddShares(1, market.Stocks.First(s => s.RiskTier == 3).Symbol, 3); //no purchase recorded, so no buy price
             var (gain, cost) = market.GetUnrealisedGain(1);
 
             Assert.Equal(0d, gain);
@@ -185,28 +187,55 @@ namespace Tests
         }
 
         [Fact]
-        public void DefaultMarket_HasScortAndAllFiveTiers()
+        public void DefaultMarket_HasExactlyOneStockInEachOfTheSixTiers()
         {
             var market = StockMarket.CreateDefault();
-            Assert.NotNull(market.Find("scort"));
-            Assert.Equal(Enumerable.Range(1, 5), market.Stocks.Select(s => s.RiskTier).Distinct().OrderBy(t => t));
+            Assert.Equal(Enumerable.Range(1, 6), market.Stocks.Select(s => s.RiskTier).OrderBy(t => t));
             Assert.Equal(market.Stocks.Count, market.Stocks.Select(s => s.Symbol).Distinct().Count());
+            Assert.All(market.Stocks, s => Assert.Contains(StockMarket.Pool, p => p.Symbol == s.Symbol && p.Tier == s.RiskTier));
+        }
+
+        [Fact]
+        public void DefaultMarket_SameSeedPicksTheSameStocks()
+        {
+            var first = StockMarket.CreateDefault(new Random(5)).Stocks.Select(s => s.Symbol);
+            var second = StockMarket.CreateDefault(new Random(5)).Stocks.Select(s => s.Symbol);
+            Assert.Equal(first, second);
+        }
+
+        [Fact]
+        public void Pool_HasChoiceInEveryTierAndTheRequestedNames()
+        {
+            foreach (int tier in Enumerable.Range(1, 6))
+                Assert.True(StockMarket.Pool.Count(p => p.Tier == tier) >= 2, $"tier {tier} needs a choice");
+            foreach (string name in new[] { "COCK", "PUBE", "SAMOA", "JSON", "DAVD" })
+                Assert.Contains(StockMarket.Pool, p => p.Symbol == name);
+        }
+
+        [Fact]
+        public void DefaultMarket_ManySeasonsEventuallyVary()
+        {
+            var seen = Enumerable.Range(0, 30)
+                .Select(i => string.Join(",", StockMarket.CreateDefault(new Random(i)).Stocks.Select(s => s.Symbol)))
+                .Distinct();
+            Assert.True(seen.Count() > 1);
         }
 
         [Fact]
         public void Portfolio_AddRemoveAndValue()
         {
             var market = StockMarket.CreateDefault();
-            var scort = market.Find("SCORT");
-            market.AddShares(1, "SCORT", 4);
-            market.AddShares(1, "SCORT", -1);
+            var stock = market.Stocks.First(s => s.RiskTier == 3);
+            string symbol = stock.Symbol;
+            market.AddShares(1, symbol, 4);
+            market.AddShares(1, symbol, -1);
 
-            Assert.Equal(3, market.GetShares(1, "SCORT"));
-            Assert.Equal(3 * scort.Price, market.GetPortfolioValue(1));
+            Assert.Equal(3, market.GetShares(1, symbol));
+            Assert.Equal(3 * stock.Price, market.GetPortfolioValue(1));
 
-            market.AddShares(1, "SCORT", -3);
-            Assert.Equal(0, market.GetShares(1, "SCORT"));
-            Assert.Throws<InvalidOperationException>(() => market.AddShares(1, "SCORT", -1));
+            market.AddShares(1, symbol, -3);
+            Assert.Equal(0, market.GetShares(1, symbol));
+            Assert.Throws<InvalidOperationException>(() => market.AddShares(1, symbol, -1));
         }
 
         /// <summary>A stock with the default 100k shares, so trading 10% of them moves the price by about 5%.</summary>

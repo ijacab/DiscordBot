@@ -1,18 +1,63 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace DiscordBot.Models
 {
+    /// <summary>Shares borrowed and sold. The sale value is locked as margin; the position gains when the price falls.</summary>
+    public class ShortPosition
+    {
+        public int Shares { get; set; }
+        /// <summary>Average price the shares were sold at.</summary>
+        public double EntryPrice { get; set; }
+        /// <summary>Cash locked when opening. Returned (plus profit or minus loss) on cover.</summary>
+        public double Margin { get; set; }
+
+        /// <summary>What the position is worth at a price: the margin plus the gain. Never below zero.</summary>
+        public double EquityAt(double price) => Math.Max(0, Margin + (EntryPrice - price) * Shares);
+
+        /// <summary>At twice the entry price the loss is the whole margin, so the position is closed out.</summary>
+        public bool IsLiquidatedAt(double price) => price >= EntryPrice * 2;
+    }
+
+    /// <summary>A cash-settled at-the-money option. One contract covers <see cref="Stock.OptionContractSize"/> shares.</summary>
+    public class OptionContract
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 6);
+        public ulong UserId { get; set; }
+        public string Symbol { get; set; }
+        public bool IsCall { get; set; }
+        public double Strike { get; set; }
+        public int Contracts { get; set; }
+        /// <summary>Total premium paid, before the jackpot fee.</summary>
+        public double Premium { get; set; }
+        public long ExpiresAtUtcTicks { get; set; }
+
+        public DateTime ExpiresAt => new DateTime(ExpiresAtUtcTicks, DateTimeKind.Utc);
+
+        /// <summary>What the option pays at a fair price: how far in the money, per share.</summary>
+        public double IntrinsicPerShare(double fairPrice) =>
+            Math.Max(0, IsCall ? fairPrice - Strike : Strike - fairPrice);
+
+        public double PayoutAt(double fairPrice) =>
+            Math.Round(IntrinsicPerShare(fairPrice) * Stock.OptionContractSize * Contracts, 2);
+    }
+
     public class StockMarket
     {
-        public const string ScortSymbol = "SCORT";
+        /// <summary>How many settled option results are kept per user.</summary>
+        public const int RecentSettledKept = 5;
 
         public List<Stock> Stocks { get; set; } = new List<Stock>();
         /// <summary>userId -> (symbol -> whole shares owned)</summary>
         public Dictionary<ulong, Dictionary<string, int>> Portfolios { get; set; } = new Dictionary<ulong, Dictionary<string, int>>();
         /// <summary>userId -> (symbol -> average price paid per share currently held)</summary>
         public Dictionary<ulong, Dictionary<string, double>> CostBasis { get; set; } = new Dictionary<ulong, Dictionary<string, double>>();
+        /// <summary>userId -> (symbol -> short position)</summary>
+        public Dictionary<ulong, Dictionary<string, ShortPosition>> Shorts { get; set; } = new Dictionary<ulong, Dictionary<string, ShortPosition>>();
+        public List<OptionContract> Options { get; set; } = new List<OptionContract>();
+        /// <summary>userId -> text of their last few settled options, newest first.</summary>
+        public Dictionary<ulong, List<string>> RecentSettled { get; set; } = new Dictionary<ulong, List<string>>();
         /// <summary>Number of 5 minute periods since the unix epoch that prices were last updated for.</summary>
         public long LastTickSlot { get; set; }
 
@@ -66,10 +111,76 @@ namespace DiscordBot.Models
             else holdings[symbol] = newTotal;
         }
 
+        public ShortPosition GetShort(ulong userId, string symbol) =>
+            Shorts.TryGetValue(userId, out var positions) && positions.TryGetValue(symbol, out var position) ? position : null;
+
+        public IReadOnlyDictionary<string, ShortPosition> GetShorts(ulong userId) =>
+            Shorts.TryGetValue(userId, out var positions) ? positions : new Dictionary<string, ShortPosition>();
+
+        /// <summary>Adds shorted shares, averaging the entry price and summing the margin.</summary>
+        public void AddShort(ulong userId, string symbol, int shares, double fill, double margin)
+        {
+            if (!Shorts.TryGetValue(userId, out var positions))
+                Shorts[userId] = positions = new Dictionary<string, ShortPosition>();
+
+            if (!positions.TryGetValue(symbol, out var position))
+            {
+                positions[symbol] = new ShortPosition { Shares = shares, EntryPrice = fill, Margin = margin };
+                return;
+            }
+            position.EntryPrice = (position.Shares * position.EntryPrice + shares * fill) / (position.Shares + shares);
+            position.Shares += shares;
+            position.Margin += margin;
+        }
+
+        /// <summary>
+        /// Closes <paramref name="shares"/> of a short and returns the margin released with it. Removes the position when none is left.
+        /// </summary>
+        public double ReduceShort(ulong userId, string symbol, int shares)
+        {
+            var position = GetShort(userId, symbol) ?? throw new InvalidOperationException("No short position.");
+            if (shares > position.Shares) throw new InvalidOperationException("Can't cover more than is shorted.");
+
+            double released = shares == position.Shares ? position.Margin : Math.Round(position.Margin * shares / position.Shares, 2);
+            position.Shares -= shares;
+            position.Margin -= released;
+            if (position.Shares == 0)
+            {
+                Shorts[userId].Remove(symbol);
+                if (Shorts[userId].Count == 0) Shorts.Remove(userId);
+            }
+            return released;
+        }
+
+        public IEnumerable<OptionContract> GetOptions(ulong userId) => Options.Where(o => o.UserId == userId);
+
+        /// <summary>True if the user holds any shares, short or open option.</summary>
+        public bool HasPositions(ulong userId) =>
+            GetHoldings(userId).Count > 0 || GetShorts(userId).Count > 0 || GetOptions(userId).Any();
+
+        public void AddSettledResult(ulong userId, string text)
+        {
+            if (!RecentSettled.TryGetValue(userId, out var results))
+                RecentSettled[userId] = results = new List<string>();
+            results.Insert(0, text);
+            if (results.Count > RecentSettledKept)
+                results.RemoveRange(RecentSettledKept, results.Count - RecentSettledKept);
+        }
+
+        /// <summary>Shares at their quote, plus short positions at their equity and open options at what they would pay now.</summary>
         public double GetPortfolioValue(ulong userId)
         {
-            if (!Portfolios.TryGetValue(userId, out var holdings)) return 0;
-            return holdings.Sum(h => (Find(h.Key)?.Price ?? 0) * h.Value);
+            double value = 0;
+            if (Portfolios.TryGetValue(userId, out var holdings))
+                value += holdings.Sum(h => (Find(h.Key)?.Price ?? 0) * h.Value);
+
+            foreach (var position in GetShorts(userId))
+                value += position.Value.EquityAt(Find(position.Key)?.Price ?? position.Value.EntryPrice);
+
+            foreach (var option in GetOptions(userId))
+                value += option.PayoutAt(Find(option.Symbol)?.FairPrice ?? option.Strike);
+
+            return value;
         }
 
         /// <summary>Current value minus average buy price, over holdings with a known cost. Also returns what those holdings cost.</summary>
@@ -88,32 +199,60 @@ namespace DiscordBot.Models
             return (gain, cost);
         }
 
-        public static StockMarket CreateDefault()
+        /// <summary>
+        /// Every stock a season can pick from: (symbol, name, tier, starting price). One is chosen per tier each season.
+        /// </summary>
+        public static readonly IReadOnlyList<(string Symbol, string Name, int Tier, double Price)> Pool = new[]
         {
-            Stock S(string symbol, string name, int tier, double price) =>
-                new Stock { Symbol = symbol, Name = name, RiskTier = tier, Price = price, PreviousPrice = price, BasePrice = price, FairPrice = price, History = new List<double> { price } };
+            //tier 1 - very stable
+            ("BNDX", "Boring Bond Index", 1, 100.0),
+            ("UTIL", "Utility Co", 1, 60.0),
+            //tier 2 - stable
+            ("GROC", "Grocery Giant", 2, 45.0),
+            ("WANG", "Wang Holdings", 2, 25.0),
+            ("JSON", "JSON Logistics", 2, 30.0),
+            //tier 3 - moderate
+            ("SCORT", "Scort Industries", 3, 50.0),
+            ("JCB", "JCB Group", 3, 80.0),
+            ("DAVD", "Davd & Sons", 3, 65.0),
+            //tier 4 - volatile
+            ("SCORCH", "Scorch Rockets", 4, 20.0),
+            ("BALLS", "Balls Inc", 4, 35.0),
+            ("SAMOA", "Samoa Shipping", 4, 28.0),
+            ("PUBE", "Pube Haircare", 4, 15.0),
+            //tier 5 - degenerate
+            ("GLGY", "GLGY Capital", 5, 10.0),
+            ("ALX", "ALX Squared", 5, 5.0),
+            ("COCK", "Cock Capital", 5, 8.0),
+            //tier 6 - crypto
+            ("BTCX", "Bitcoinx", 6, 50.0),
+            ("MOONX", "MoonCoin", 6, 20.0),
+            ("HODL", "HODL Token", 6, 12.0),
+        };
 
-            return new StockMarket
-            {
-                Stocks = new List<Stock>
+        /// <summary>A new market with one randomly chosen stock from the pool in each tier. Pass a seeded random for a repeatable pick.</summary>
+        public static StockMarket CreateDefault(Random random = null)
+        {
+            random ??= new Random();
+            var stocks = Pool
+                .GroupBy(p => p.Tier)
+                .OrderBy(g => g.Key)
+                .Select(g => g.ElementAt(random.Next(g.Count())))
+                .Select(p => new Stock
                 {
-                    //tier 1 - very stable
-                    S("BNDX", "Boring Bond Index", 1, 100),
-                    S("UTIL", "Utility Co", 1, 60),
-                    //tier 2 - stable
-                    S("GROC", "Grocery Giant", 2, 45),
-                    S("WANG", "Wang Holdings", 2, 25),
-                    //tier 3 - moderate
-                    S(ScortSymbol, "Scort Industries", 3, 50),
-                    S("JCB", "JCB Group", 3, 80),
-                    //tier 4 - volatile
-                    S("SCORCH", "Scorch Rockets", 4, 20),
-                    S("BALLS", "Balls Inc", 4, 35),
-                    //tier 5 - degenerate
-                    S("GLGY", "GLGY Capital", 5, 10),
-                    S("ALX", "ALX Squared", 5, 5)
-                }
-            };
+                    Symbol = p.Symbol,
+                    Name = p.Name,
+                    RiskTier = p.Tier,
+                    Price = p.Price,
+                    PreviousPrice = p.Price,
+                    BasePrice = p.Price,
+                    FairPrice = p.Price,
+                    SharesOutstanding = p.Tier == Stock.CryptoTier ? Stock.CryptoSharesOutstanding : Stock.DefaultSharesOutstanding,
+                    History = new List<double> { p.Price }
+                })
+                .ToList();
+
+            return new StockMarket { Stocks = stocks };
         }
     }
 }

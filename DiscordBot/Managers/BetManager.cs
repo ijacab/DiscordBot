@@ -174,7 +174,7 @@ namespace DiscordBot.Managers
 
             //an all-in bet is every dollar they have, with everything in cash, whether it wins or loses.
             //trading is blocked while a bet is open, so their holdings are the same as when the bet was placed
-            bool allInWithNothingInStocks = betAmount >= netWorthBeforeBet - 1 && _stockService.GetPortfolioValue(userId) <= 0;
+            bool allInWithNothingInStocks = betAmount >= netWorthBeforeBet - 1 && !_stockService.HasPositions(userId);
             if (allInWithNothingInStocks)
                 RollJackpot(coinAccount);
 

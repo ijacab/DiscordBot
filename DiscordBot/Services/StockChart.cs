@@ -38,9 +38,10 @@ namespace DiscordBot.Services
 
         /// <summary>
         /// Renders a series of values (oldest first) as a PNG. <paramref name="pointInterval"/> is the time between points,
-        /// used for the time labels. Expects at least two values.
+        /// used for the time labels. Expects at least two values. The line is green if the series ends above where it started
+        /// and red if below, unless <paramref name="lineColour"/> overrides that.
         /// </summary>
-        public static MemoryStream RenderPng(IReadOnlyList<double> prices, TimeSpan pointInterval)
+        public static MemoryStream RenderPng(IReadOnlyList<double> prices, TimeSpan pointInterval, Rgba32? lineColour = null)
         {
             if (prices.Count < 2) throw new ArgumentException("A chart needs at least two prices.", nameof(prices));
 
@@ -83,7 +84,7 @@ namespace DiscordBot.Services
             }
 
             //the line goes green if the stock finished above where it started, red if below
-            Rgba32 lineColor = prices[prices.Count - 1] >= prices[0] ? _upColor : _downColor;
+            Rgba32 lineColor = lineColour ?? (prices[prices.Count - 1] >= prices[0] ? _upColor : _downColor);
             for (int i = 1; i < prices.Count; i++)
                 DrawLine(image, XOf(i - 1), YOf(prices[i - 1]), XOf(i), YOf(prices[i]), lineColor);
 
@@ -145,8 +146,9 @@ namespace DiscordBot.Services
         /// Renders several series (oldest first) on one chart, one line per series in <see cref="SeriesColors"/>
         /// (wrapping after the last colour). Series are lined up by their newest point, so a shorter series starts
         /// later on the x axis. Expects every series to have at least one value and the longest to have two.
+        /// If <paramref name="lineColour"/> is set, every line and dot uses it instead of <see cref="SeriesColors"/>.
         /// </summary>
-        public static MemoryStream RenderMultiPng(IReadOnlyList<IReadOnlyList<double>> series, TimeSpan pointInterval, Func<double, string> formatLabel = null)
+        public static MemoryStream RenderMultiPng(IReadOnlyList<IReadOnlyList<double>> series, TimeSpan pointInterval, Func<double, string> formatLabel = null, Rgba32? lineColour = null)
         {
             formatLabel ??= v => FormatMoney(v);
             if (series.Count == 0) throw new ArgumentException("A chart needs at least one series.", nameof(series));
@@ -194,7 +196,7 @@ namespace DiscordBot.Services
             for (int s = 0; s < series.Count; s++)
             {
                 IReadOnlyList<double> values = series[s];
-                Rgba32 color = SeriesColors[s % SeriesColors.Length];
+                Rgba32 color = lineColour ?? SeriesColors[s % SeriesColors.Length];
                 int offset = longest - values.Count; //a shorter series has no points before its first value
                 for (int i = 1; i < values.Count; i++)
                     DrawLine(image, XOf(offset + i - 1), YOf(values[i - 1]), XOf(offset + i), YOf(values[i]), color);
@@ -204,7 +206,7 @@ namespace DiscordBot.Services
             for (int s = 0; s < series.Count; s++)
             {
                 IReadOnlyList<double> values = series[s];
-                FillCircle(image, XOf(longest - 1), YOf(values[values.Count - 1]), 4, SeriesColors[s % SeriesColors.Length]);
+                FillCircle(image, XOf(longest - 1), YOf(values[values.Count - 1]), 4, lineColour ?? SeriesColors[s % SeriesColors.Length]);
             }
 
             int labelY = _plotBottom + 14;
@@ -250,6 +252,9 @@ namespace DiscordBot.Services
             stream.Position = 0;
             return stream;
         }
+
+        /// <summary>Green for a stock at or above its starting price, red below it.</summary>
+        public static Rgba32 ColourForChange(double percentChange) => percentChange >= 0 ? _upColor : _downColor;
 
         private static string FormatMoney(double value) => $"${value:N0}";
 

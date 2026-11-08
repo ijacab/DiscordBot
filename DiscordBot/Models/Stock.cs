@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace DiscordBot.Models
@@ -7,7 +7,25 @@ namespace DiscordBot.Models
     {
         public const double MinPrice = 1.00;
         public const int MinTier = 1;
-        public const int MaxTier = 5;
+        public const int MaxTier = 6;
+        /// <summary>The crypto tier: wild swings, sudden pumps and crashes, and a long recovery after a crash.</summary>
+        public const int CryptoTier = 6;
+        /// <summary>Chance per tick that a crypto doubles-ish in one go.</summary>
+        public const double CryptoPumpChance = 0.03;
+        /// <summary>Chance per tick that a crypto crashes.</summary>
+        public const double CryptoCrashChance = 0.02;
+        /// <summary>A pump lifts the price by between 40% and 120%.</summary>
+        public const double CryptoPumpMin = 0.40, CryptoPumpMax = 1.20;
+        /// <summary>A crash drops the price by between 35% and 65%.</summary>
+        public const double CryptoCrashMin = 0.35, CryptoCrashMax = 0.65;
+        /// <summary>Ticks (4 hours) after a crash where the price just drifts at the bottom, with no pull back up.</summary>
+        public const int CryptoRecoveryTicks = 48;
+        /// <summary>Largest move per tick while recovering from a crash, up or down.</summary>
+        public const double CryptoRecoverySwing = 0.04;
+        /// <summary>Crypto is pulled back to its base price much more slowly, so both spikes and crashes last.</summary>
+        public const double CryptoMeanReversionRate = 0.02;
+        /// <summary>Shares a crypto is issued with. A thin market, so trades move it more.</summary>
+        public const double CryptoSharesOutstanding = 20_000;
         /// <summary>Fraction of the gap between the price and <see cref="BasePrice"/> closed on each tick.</summary>
         public const double MeanReversionRate = 0.05;
         /// <summary>One price per 5 minute tick, so this is 7 days.</summary>
@@ -37,7 +55,8 @@ namespace DiscordBot.Models
             { 2, 0.03 },
             { 3, 0.07 },
             { 4, 0.15 },
-            { 5, 0.30 }
+            { 5, 0.30 },
+            { 6, 0.35 } //on top of this, crypto has pumps and crashes
         };
 
         public string Symbol { get; set; }
@@ -54,23 +73,71 @@ namespace DiscordBot.Models
         public double Impact { get; set; }
         /// <summary>Total shares in the market for this stock. Trades are sized against it.</summary>
         public double SharesOutstanding { get; set; } = DefaultSharesOutstanding;
+        /// <summary>Ticks left of the slow bottom after a crypto crash. 0 when not recovering.</summary>
+        public int CrashRecoveryTicks { get; set; }
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
         public double PercentChange => PreviousPrice <= 0 ? 0 : (Price - PreviousPrice) / PreviousPrice * 100;
 
+        /// <summary>% change of the quote from the launch price (<see cref="BasePrice"/>). Unlike the kept history, this never rolls off.</summary>
+        public double AllTimeChange => BasePrice <= 0 ? 0 : (Price - BasePrice) / BasePrice * 100;
+
+        public bool IsCrypto => RiskTier == CryptoTier;
+
+        /// <summary>Standard deviation of one tick's move as a fraction of the price. Used to price options.</summary>
+        public double TickVolatility => MaxSwingByTier[RiskTier] / Math.Sqrt(3) * (IsCrypto ? 1.5 : 1.0);
+
         /// <summary>
         /// Moves the fair price by a random amount within this stock's tier swing, pulls it back towards <see cref="BasePrice"/>,
         /// then lets the trading impact fade. <paramref name="random"/> returns a value in [0, 1).
+        /// Crypto also rolls a pump or crash (and after a crash, sits at the bottom for <see cref="CryptoRecoveryTicks"/>).
+        /// Random draws, in order: the swing, then for crypto not recovering the event roll, then the size of a pump or crash.
         /// </summary>
         public void ApplyTick(Func<double> random)
         {
             double maxSwing = MaxSwingByTier[RiskTier];
             double swing = (random() * 2 - 1) * maxSwing; //uniform in [-maxSwing, +maxSwing)
-            double moved = FairPrice * (1 + swing);
+            double reversion = MeanReversionRate;
+            double moved;
+
+            if (!IsCrypto)
+            {
+                moved = FairPrice * (1 + swing);
+            }
+            else if (CrashRecoveryTicks > 0)
+            {
+                //stuck near the bottom: small moves and no pull back up until the recovery is over
+                CrashRecoveryTicks--;
+                moved = FairPrice * (1 + swing / maxSwing * CryptoRecoverySwing);
+                reversion = 0;
+            }
+            else
+            {
+                reversion = CryptoMeanReversionRate;
+                double roll = random();
+                if (roll < CryptoCrashChance)
+                {
+                    double drop = CryptoCrashMin + random() * (CryptoCrashMax - CryptoCrashMin);
+                    moved = FairPrice * (1 - drop);
+                    CrashRecoveryTicks = CryptoRecoveryTicks;
+                    reversion = 0;
+                }
+                else if (roll < CryptoCrashChance + CryptoPumpChance)
+                {
+                    double rise = CryptoPumpMin + random() * (CryptoPumpMax - CryptoPumpMin);
+                    moved = FairPrice * (1 + rise);
+                }
+                else
+                {
+                    moved = FairPrice * (1 + swing);
+                }
+            }
+
+            moved = Math.Max(MinPrice, moved);
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
-            if (BasePrice > 0)
-                moved *= Math.Pow(BasePrice / moved, MeanReversionRate);
+            if (BasePrice > 0 && reversion > 0)
+                moved *= Math.Pow(BasePrice / moved, reversion);
 
             PreviousPrice = Price;
             FairPrice = Math.Max(MinPrice, Math.Round(moved, 2));
@@ -120,6 +187,45 @@ namespace DiscordBot.Models
                 else high = mid - 1;
             }
             return low;
+        }
+
+        /// <summary>
+        /// The largest number of shares that can be shorted with <paramref name="cash"/>: the margin (the sale value) plus the
+        /// sale tax must fit. Selling pushes the fill down, so this searches rather than dividing.
+        /// </summary>
+        public int MaxShortableShares(double cash)
+        {
+            int low = 0;
+            int high = (int)Math.Min(int.MaxValue, Math.Floor(cash / MinPrice));
+            while (low < high)
+            {
+                int mid = low + (high - low + 1) / 2;
+                double gross = Math.Round(mid * PreviewTrade(-mid).Fill, 2);
+                if (gross + TaxOn(gross) <= cash) low = mid;
+                else high = mid - 1;
+            }
+            return low;
+        }
+
+        /// <summary>Shares in one option contract.</summary>
+        public const int OptionContractSize = 100;
+        /// <summary>The approximate value of an at-the-money option as a multiple of price × volatility × √time.</summary>
+        public const double OptionValueFactor = 0.4;
+        /// <summary>Extra the house charges on the fair premium.</summary>
+        public const double OptionHouseEdge = 1.10;
+        /// <summary>Fee on the premium, paid into the jackpot.</summary>
+        public const double OptionFeeRate = 0.02;
+        public const double MinOptionPremiumPerShare = 0.01;
+
+        /// <summary>
+        /// Premium per share of an at-the-money option lasting <paramref name="duration"/>, from this stock's tick volatility.
+        /// Longer and wilder stocks cost more.
+        /// </summary>
+        public double OptionPremiumPerShare(TimeSpan duration)
+        {
+            double ticks = Math.Max(1, duration.TotalMinutes / 5);
+            double fair = FairPrice * TickVolatility * Math.Sqrt(ticks) * OptionValueFactor;
+            return Math.Max(MinOptionPremiumPerShare, Math.Round(fair * OptionHouseEdge, 2));
         }
 
         /// <summary>The quote for a fair price and impact, never below <see cref="MinPrice"/>.</summary>

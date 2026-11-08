@@ -1,4 +1,4 @@
-using Common.Services;
+﻿using Common.Services;
 using DiscordBot.Exceptions;
 using DiscordBot.Models;
 using Newtonsoft.Json;
@@ -55,25 +55,38 @@ namespace DiscordBot.Services
         }
 
         /// <summary>
-        /// Updates all prices if we've moved into a new 5 minute period since the last update. Safe to call every minute.
+        /// Updates all prices if we've moved into a new 5 minute period since the last update, closes shorts that have lost
+        /// their margin, and settles options that have expired. Safe to call every minute.
         /// </summary>
         public Task TickIfDue()
         {
-            long slot = DateTimeOffset.UtcNow.UtcTicks / _tickLengthTicks;
+            long now = DateTimeOffset.UtcNow.UtcTicks;
+            long slot = now / _tickLengthTicks;
             lock (_lock)
             {
-                if (slot == _market.LastTickSlot) return Task.CompletedTask;
-
-                //one tick only, even if the bot was down for several periods
-                foreach (var stock in _market.Stocks)
+                bool changed = false;
+                if (slot != _market.LastTickSlot)
                 {
-                    stock.ApplyTick(_random.NextDouble);
-                    stock.RecordHistory();
+                    //one tick only, even if the bot was down for several periods
+                    foreach (var stock in _market.Stocks)
+                    {
+                        stock.ApplyTick(_random.NextDouble);
+                        stock.RecordHistory();
+                    }
+                    _market.LastTickSlot = slot;
+                    changed = true;
+                    LiquidateBrokenShorts();
                 }
-                _market.LastTickSlot = slot;
-                Save();
+
+                changed |= SettleExpiredOptions(now);
+                if (changed) Save();
             }
             return Task.CompletedTask;
+        }
+
+        public bool HasPositions(ulong userId)
+        {
+            lock (_lock) return _market.HasPositions(userId);
         }
 
         public (Stock Stock, int Shares, double Cost) Buy(CoinAccount account, string symbol, string amount)
@@ -126,17 +139,143 @@ namespace DiscordBot.Services
             }
         }
 
+        public static readonly TimeSpan MinOptionDuration = TimeSpan.FromMinutes(15);
+        public static readonly TimeSpan MaxOptionDuration = TimeSpan.FromDays(3);
+
+        /// <summary>Sells borrowed shares. The sale value is locked from cash as margin, and the sale tax goes to the jackpot.</summary>
+        public (Stock Stock, int Shares, double Margin, double Tax) Short(CoinAccount account, string symbol, string amount)
+        {
+            lock (_lock)
+            {
+                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
+                    ? stock.MaxShortableShares(account.NetWorth)
+                    : ParseShares(amount);
+
+                if (shares < 1)
+                    throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${stock.Price:N2}).");
+
+                double fill = stock.PreviewTrade(-shares).Fill;
+                double margin = Math.Round(shares * fill, 2);
+                double tax = Stock.TaxOn(margin);
+                if (margin + tax > account.NetWorth)
+                    throw new BadInputException($"Shorting {shares} shares of {stock.Symbol} needs ${margin + tax:N2} (margin plus tax) but you only have ${account.NetWorth:N2}.");
+
+                _coinService.AddToJackpot(tax);
+                stock.ApplyTrade(-shares);
+                account.NetWorth -= margin + tax;
+                _market.AddShort(account.UserId, stock.Symbol, shares, fill, margin);
+                Save();
+                return PersistAccount(account, (stock, shares, margin, tax));
+            }
+        }
+
+        /// <summary>Buys back shorted shares. The margin comes back plus the gain, or minus the loss, and never below zero.</summary>
+        public (Stock Stock, int Shares, double Returned, double Profit) Cover(CoinAccount account, string symbol, string amount)
+        {
+            lock (_lock)
+            {
+                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                var position = _market.GetShort(account.UserId, stock.Symbol) ?? throw new BadInputException($"You aren't short any {stock.Symbol}.");
+                int shares = amount.Equals("all", StringComparison.OrdinalIgnoreCase) ? position.Shares : ParseShares(amount);
+                if (shares > position.Shares)
+                    throw new BadInputException($"You're only short {position.Shares} shares of {stock.Symbol}.");
+
+                double fill = stock.PreviewTrade(shares).Fill;
+                double profit = Math.Round((position.EntryPrice - fill) * shares, 2);
+                double released = _market.ReduceShort(account.UserId, stock.Symbol, shares);
+                double returned = Math.Max(0, Math.Round(released + profit, 2));
+
+                stock.ApplyTrade(shares);
+                account.NetWorth += returned;
+                Save();
+                return PersistAccount(account, (stock, shares, returned, returned - released));
+            }
+        }
+
+        /// <summary>
+        /// Buys at-the-money options that expire after <paramref name="duration"/>. The strike is the fair price (not the quote,
+        /// so trading can't be used to set it), and the premium plus a jackpot fee is paid from cash.
+        /// </summary>
+        public (OptionContract Option, double Premium, double Fee) BuyOption(CoinAccount account, string symbol, bool isCall, int contracts, TimeSpan duration)
+        {
+            lock (_lock)
+            {
+                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                if (contracts < 1) throw new BadSyntaxException();
+                if (duration < MinOptionDuration || duration > MaxOptionDuration)
+                    throw new BadInputException("Options last between 15m and 3d.");
+
+                double premium = Math.Round(stock.OptionPremiumPerShare(duration) * Stock.OptionContractSize * contracts, 2);
+                double fee = Math.Round(premium * Stock.OptionFeeRate, 2);
+                if (premium + fee > account.NetWorth)
+                    throw new BadInputException($"That option costs ${premium + fee:N2} (premium plus fee) but you only have ${account.NetWorth:N2}.");
+
+                var option = new OptionContract
+                {
+                    UserId = account.UserId,
+                    Symbol = stock.Symbol,
+                    IsCall = isCall,
+                    Strike = stock.FairPrice,
+                    Contracts = contracts,
+                    Premium = premium,
+                    ExpiresAtUtcTicks = DateTimeOffset.UtcNow.UtcTicks + duration.Ticks
+                };
+                _market.Options.Add(option);
+                _coinService.AddToJackpot(fee);
+                account.NetWorth -= premium + fee;
+                Save();
+                return PersistAccount(account, (option, premium, fee));
+            }
+        }
+
+        /// <summary>Closes shorts whose price has doubled, since their loss is the whole margin. Caller holds the lock.</summary>
+        private void LiquidateBrokenShorts()
+        {
+            foreach (var user in _market.Shorts.Keys.ToList())
+                foreach (var held in _market.GetShorts(user).ToList())
+                {
+                    var stock = _market.Find(held.Key);
+                    if (stock == null || !held.Value.IsLiquidatedAt(stock.Price)) continue;
+
+                    _market.ReduceShort(user, held.Key, held.Value.Shares);
+                    _market.AddSettledResult(user, $"Short {held.Key} liquidated at ${stock.Price:N2}, margin lost.");
+                }
+        }
+
+        /// <summary>Pays and removes expired options, settled on the fair price. Returns whether any expired. Caller holds the lock.</summary>
+        private bool SettleExpiredOptions(long nowTicks)
+        {
+            var expired = _market.Options.Where(o => o.ExpiresAtUtcTicks <= nowTicks).ToList();
+            foreach (var option in expired)
+            {
+                double fair = _market.Find(option.Symbol)?.FairPrice ?? option.Strike;
+                double payout = option.PayoutAt(fair);
+                _market.Options.Remove(option);
+
+                var account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == option.UserId);
+                if (account != null && payout > 0)
+                {
+                    account.NetWorth += payout;
+                    _coinService.Update(account.UserId, account.NetWorth, account.Name).GetAwaiter().GetResult();
+                }
+                string kind = option.IsCall ? "call" : "put";
+                _market.AddSettledResult(option.UserId,
+                    $"{option.Contracts}x {option.Symbol} {kind} @ ${option.Strike:N2} expired at ${fair:N2}: paid ${payout:N2} for ${option.Premium:N2}.");
+            }
+            return expired.Count > 0;
+        }
+
         /// <summary>
         /// Older markets lack base prices (given the default for their symbol) and fair prices. Their quote is the fair price,
         /// because they never had trading impact.
         /// </summary>
         private void FillMissingFields()
         {
-            var defaults = StockMarket.CreateDefault();
             foreach (var stock in _market.Stocks)
             {
                 if (stock.BasePrice <= 0)
-                    stock.BasePrice = defaults.Find(stock.Symbol)?.BasePrice ?? stock.Price;
+                    stock.BasePrice = StockMarket.Pool.Where(p => p.Symbol == stock.Symbol).Select(p => p.Price).DefaultIfEmpty(stock.Price).First();
                 if (stock.FairPrice <= 0)
                     stock.FairPrice = stock.Price;
             }

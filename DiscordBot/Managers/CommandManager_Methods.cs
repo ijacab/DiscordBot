@@ -281,11 +281,17 @@ namespace DiscordBot.Managers
         private async Task Stocks(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             var market = _stockService.GetMarket();
-            if (args.Count > 1) throw new BadSyntaxException();
-            if (args.Count == 1)
+            if (args.Count > 2) throw new BadSyntaxException();
+            if (args.Count >= 1)
             {
                 var chosen = market.Find(args[0]) ?? throw new BadInputException($"There's no stock called {args[0].ToUpper()}.");
-                await StockGraph(message, chosen);
+                TimeSpan? window = null;
+                if (args.Count == 2)
+                {
+                    if (!DurationParser.TryParse(args[1], out TimeSpan parsed)) throw new BadSyntaxException();
+                    window = parsed;
+                }
+                await StockGraph(message, chosen, window);
                 return;
             }
 
@@ -295,24 +301,17 @@ namespace DiscordBot.Managers
             string output = "";
             foreach (var tier in market.Stocks.GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
             {
-                output += $"**Tier {tier.Key}**\n";
+                output += tier.Key == Stock.CryptoTier ? $"**Tier {tier.Key} (crypto)**\n" : $"**Tier {tier.Key}**\n";
                 foreach (var stock in tier.OrderBy(s => s.Symbol))
                 {
                     string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
-                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {ChangeSinceInception(stock):+0.00;-0.00;0.00}% since inception)\n";
+                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {stock.AllTimeChange:+0.00;-0.00;0.00}% all time)\n";
                 }
                 output += "\n";
             }
-            output += "*Prices change every 5 minutes. Tier 1 is stable, tier 5 is wild. Use `.stocks SYMBOL` for a graph, `.buy` and `.sell`.*";
+            output += "*Prices change every 5 minutes. Tier 1 is stable, tier 6 is crypto and insane. Use `.stocks SYMBOL 48h` for a graph, `.buy`/`.sell`, `.short`/`.cover`, `.call`/`.put`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
-        }
-
-        /// <summary>% change from the oldest tick still kept (history is capped at 7 days, so that is the furthest back we can see).</summary>
-        private static double ChangeSinceInception(Stock stock)
-        {
-            double first = stock.History.Count > 0 ? stock.History[0] : stock.Price;
-            return first <= 0 ? 0 : (stock.Price - first) / first * 100;
         }
 
         /// <summary>
@@ -336,14 +335,14 @@ namespace DiscordBot.Managers
                     {
                         history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList()
                     };
-                    charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%"));
+                    charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%", StockChart.ColourForChange(stock.AllTimeChange)));
                     symbols.Add(stock.Symbol.ToUpperInvariant());
                 }
                 if (charts.Count == 0) return;
 
                 using var grid = StockChart.RenderGridPng(charts, symbols, 2);
                 var embed = DiscordHelper.GetEmbedBuilder("Stock prices",
-                        "% change since each stock's first recorded tick, newest on the right.")
+                        "% change since each stock's first recorded tick, newest on the right. Green is above the launch price, red is below.")
                     .WithImageUrl("attachment://stocks.png")
                     .Build();
                 await message.Channel.SendFileAsync(grid, "stocks.png", embed: embed);
@@ -354,24 +353,41 @@ namespace DiscordBot.Managers
             }
         }
 
-        private static async Task StockGraph(SocketMessage message, Stock stock)
+        private static readonly TimeSpan _stockTick = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// Graph of one stock. <paramref name="window"/> limits it to the most recent stretch of history; a window longer than
+        /// the history kept shows all of it. The line colour is always the all-time change, not the window's.
+        /// </summary>
+        private static async Task StockGraph(SocketMessage message, Stock stock, TimeSpan? window = null)
         {
-            var history = stock.History;
+            IReadOnlyList<double> history = stock.History;
             if (history.Count < 2)
             {
                 await message.SendRichEmbedMessage(stock.Name, "Not enough price history yet. Check back after a few ticks.");
                 return;
             }
 
+            string windowNote = "";
+            if (window.HasValue)
+            {
+                int points = (int)Math.Max(2, window.Value.Ticks / _stockTick.Ticks + 1);
+                if (points < history.Count)
+                    history = history.Skip(history.Count - points).ToList();
+                else if (points > history.Count)
+                    windowNote = $" (only {StockChart.FormatSpan(history.Count, _stockTick)} of history so far)";
+            }
+
             double first = history[0];
             double last = history[history.Count - 1];
-            double overallChange = (last - first) / first * 100;
+            double windowChange = first <= 0 ? 0 : (last - first) / first * 100;
 
             string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
-                $"{overallChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count, TimeSpan.FromMinutes(5))} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
-                "*Each point is one 5 minute price tick, newest on the right.*";
+                $"{windowChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count, _stockTick)}{windowNote} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
+                $"All time {stock.AllTimeChange:+0.00;-0.00;0.00}% (launched at ${stock.BasePrice:N2}), line is {(stock.AllTimeChange >= 0 ? "green" : "red")} for that.\n" +
+                "*Each point is one 5 minute price tick, newest on the right. Add a time like `48h` to change the window.*";
 
-            using var chart = StockChart.RenderPng(history, TimeSpan.FromMinutes(5));
+            using var chart = StockChart.RenderPng(history, _stockTick, StockChart.ColourForChange(stock.AllTimeChange));
             var embed = DiscordHelper.GetEmbedBuilder($"{stock.Symbol} price history", output)
                 .WithImageUrl("attachment://stock.png")
                 .Build();
@@ -400,6 +416,92 @@ namespace DiscordBot.Managers
             var (stock, shares, gross, tax) = _stockService.Sell(account, args[0], args[1]);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private void EnsureNotBetting(SocketMessage message)
+        {
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Finish your bet before trading stocks.");
+        }
+
+        private async Task ShortStock(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 2) throw new BadSyntaxException();
+            EnsureNotBetting(message);
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (stock, shares, margin, tax) = _stockService.Short(account, args[0], args[1]);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} shorted {shares} share(s) of {stock.Symbol}, locking ${FormatHelper.GetCommaNumber(margin)} margin and ${FormatHelper.GetCommaNumber(tax)} sale tax (goes to the jackpot). You profit if it falls and lose margin as it rises, and at 2x the entry price you're wiped out. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task CoverStock(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 2) throw new BadSyntaxException();
+            EnsureNotBetting(message);
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (stock, shares, returned, profit) = _stockService.Cover(account, args[0], args[1]);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} covered {shares} share(s) of {stock.Symbol} and got back ${FormatHelper.GetCommaNumber(returned)} ({SignedMoney(profit)}). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private Task CallOption(DiscordSocketClient client, SocketMessage message, List<string> args) => BuyOptionCommand(message, args, isCall: true);
+
+        private Task PutOption(DiscordSocketClient client, SocketMessage message, List<string> args) => BuyOptionCommand(message, args, isCall: false);
+
+        private async Task BuyOptionCommand(SocketMessage message, List<string> args, bool isCall)
+        {
+            if (args.Count != 3 || !int.TryParse(args[1], out int contracts) || contracts < 1 || !DurationParser.TryParse(args[2], out TimeSpan duration))
+                throw new BadSyntaxException();
+            EnsureNotBetting(message);
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (option, premium, fee) = _stockService.BuyOption(account, args[0], isCall, contracts, duration);
+
+            string kind = isCall ? "call" : "put";
+            string wins = isCall ? "rises above" : "falls below";
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {contracts} {option.Symbol} {kind} option(s) with strike ${option.Strike:N2} for ${FormatHelper.GetCommaNumber(premium)} plus ${FormatHelper.GetCommaNumber(fee)} fee (goes to the jackpot). Each is 100 shares and pays out only if {option.Symbol} {wins} the strike by expiry in {FormatRemaining(duration)}. Settled on the fair price, not on trades. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task Options(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 0) throw new BadSyntaxException();
+
+            var market = _stockService.GetMarket();
+            var open = market.GetOptions(message.Author.Id).OrderBy(o => o.ExpiresAtUtcTicks).ToList();
+            market.RecentSettled.TryGetValue(message.Author.Id, out var recent);
+
+            if (open.Count == 0 && (recent == null || recent.Count == 0))
+            {
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} you have no options. Try `.call SYMBOL 1 6h` or `.put SYMBOL 1 6h`.");
+                return;
+            }
+
+            string output = "";
+            if (open.Count > 0)
+            {
+                output += "**Open**\n";
+                foreach (var option in open)
+                {
+                    double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
+                    output += $"{(option.IsCall ? "📈 call" : "📉 put")} {option.Contracts}x **{option.Symbol}** strike ${option.Strike:N2} · expires in {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))} now (paid ${FormatHelper.GetCommaNumber(option.Premium)})\n";
+                }
+            }
+            if (recent != null && recent.Count > 0)
+            {
+                output += "\n**Recently settled**\n" + string.Join("\n", recent);
+            }
+
+            await message.SendRichEmbedMessage($"{message.Author.Username}'s options", output);
+        }
+
+        private static string FormatRemaining(TimeSpan span)
+        {
+            if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+            if (span.TotalDays >= 1) return $"{(int)span.TotalDays}d {span.Hours}h";
+            if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+            return $"{(int)Math.Ceiling(span.TotalMinutes)}m";
         }
 
         //circles matching StockChart.SeriesColors, in the same order
@@ -513,7 +615,10 @@ namespace DiscordBot.Managers
             var holdings = market.GetHoldings(account.UserId);
             bool isOwnPortfolio = account.UserId == message.Author.Id;
 
-            if (holdings.Count == 0)
+            var shorts = market.GetShorts(account.UserId);
+            var options = market.GetOptions(account.UserId).OrderBy(o => o.ExpiresAtUtcTicks).ToList();
+
+            if (holdings.Count == 0 && shorts.Count == 0 && options.Count == 0)
             {
                 string noStocks = isOwnPortfolio
                     ? $"{message.Author.Mention} you don't own any stocks. Type `.stocks` to see what's available."
@@ -540,9 +645,22 @@ namespace DiscordBot.Managers
                 output += $"  ↳ bought @ ${averageCost:N2} · {SignedMoney(gain)} ({gainPercent:+0.00;-0.00;0.00}%)\n";
             }
 
+            foreach (var held in shorts.OrderBy(x => x.Key))
+            {
+                var stock = market.Find(held.Key);
+                var position = held.Value;
+                double shortGain = position.EquityAt(stock.Price) - position.Margin;
+                output += $"{(shortGain >= 0 ? "📈" : "📉")} **{held.Key}** short {position.Shares} sh · sold @ ${position.EntryPrice:N2}, now ${stock.Price:N2} · margin ${FormatHelper.GetCommaNumber(position.Margin)} · {SignedMoney(shortGain)}\n";
+            }
+            foreach (var option in options)
+            {
+                double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
+                output += $"🎟️ {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${option.Strike:N2} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
+            }
+
             var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
-            output += $"\n💰 Stocks ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
+            output += $"\n💰 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}\n";
             output += totalCost > 0
                 ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
