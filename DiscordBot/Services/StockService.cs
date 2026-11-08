@@ -94,14 +94,15 @@ namespace DiscordBot.Services
             lock (_lock)
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                double spread = SpreadFor(account);
                 int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? stock.MaxAffordableShares(account.NetWorth)
+                    ? stock.MaxAffordableShares(account.NetWorth, spread)
                     : ParseShares(amount);
 
                 if (shares < 1)
                     throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${stock.Price:N2}).");
 
-                double fill = stock.PreviewTrade(shares).Fill;
+                double fill = stock.PreviewTrade(shares, spread).Fill;
                 double cost = Math.Round(shares * fill, 2);
                 if (cost > account.NetWorth)
                     throw new BadInputException($"{shares} shares of {stock.Symbol} cost ${cost:N2} but you only have ${account.NetWorth:N2}.");
@@ -127,9 +128,9 @@ namespace DiscordBot.Services
                 if (shares > owned)
                     throw new BadInputException($"You only own {owned} shares of {stock.Symbol}.");
 
-                double fill = stock.PreviewTrade(-shares).Fill;
+                double fill = stock.PreviewTrade(-shares, SpreadFor(account)).Fill;
                 double gross = Math.Round(shares * fill, 2);
-                double tax = Stock.TaxOn(gross);
+                double tax = account.IsActive(PowerUpIds.TaxHaven, DateTime.UtcNow) ? 0 : Stock.TaxOn(gross);
                 _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
                 account.NetWorth += gross - tax;
@@ -138,6 +139,10 @@ namespace DiscordBot.Services
                 return PersistAccount(account, (stock, shares, gross, tax));
             }
         }
+
+        /// <summary>The spread a player pays on buys and sells: none while they have Insider Trader running.</summary>
+        private static double SpreadFor(CoinAccount account) =>
+            account.IsActive(PowerUpIds.InsiderTrader, DateTime.UtcNow) ? 0 : Stock.Spread;
 
         public static readonly TimeSpan MinOptionDuration = TimeSpan.FromMinutes(15);
         public static readonly TimeSpan MaxOptionDuration = TimeSpan.FromDays(3);

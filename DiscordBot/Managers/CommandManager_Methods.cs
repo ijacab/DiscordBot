@@ -749,6 +749,64 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync(output);
         }
 
+        private async Task PowerUp(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var now = DateTime.UtcNow;
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            account.Prune(now);
+
+            if (args.Count >= 1 && args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                string catalog = string.Join("\n", PowerUpCatalog.All.Select(p => $"**{p.Name}**: {p.Description}"));
+                await message.Channel.SendMessageAsync($"Power-ups the raffle can give:\n{catalog}");
+                return;
+            }
+
+            if (args.Count >= 1 && args[0].Equals("use", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Count != 2 || !int.TryParse(args[1], out int number))
+                    throw new BadSyntaxException();
+                if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                    throw new BadInputException("Finish your bet before using a power-up.");
+
+                string result = await _raffleService.Use(account, number, now, new Random().NextDouble);
+                await message.Channel.SendMessageAsync($"{message.Author.Mention} {result}");
+                return;
+            }
+
+            if (args.Count != 0) throw new BadSyntaxException();
+
+            string output = "";
+            if (account.HeldPowerUps.Count == 0)
+                output += "You have no power-ups.\n";
+            else
+            {
+                output += "**Your power-ups** (use one with `.pu use <number>`):\n";
+                for (int i = 0; i < account.HeldPowerUps.Count; i++)
+                {
+                    var held = account.HeldPowerUps[i];
+                    var power = PowerUpCatalog.Find(held.Id);
+                    output += $"{i + 1}. **{power?.Name ?? held.Id}**: {power?.Description} (expires in {FormatRemaining(new DateTime(held.ExpiresAtTicks) - now)})\n";
+                }
+            }
+
+            if (account.ActivePowerUps.Count > 0)
+            {
+                output += "**Running now:**\n";
+                foreach (var active in account.ActivePowerUps)
+                {
+                    var power = PowerUpCatalog.Find(active.Id);
+                    string left = active.ChargesLeft == ActivePowerUp.Unlimited
+                        ? FormatRemaining(new DateTime(active.ExpiresAtTicks) - now) + " left"
+                        : $"{active.ChargesLeft} use(s) left";
+                    output += $"- {power?.Name ?? active.Id} ({left})\n";
+                }
+            }
+
+            output += $"Next raffle in {FormatRemaining(RaffleService.NextRaffleUtc(now) - now)}. Do something with money (bets, trades, donations) to be entered.";
+            await message.Channel.SendMessageAsync(output);
+        }
+
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. Every sell tax and donation tax goes in. " +

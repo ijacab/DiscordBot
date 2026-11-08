@@ -40,6 +40,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
+    RaffleService.cs           5-hourly raffle that gives power-ups, and using them (`.pu`)
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures

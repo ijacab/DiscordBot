@@ -21,6 +21,7 @@ namespace DiscordBot.Managers
         private readonly ReminderService _reminderService;
         private readonly CoinService _coinService;
         private readonly StockService _stockService;
+        private readonly RaffleService _raffleService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
@@ -40,10 +41,16 @@ namespace DiscordBot.Managers
         private int _messageCharLimit = 2000;
         private double _startingAmount = 10000;
 
+        private static readonly HashSet<string> _moneyCommands = new HashSet<string>
+        {
+            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng",
+            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull"
+        };
+
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
@@ -53,6 +60,7 @@ namespace DiscordBot.Managers
             _reminderService = reminderService;
             _coinService = coinService;
             _stockService = stockService;
+            _raffleService = raffleService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
             _blackjackManager = blackjackManager;
@@ -98,6 +106,8 @@ namespace DiscordBot.Managers
                 new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks) over the last 30 days, sampled hourly. Pass a user to see theirs, or `all` to put everyone on the same graph. Shorthand: `.nw`", Syntax = "`.networth`, `.networth @person` or `.networth all`" },
                 new Command("nw", NetWorthGraph) { Description = "Shorthand for `.networth`.", Syntax = "`.nw`, `.nw @person` or `.nw all`", Hidden = true },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
+                new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 5 hours among everyone who used money in the last 24h) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
+                new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
@@ -217,6 +227,10 @@ namespace DiscordBot.Managers
 
                     //execute command
                     await commandToExecute.ExecuteAsync(client, message, args);
+
+                    //only commands that move money count towards the raffle
+                    if (_moneyCommands.Contains(commandToExecute.Name) && message.Channel is SocketGuildChannel)
+                        _coinService.MarkActive(message.Author.Id, message.Channel.Id);
                 }
                 catch (Exception ex)
                 {
@@ -264,6 +278,15 @@ namespace DiscordBot.Managers
 
             //after interest and stock ticks, so the hourly sample reflects both
             await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId));
+
+            try
+            {
+                await _raffleService.RunIfDue(client);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error while running the raffle {nameof(CommandManager)}: {ex.Message}");
+            }
         }
 
         private async Task SendReminders(DiscordSocketClient client)

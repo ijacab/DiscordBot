@@ -1,6 +1,7 @@
 ﻿using Common.Helpers;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
+using DiscordBot.Models;
 using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
@@ -51,7 +52,7 @@ namespace DiscordBot.Managers
         }
 
         /// <summary>True when a jackpot roll lands. Kept separate from the random source so the odds can be tested.</summary>
-        public static bool RollsJackpot(double roll) => roll < JackpotWinChance;
+        public static bool RollsJackpot(double roll, double chance = JackpotWinChance) => roll < chance;
 
         /// <summary>Returns (and clears) the announcement for a jackpot won when the user's bet was last resolved, if any.</summary>
         public string TakeJackpotWin(ulong userId)
@@ -64,7 +65,8 @@ namespace DiscordBot.Managers
         /// <summary>An all-in bet has a small chance to take the whole tax pool. The win is paid to the gambler.</summary>
         private void RollJackpot(CoinAccount gambler)
         {
-            if (_coinService.JackpotPool <= 0 || !RollsJackpot(_random.NextDouble()))
+            double chance = gambler.IsActive(PowerUpIds.JackpotFever, DateTime.UtcNow) ? PowerUpCatalog.JackpotFeverChance : JackpotWinChance;
+            if (_coinService.JackpotPool <= 0 || !RollsJackpot(_random.NextDouble(), chance))
                 return;
 
             double won = _coinService.TakeJackpot();
@@ -152,7 +154,9 @@ namespace DiscordBot.Managers
             bool firstGambleOfTheDay = coinAccount.LastGambleDate != todayString;
             coinAccount.LastGambleDate = todayString;
 
+            var now = DateTime.UtcNow;
             double bonusWinnings = GetBonus(coinAccount, baseWinnings);
+            bonusWinnings += coinAccount.BetBonus(baseWinnings, betAmount, netWorthBeforeBet, now);
             double totalWinnings = baseWinnings + bonusWinnings;
 
             double netWinnings = Math.Floor(baseWinnings - betAmount);
@@ -170,7 +174,10 @@ namespace DiscordBot.Managers
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
 
             if (firstGambleOfTheDay)
-                _pendingDailyRolls[userId] = RollDailySteal(coinAccount);
+            {
+                int rollNeeded = coinAccount.TryConsumeCharge(PowerUpIds.LoadedDice, now) ? PowerUpCatalog.LoadedDiceRollNeeded : StealRollNeeded;
+                _pendingDailyRolls[userId] = RollDailySteal(coinAccount, rollNeeded, now);
+            }
 
             //an all-in bet is every dollar they have, with everything in cash, whether it wins or loses.
             //trading is blocked while a bet is open, so their holdings are the same as when the bet was placed
@@ -200,15 +207,17 @@ namespace DiscordBot.Managers
         /// Rolls a d10; on a 10 and if the roller isn't 1st on the leaderboard, moves 10% of 1st place's cash to the roller.
         /// Mutates both accounts in memory (the caller persists via CoinService.Update, which serializes every account).
         /// </summary>
-        private DailyRollResult RollDailySteal(CoinAccount roller)
+        private DailyRollResult RollDailySteal(CoinAccount roller, int rollNeeded, DateTime now)
         {
             var result = new DailyRollResult { Roll = DiceRoller.RollDice(1, 10)[0] };
-            if (result.Roll != StealRollNeeded)
+            if (result.Roll < rollNeeded)
                 return result;
 
             var leader = RankedAccounts().FirstOrDefault();
             if (leader == null || leader.UserId == roller.UserId)
                 return result; //roller is already 1st on the leaderboard
+            if (leader.IsShielded(now))
+                return result; //a Shield power-up protects them
 
             double amount = Math.Floor(leader.NetWorth * StealPercent);
             if (amount <= 0)

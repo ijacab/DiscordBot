@@ -15,6 +15,10 @@ namespace DiscordBot.Models
         public string LastNetWorthSampleHour { get; set; } //yyyyMMddHH (UTC) of the most recent net worth history sample
         /// <summary>Every tax collected (sell tax, donation tax). An all-in bet has a small chance to win the whole pool.</summary>
         public double JackpotPool { get; set; }
+        /// <summary>The 5 hour raffle slot that was last drawn, so each slot is drawn once.</summary>
+        public long LastRaffleSlot { get; set; }
+        /// <summary>The channel of the last money command, where raffle winners are announced.</summary>
+        public ulong LastActiveChannelId { get; set; }
 
         public class CoinAccount
         {
@@ -28,6 +32,13 @@ namespace DiscordBot.Models
             public BattlePerson BattlePerson { get; set; }
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
             public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
+
+            /// <summary>When (UTC ticks) the player last did something with money. Players active in the last 24h enter the raffle.</summary>
+            public long LastActiveUtcTicks { get; set; }
+            /// <summary>Power-ups won in the raffle and not used yet.</summary>
+            public List<HeldPowerUp> HeldPowerUps { get; set; } = new List<HeldPowerUp>();
+            /// <summary>Power-ups that have been used and are running.</summary>
+            public List<ActivePowerUp> ActivePowerUps { get; set; } = new List<ActivePowerUp>();
 
             public const int MaxNetWorthHistoryPoints = 30 * 24; //30 days of hourly samples
             /// <summary>Total worth (cash + stocks) sampled once an hour, oldest first. Used for the .networth graph.</summary>

@@ -172,13 +172,16 @@ namespace DiscordBot.Models
         /// The spread is then added on a buy or taken off on a sell, so a round trip always costs <see cref="Spread"/>.
         /// Does not change the stock.
         /// </summary>
-        public (double Fill, double NewImpact) PreviewTrade(int shares)
+        public (double Fill, double NewImpact) PreviewTrade(int shares) => PreviewTrade(shares, Spread);
+
+        /// <summary>As <see cref="PreviewTrade(int)"/> with a different spread, e.g. none for an Insider Trader.</summary>
+        public (double Fill, double NewImpact) PreviewTrade(int shares, double spread)
         {
             double move = ImpactCoefficient * Math.Sqrt(Math.Abs(shares) / SharesOutstanding) * Math.Sign(shares);
             double newImpact = Math.Max(-MaxImpact, Math.Min(MaxImpact, Impact + move));
             double after = PriceAt(FairPrice, newImpact);
             double mid = (Price + after) / 2;
-            double fill = Math.Max(MinPrice, mid * (1 + Math.Sign(shares) * Spread / 2));
+            double fill = Math.Max(MinPrice, mid * (1 + Math.Sign(shares) * spread / 2));
             return (Math.Round(fill, 2), newImpact);
         }
 
@@ -195,7 +198,9 @@ namespace DiscordBot.Models
         /// The largest number of shares whose cost fits in <paramref name="cash"/>. Cost rises with size because of impact,
         /// so this searches rather than dividing. Buying pushes the fill up, so the price is an upper bound.
         /// </summary>
-        public int MaxAffordableShares(double cash)
+        public int MaxAffordableShares(double cash) => MaxAffordableShares(cash, Spread);
+
+        public int MaxAffordableShares(double cash, double spread)
         {
             if (cash < Price) return 0;
             int low = 0;
@@ -203,7 +208,7 @@ namespace DiscordBot.Models
             while (low < high)
             {
                 int mid = low + (high - low + 1) / 2;
-                double cost = Math.Round(mid * PreviewTrade(mid).Fill, 2);
+                double cost = Math.Round(mid * PreviewTrade(mid, spread).Fill, 2);
                 if (cost <= cash) low = mid;
                 else high = mid - 1;
             }

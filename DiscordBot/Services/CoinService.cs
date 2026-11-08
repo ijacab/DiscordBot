@@ -36,6 +36,24 @@ namespace DiscordBot.Services
                 _coinAccounts.JackpotPool += amount;
         }
 
+        /// <summary>Takes a share of the jackpot and returns it. Saved with the next Update.</summary>
+        public double TakeFromJackpot(double fraction)
+        {
+            double amount = Math.Floor(_coinAccounts.JackpotPool * fraction);
+            if (amount <= 0) return 0;
+            _coinAccounts.JackpotPool -= amount;
+            return amount;
+        }
+
+        /// <summary>Notes that the player just did something with money, and where. Saved with the next Update.</summary>
+        public void MarkActive(ulong userId, ulong channelId)
+        {
+            var account = _coinAccounts.Accounts.Find(a => a.UserId == userId);
+            if (account == null) return;
+            account.LastActiveUtcTicks = DateTime.UtcNow.Ticks;
+            _coinAccounts.LastActiveChannelId = channelId;
+        }
+
         /// <summary>Empties the jackpot and returns what was in it. Saved with the next Update.</summary>
         public double TakeJackpot()
         {
@@ -130,7 +148,8 @@ namespace DiscordBot.Services
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDateBonusMet == dateString);
             foreach (var account in accountsToAction)
             {
-                account.NetWorth += CalculateAddedInterest(account); //add interest per hour if they are granted the bonus
+                double multiplier = account.IsActive(PowerUpIds.CompoundInterest, DateTime.UtcNow) ? PowerUpCatalog.CompoundInterestMultiplier : 1;
+                account.NetWorth += CalculateAddedInterest(account) * multiplier; //add interest per hour if they are granted the bonus
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);
             string content = JsonConvert.SerializeObject(_coinAccounts);
