@@ -25,62 +25,133 @@ namespace Tests
         // ---- crypto
 
         [Fact]
-        public void Crypto_CrashDropsHardAndStartsTheRecovery()
+        public void Crypto_MoonIsAStreakOfBigRisesThatEndsWithNoRecovery()
         {
             var coin = Coin();
-            coin.ApplyTick(Rolls(0.5, 0.0, 0.0)); //swing, event (crash), size (smallest)
+            coin.BasePrice = 100;
+            //noise, event (moon), length (3 ticks), first step (smallest)
+            coin.ApplyTick(Rolls(0.5, 0.03, 0.0, 0.0));
+            Assert.Equal(2, coin.MomentumTicks);
+            Assert.InRange(coin.FairPrice, 109.5, 110.6); //+10% (e^0.10)
 
-            Assert.Equal(65, coin.FairPrice, 2);
-            Assert.Equal(Stock.CryptoRecoveryTicks, coin.CrashRecoveryTicks);
-        }
-
-        [Fact]
-        public void Crypto_PumpRisesAtLeastFortyPercent()
-        {
-            var coin = Coin();
-            coin.ApplyTick(Rolls(0.5, 0.03, 0.0)); //swing, event (pump), size (smallest)
-
-            Assert.InRange(coin.FairPrice, 138, 141); //+40%, less a touch of the slow pull back to 100
+            double before = coin.FairPrice;
+            coin.ApplyTick(Rolls(0.5, 0.0)); //noise, step: only these are drawn mid streak
+            Assert.True(coin.FairPrice >= before * 1.10 - 0.01);
+            coin.ApplyTick(Rolls(0.5, 0.0));
+            Assert.Equal(0, coin.MomentumTicks);
             Assert.Equal(0, coin.CrashRecoveryTicks);
         }
 
         [Fact]
-        public void Crypto_WhileRecoveringOnlyDriftsAndDoesNotPumpOrReverse()
+        public void Crypto_CrashIsAStreakOfBigDropsThenStartsTheRecovery()
         {
             var coin = Coin();
-            coin.BasePrice = 200; //far above, but nothing pulls it up during the recovery
-            coin.CrashRecoveryTicks = 3;
-            coin.ApplyTick(Rolls(0.999999)); //only the swing is drawn: no pump or crash roll
+            coin.BasePrice = 100;
+            //noise, event (crash), length (3 ticks), first step (biggest)
+            coin.ApplyTick(Rolls(0.5, 0.0, 0.0, 0.999999));
+            Assert.Equal(-2, coin.MomentumTicks);
+            Assert.InRange(coin.FairPrice, 69, 71); //e^-0.35
 
-            Assert.Equal(2, coin.CrashRecoveryTicks);
-            Assert.InRange(coin.FairPrice, 100, 100 * (1 + Stock.CryptoRecoverySwing) + 0.01);
+            coin.ApplyTick(Rolls(0.5, 0.999999));
+            coin.ApplyTick(Rolls(0.5, 0.999999));
+            Assert.Equal(0, coin.MomentumTicks);
+            Assert.Equal(Stock.CryptoRecoveryTicks, coin.CrashRecoveryTicks);
+            Assert.InRange(coin.FairPrice, 33, 36); //three of e^-0.35
         }
 
         [Fact]
-        public void Crypto_AfterTheRecoveryItIsPulledBackSlowly()
+        public void Crypto_StreakLengthRunsFromThreeToEightTicks()
         {
-            var coin = Coin();
-            coin.BasePrice = 200;
-            coin.ApplyTick(Rolls(0.5, 0.5)); //no swing, no event
+            foreach (var (roll, expected) in new[] { (0.0, 3), (0.999999, 8) })
+            {
+                var coin = Coin();
+                coin.ApplyTick(Rolls(0.5, 0.03, roll, 0.0));
+                Assert.Equal(expected - 1, coin.MomentumTicks);
+            }
+        }
 
-            double expected = 100 * Math.Pow(2, Stock.CryptoMeanReversionRate);
-            Assert.Equal(expected, coin.FairPrice, 2);
-            Assert.True(Stock.CryptoMeanReversionRate < Stock.MeanReversionRate);
+        [Fact]
+        public void Crypto_TheBottomHoldsStillAndTheReboundBeginsLater()
+        {
+            var coin = Coin(30);
+            coin.BasePrice = 100;
+            coin.CrashRecoveryTicks = Stock.CryptoRecoveryTicks;
+
+            coin.ApplyTick(Rolls(0.5)); //only the noise is drawn: no event roll while recovering
+            Assert.Equal(30, coin.FairPrice, 2); //bottom: no pull up
+            Assert.Equal(Stock.CryptoRecoveryTicks - 1, coin.CrashRecoveryTicks);
+
+            coin.CrashRecoveryTicks = Stock.CryptoReboundTicks;
+            coin.ApplyTick(Rolls(0.5));
+            Assert.True(coin.FairPrice > 30); //rebound: pulled up
+        }
+
+        [Fact]
+        public void Crypto_ReboundBringsACrashedCoinBackNearItsLaunchPrice()
+        {
+            var coin = Coin(30);
+            coin.BasePrice = 100;
+            coin.CrashRecoveryTicks = Stock.CryptoRecoveryTicks;
+
+            for (int i = 0; i < Stock.CryptoRecoveryTicks; i++)
+                coin.ApplyTick(Rolls(0.5)); //no noise at all, so this is the pull alone
+
+            Assert.Equal(0, coin.CrashRecoveryTicks);
+            Assert.True(coin.FairPrice >= 80, $"only recovered to {coin.FairPrice}");
+        }
+
+        [Fact]
+        public void Crypto_ReboundWithRandomNoiseStillRecoversOnAverage()
+        {
+            double total = 0;
+            const int runs = 200;
+            for (int seed = 0; seed < runs; seed++)
+            {
+                var coin = Coin(30);
+                coin.BasePrice = 100;
+                coin.CrashRecoveryTicks = Stock.CryptoRecoveryTicks;
+                var random = new Random(seed);
+                //recovery ticks draw the noise only, so a plain random source is enough
+                for (int i = 0; i < Stock.CryptoRecoveryTicks; i++)
+                    coin.ApplyTick(random.NextDouble);
+                total += coin.FairPrice;
+            }
+
+            Assert.True(total / runs > 75, $"average recovered price was only {total / runs}");
         }
 
         [Fact]
         public void Crypto_NeverFallsBelowTheMinimumPrice()
         {
             var coin = Coin(1.5);
-            coin.ApplyTick(Rolls(0.5, 0.0, 0.999999)); //biggest crash
+            coin.ApplyTick(Rolls(0.5, 0.0, 0.0, 0.999999)); //crash step
             Assert.True(coin.Price >= Stock.MinPrice);
+        }
+
+        [Fact]
+        public void Crypto_OverAWeekItMoonsAndCrashesButIsNotStuckAtTheBottom()
+        {
+            var coin = Coin(50);
+            var random = new Random(1);
+            int ticks = 3000, atFloor = 0;
+            double high = coin.FairPrice, low = coin.FairPrice;
+            for (int i = 0; i < ticks; i++)
+            {
+                coin.ApplyTick(random.NextDouble);
+                high = Math.Max(high, coin.FairPrice);
+                low = Math.Min(low, coin.FairPrice);
+                if (coin.FairPrice <= Stock.MinPrice + 0.01) atFloor++;
+            }
+
+            Assert.True(high > 2 * coin.BasePrice, $"never mooned, high {high}");
+            Assert.True(low < 0.4 * coin.BasePrice, $"never crashed, low {low}");
+            Assert.True(atFloor < ticks * 0.15, $"stuck at the floor for {atFloor} of {ticks} ticks");
         }
 
         [Fact]
         public void Crypto_IsWilderThanEveryOtherTier()
         {
             Assert.Equal(Stock.CryptoTier, Stock.MaxTier);
-            Assert.All(Enumerable.Range(1, 5), tier => Assert.True(Stock.MaxSwingByTier[Stock.CryptoTier] > Stock.MaxSwingByTier[tier]));
             Assert.True(Coin().TickVolatility > Normal(5).TickVolatility);
         }
 

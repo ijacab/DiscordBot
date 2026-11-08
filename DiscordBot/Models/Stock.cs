@@ -8,22 +8,32 @@ namespace DiscordBot.Models
         public const double MinPrice = 1.00;
         public const int MinTier = 1;
         public const int MaxTier = 6;
-        /// <summary>The crypto tier: wild swings, sudden pumps and crashes, and a long recovery after a crash.</summary>
+        /// <summary>The crypto tier: calm-ish noise, then sudden bursts of mooning or crashing, and a rebound after a crash.</summary>
         public const int CryptoTier = 6;
-        /// <summary>Chance per tick that a crypto doubles-ish in one go.</summary>
-        public const double CryptoPumpChance = 0.03;
-        /// <summary>Chance per tick that a crypto crashes.</summary>
+        /// <summary>Normal crypto noise per tick, as a log move (about ±12%). Symmetric in log space, so it has no downward drift.</summary>
+        public const double CryptoSwing = 0.12;
+        /// <summary>Chance per idle tick that a moon streak starts.</summary>
+        public const double CryptoMoonChance = 0.025;
+        /// <summary>Chance per idle tick that a crash streak starts.</summary>
         public const double CryptoCrashChance = 0.02;
-        /// <summary>A pump lifts the price by between 40% and 120%.</summary>
-        public const double CryptoPumpMin = 0.40, CryptoPumpMax = 1.20;
-        /// <summary>A crash drops the price by between 35% and 65%.</summary>
-        public const double CryptoCrashMin = 0.35, CryptoCrashMax = 0.65;
-        /// <summary>Ticks (4 hours) after a crash where the price just drifts at the bottom, with no pull back up.</summary>
-        public const int CryptoRecoveryTicks = 48;
-        /// <summary>Largest move per tick while recovering from a crash, up or down.</summary>
-        public const double CryptoRecoverySwing = 0.04;
-        /// <summary>Crypto is pulled back to its base price much more slowly, so both spikes and crashes last.</summary>
-        public const double CryptoMeanReversionRate = 0.02;
+        /// <summary>A streak lasts this many ticks (15 to 40 minutes).</summary>
+        public const int CryptoStreakMinTicks = 3, CryptoStreakMaxTicks = 8;
+        /// <summary>Each tick of a streak moves the price by this log amount (+10% to +42% up, or the same down).</summary>
+        public const double CryptoStepMin = 0.10, CryptoStepMax = 0.35;
+        /// <summary>Ticks (about 4 hours) of recovery after a crash streak ends: a short bottom, then a rebound.</summary>
+        public const int CryptoRecoveryTicks = 46;
+        /// <summary>The last this many recovery ticks are the rebound. The ticks before them are the bottom.</summary>
+        public const int CryptoReboundTicks = 40;
+        /// <summary>Largest log move per tick at the bottom, up or down.</summary>
+        public const double CryptoBottomSwing = 0.04;
+        /// <summary>Largest log move per tick while rebounding, up or down.</summary>
+        public const double CryptoReboundSwing = 0.06;
+        /// <summary>Fraction of the log gap to the base price closed per tick while rebounding. Strong enough to beat the noise.</summary>
+        public const double CryptoReboundReversion = 0.06;
+        /// <summary>Pull back to the base price on normal ticks, which bleeds off a moon over a few hours.</summary>
+        public const double CryptoMeanReversionRate = 0.03;
+        /// <summary>Option pricing volatility per tick for crypto, covering the bursts as well as the noise.</summary>
+        public const double CryptoTickVolatility = 0.25;
         /// <summary>Shares a crypto is issued with. A thin market, so trades move it more.</summary>
         public const double CryptoSharesOutstanding = 20_000;
         /// <summary>Fraction of the gap between the price and <see cref="BasePrice"/> closed on each tick.</summary>
@@ -56,7 +66,7 @@ namespace DiscordBot.Models
             { 3, 0.07 },
             { 4, 0.15 },
             { 5, 0.30 },
-            { 6, 0.35 } //on top of this, crypto has pumps and crashes
+            { 6, 0.35 } //crypto: the biggest single-tick move, which only a burst reaches
         };
 
         public string Symbol { get; set; }
@@ -73,8 +83,10 @@ namespace DiscordBot.Models
         public double Impact { get; set; }
         /// <summary>Total shares in the market for this stock. Trades are sized against it.</summary>
         public double SharesOutstanding { get; set; } = DefaultSharesOutstanding;
-        /// <summary>Ticks left of the slow bottom after a crypto crash. 0 when not recovering.</summary>
+        /// <summary>Ticks of recovery left after a crypto crash streak. 0 when not recovering.</summary>
         public int CrashRecoveryTicks { get; set; }
+        /// <summary>Ticks left of a crypto burst: positive for a moon, negative for a crash. 0 when none.</summary>
+        public int MomentumTicks { get; set; }
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
@@ -86,51 +98,58 @@ namespace DiscordBot.Models
         public bool IsCrypto => RiskTier == CryptoTier;
 
         /// <summary>Standard deviation of one tick's move as a fraction of the price. Used to price options.</summary>
-        public double TickVolatility => MaxSwingByTier[RiskTier] / Math.Sqrt(3) * (IsCrypto ? 1.5 : 1.0);
+        public double TickVolatility => IsCrypto ? CryptoTickVolatility : MaxSwingByTier[RiskTier] / Math.Sqrt(3);
 
         /// <summary>
         /// Moves the fair price by a random amount within this stock's tier swing, pulls it back towards <see cref="BasePrice"/>,
         /// then lets the trading impact fade. <paramref name="random"/> returns a value in [0, 1).
-        /// Crypto also rolls a pump or crash (and after a crash, sits at the bottom for <see cref="CryptoRecoveryTicks"/>).
-        /// Random draws, in order: the swing, then for crypto not recovering the event roll, then the size of a pump or crash.
+        /// Crypto works in log space and has bursts: a moon or crash streak of several big steps, then after a crash a short
+        /// bottom and a strong rebound. Random draws, in order: the noise, then for a streak tick the step size, or for an idle
+        /// tick the event roll (and, if a streak starts, its length and then the first step size).
         /// </summary>
         public void ApplyTick(Func<double> random)
         {
-            double maxSwing = MaxSwingByTier[RiskTier];
-            double swing = (random() * 2 - 1) * maxSwing; //uniform in [-maxSwing, +maxSwing)
-            double reversion = MeanReversionRate;
+            double noise = random() * 2 - 1; //uniform in [-1, +1)
             double moved;
+            double reversion = MeanReversionRate;
 
             if (!IsCrypto)
             {
-                moved = FairPrice * (1 + swing);
+                moved = FairPrice * (1 + noise * MaxSwingByTier[RiskTier]);
+            }
+            else if (MomentumTicks != 0)
+            {
+                int direction = Math.Sign(MomentumTicks);
+                moved = FairPrice * Math.Exp(direction * StreakStep(random));
+                MomentumTicks -= direction;
+                if (MomentumTicks == 0 && direction < 0)
+                    CrashRecoveryTicks = CryptoRecoveryTicks;
+                reversion = 0;
             }
             else if (CrashRecoveryTicks > 0)
             {
-                //stuck near the bottom: small moves and no pull back up until the recovery is over
+                bool bottom = CrashRecoveryTicks > CryptoReboundTicks;
                 CrashRecoveryTicks--;
-                moved = FairPrice * (1 + swing / maxSwing * CryptoRecoverySwing);
-                reversion = 0;
+                moved = FairPrice * Math.Exp(noise * (bottom ? CryptoBottomSwing : CryptoReboundSwing));
+                reversion = bottom ? 0 : CryptoReboundReversion;
             }
             else
             {
-                reversion = CryptoMeanReversionRate;
                 double roll = random();
-                if (roll < CryptoCrashChance)
+                bool crash = roll < CryptoCrashChance;
+                bool moon = !crash && roll < CryptoCrashChance + CryptoMoonChance;
+                if (crash || moon)
                 {
-                    double drop = CryptoCrashMin + random() * (CryptoCrashMax - CryptoCrashMin);
-                    moved = FairPrice * (1 - drop);
-                    CrashRecoveryTicks = CryptoRecoveryTicks;
+                    int length = CryptoStreakMinTicks + (int)(random() * (CryptoStreakMaxTicks - CryptoStreakMinTicks + 1));
+                    int direction = crash ? -1 : 1;
+                    moved = FairPrice * Math.Exp(direction * StreakStep(random));
+                    MomentumTicks = direction * (length - 1); //this tick was the first of the streak
                     reversion = 0;
-                }
-                else if (roll < CryptoCrashChance + CryptoPumpChance)
-                {
-                    double rise = CryptoPumpMin + random() * (CryptoPumpMax - CryptoPumpMin);
-                    moved = FairPrice * (1 + rise);
                 }
                 else
                 {
-                    moved = FairPrice * (1 + swing);
+                    moved = FairPrice * Math.Exp(noise * CryptoSwing);
+                    reversion = CryptoMeanReversionRate;
                 }
             }
 
@@ -144,6 +163,8 @@ namespace DiscordBot.Models
             Impact *= ImpactDecayPerTick;
             RefreshQuote();
         }
+
+        private static double StreakStep(Func<double> random) => CryptoStepMin + random() * (CryptoStepMax - CryptoStepMin);
 
         /// <summary>
         /// The fill price for a trade of <paramref name="shares"/> (negative to sell) and the impact it would leave.
