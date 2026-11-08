@@ -156,7 +156,7 @@ namespace DiscordBot.Managers
 
             var now = DateTime.UtcNow;
             double bonusWinnings = GetBonus(coinAccount, baseWinnings);
-            bonusWinnings += coinAccount.BetBonus(baseWinnings, betAmount, netWorthBeforeBet, now);
+            bonusWinnings += coinAccount.BetBonus(baseWinnings, betAmount, now);
             double totalWinnings = baseWinnings + bonusWinnings;
 
             double netWinnings = Math.Floor(baseWinnings - betAmount);

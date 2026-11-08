@@ -143,21 +143,21 @@ namespace Tests
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.HotStreak), Now);
-            Assert.Equal(250, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, netWorthBeforeBet: 10_000, Now));
-            Assert.Equal(0, player.BetBonus(baseWinnings: 0, betAmount: 1_000, netWorthBeforeBet: 10_000, Now));
+            Assert.Equal(250, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
+            Assert.Equal(0, player.BetBonus(baseWinnings: 0, betAmount: 1_000, Now));
         }
 
         [Fact]
-        public void BetBonus_GoldenTicketDoublesOneWinAndIsCapped()
+        public void BetBonus_GoldenTicketDoublesOneWin_WithNoCap()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.GoldenTicket), Now);
-            Assert.Equal(0, player.BetBonus(0, 1_000, 10_000, Now)); //a loss keeps the ticket
-            Assert.Equal(1_000, player.BetBonus(2_000, 1_000, 10_000, Now));
-            Assert.Equal(0, player.BetBonus(2_000, 1_000, 10_000, Now)); //used up
+            Assert.Equal(0, player.BetBonus(0, 1_000, Now)); //a loss keeps the ticket
+            Assert.Equal(1_000, player.BetBonus(2_000, 1_000, Now));
+            Assert.Equal(0, player.BetBonus(2_000, 1_000, Now)); //used up
 
             player.Start(PowerUpCatalog.Find(PowerUpIds.GoldenTicket), Now);
-            Assert.Equal(2_500, player.BetBonus(100_000, 1_000, 10_000, Now)); //capped at 25% of net worth
+            Assert.Equal(99_000_000, player.BetBonus(100_000_000, 1_000_000, Now)); //extra is the full win, however big
         }
 
         [Fact]
@@ -166,8 +166,8 @@ namespace Tests
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.SafetyNet), Now);
             for (int i = 0; i < 3; i++)
-                Assert.Equal(500, player.BetBonus(0, 1_000, 10_000, Now));
-            Assert.Equal(0, player.BetBonus(0, 1_000, 10_000, Now));
+                Assert.Equal(500, player.BetBonus(0, 1_000, Now));
+            Assert.Equal(0, player.BetBonus(0, 1_000, Now));
         }
 
         [Fact]
@@ -228,7 +228,7 @@ namespace Tests
         }
 
         [Fact]
-        public void Stimulus_IsBounded()
+        public void Stimulus_HasAFloorButNoCeiling()
         {
             var poor = Account(1, cash: 100);
             var rich = Account(2, cash: 10_000_000);
@@ -240,7 +240,7 @@ namespace Tests
             service.ApplyUse(rich, 1, Now, () => 0);
 
             Assert.Equal(2_100, poor.NetWorth);
-            Assert.Equal(10_050_000, rich.NetWorth);
+            Assert.Equal(10_500_000, rich.NetWorth); //5% of 10M, no ceiling
         }
 
         [Fact]
@@ -285,7 +285,7 @@ namespace Tests
         }
 
         [Fact]
-        public void Pickpocket_TakesThreePercentCappedPerVictim_SkippingShielded()
+        public void Pickpocket_TakesThreePercentFromEachVictim_SkippingShielded()
         {
             var thief = Account(1, cash: 1_000);
             var rich = Account(2, cash: 10_000_000);
@@ -298,11 +298,11 @@ namespace Tests
 
             service.ApplyUse(thief, 1, Now, () => 0.5);
 
-            Assert.Equal(10_000_000 - 5_000, rich.NetWorth);
+            Assert.Equal(10_000_000 - 300_000, rich.NetWorth);
             Assert.Equal(10_000 - 300, normal.NetWorth);
             Assert.Equal(10_000, shielded.NetWorth);
             Assert.Equal(10_000, inactive.NetWorth);
-            Assert.Equal(1_000 + 5_000 + 300, thief.NetWorth);
+            Assert.Equal(1_000 + 300_000 + 300, thief.NetWorth);
         }
 
         [Fact]

@@ -168,7 +168,7 @@ namespace DiscordBot.Services
                     double total = 0;
                     foreach (var target in targets)
                     {
-                        double amount = Math.Min(PowerUpCatalog.PickpocketCap, Math.Floor(target.NetWorth * PowerUpCatalog.PickpocketPercent));
+                        double amount = Math.Floor(target.NetWorth * PowerUpCatalog.PickpocketPercent);
                         if (amount <= 0) continue;
                         target.NetWorth -= amount;
                         user.NetWorth += amount;
@@ -181,7 +181,7 @@ namespace DiscordBot.Services
                 }
                 case PowerUpIds.Stimulus:
                 {
-                    double amount = Math.Floor(Math.Max(PowerUpCatalog.StimulusMin, Math.Min(PowerUpCatalog.StimulusMax, _totalWorth(user) * PowerUpCatalog.StimulusPercent)));
+                    double amount = Math.Floor(Math.Max(PowerUpCatalog.StimulusMin, _totalWorth(user) * PowerUpCatalog.StimulusPercent));
                     user.NetWorth += amount;
                     return $"💵 **Stimulus!** You received ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}.";
                 }

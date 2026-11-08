@@ -72,18 +72,15 @@ namespace DiscordBot.Models
         public const int MaxHeld = 10;
 
         public const double HotStreakBonus = 0.25;
-        public const double GoldenTicketCapOfNetWorth = 0.25;
         public const double SafetyNetRefund = 0.5;
         public const double JackpotFeverChance = 0.15;
         public const int LoadedDiceRollNeeded = 8;
         public const double CompoundInterestMultiplier = 3;
         public const double BlueShellPercent = 0.10;
         public const double PickpocketPercent = 0.03;
-        public const double PickpocketCap = 5_000;
         public const int PickpocketVictims = 3;
         public const double StimulusPercent = 0.05;
         public const double StimulusMin = 2_000;
-        public const double StimulusMax = 50_000;
         public const double JackpotDipPercent = 0.15;
 
         public static readonly IReadOnlyList<PowerUpDefinition> All = new List<PowerUpDefinition>
@@ -91,7 +88,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.HotStreak, Name = "Hot Streak", Weight = Common, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(3),
                 Description = "For 3 hours, every winning bet pays 25% extra." },
             new PowerUpDefinition { Id = PowerUpIds.GoldenTicket, Name = "Golden Ticket", Weight = Rare, Kind = PowerUpKind.Charges, Charges = 1, Duration = HoldTime,
-                Description = "Your next winning bet pays double (the extra is capped at 25% of your net worth)." },
+                Description = "Your next winning bet pays double." },
             new PowerUpDefinition { Id = PowerUpIds.SafetyNet, Name = "Safety Net", Weight = Common, Kind = PowerUpKind.Charges, Charges = 3, Duration = HoldTime,
                 Description = "Your next 3 losing bets refund half of what you lost." },
             new PowerUpDefinition { Id = PowerUpIds.JackpotFever, Name = "Jackpot Fever", Weight = Uncommon, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(6),
@@ -109,9 +106,9 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.BlueShell, Name = "Blue Shell", Weight = Rare, Kind = PowerUpKind.Instant,
                 Description = "Steal 10% of 1st place's cash. Can't be used by 1st place, or on a shielded leader." },
             new PowerUpDefinition { Id = PowerUpIds.Pickpocket, Name = "Pickpocket", Weight = Uncommon, Kind = PowerUpKind.Instant,
-                Description = "Take 3% of the cash (up to $5,000 each) of up to 3 random other active players who aren't shielded." },
+                Description = "Take 3% of the cash of up to 3 random other active players who aren't shielded." },
             new PowerUpDefinition { Id = PowerUpIds.Stimulus, Name = "Stimulus", Weight = Common, Kind = PowerUpKind.Instant,
-                Description = "Get 5% of your net worth, at least $2,000 and at most $50,000." },
+                Description = "Get 5% of your net worth, at least $2,000." },
             new PowerUpDefinition { Id = PowerUpIds.JackpotDip, Name = "Jackpot Dip", Weight = Rare, Kind = PowerUpKind.Instant,
                 Description = "Claim 15% of the jackpot pool." },
             new PowerUpDefinition { Id = PowerUpIds.FreeCardPull, Name = "Free Card Pull", Weight = Common, Kind = PowerUpKind.Instant,
@@ -207,7 +204,7 @@ namespace DiscordBot.Models
         /// Extra (or refunded) money from the player's power-ups on a resolved bet. <paramref name="baseWinnings"/> is everything
         /// returned to them, including their stake, so a win has baseWinnings above the bet. Spends charges as needed.
         /// </summary>
-        public static double BetBonus(this CoinAccount account, double baseWinnings, double betAmount, double netWorthBeforeBet, DateTime now)
+        public static double BetBonus(this CoinAccount account, double baseWinnings, double betAmount, DateTime now)
         {
             double netGain = baseWinnings - betAmount;
             double bonus = 0;
@@ -216,7 +213,7 @@ namespace DiscordBot.Models
                 if (account.IsActive(PowerUpIds.HotStreak, now))
                     bonus += netGain * PowerUpCatalog.HotStreakBonus;
                 if (account.TryConsumeCharge(PowerUpIds.GoldenTicket, now))
-                    bonus += Math.Min(netGain, netWorthBeforeBet * PowerUpCatalog.GoldenTicketCapOfNetWorth);
+                    bonus += netGain;
             }
             else if (netGain < 0 && account.TryConsumeCharge(PowerUpIds.SafetyNet, now))
             {
