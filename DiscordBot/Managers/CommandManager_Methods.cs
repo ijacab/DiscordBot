@@ -634,7 +634,7 @@ namespace DiscordBot.Managers
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. Every sell tax and donation tax goes in. " +
-                $"Bet your whole net worth (`max`) on a game and you have a {BetManager.JackpotWinChance:P0} chance to win it all.");
+                $"Bet `max` on a game with all your money in cash (no stocks) and you have a {BetManager.JackpotWinChance:P0} chance to win it all.");
         }
 
         private async Task Start(DiscordSocketClient client, SocketMessage message, List<string> args)
