@@ -45,6 +45,13 @@ namespace DiscordBot.Services
         public static bool IsActive(CoinAccount account, DateTime now) =>
             account.LastActiveUtcTicks > 0 && now.Ticks - account.LastActiveUtcTicks < ActiveWindow.Ticks;
 
+        /// <summary>True when the account would be in the next raffle draw, which is the same test <see cref="IsActive"/> applies at draw time.</summary>
+        public static bool IsEnteredInNextDraw(CoinAccount account, DateTime now)
+        {
+            DateTime next = NextRaffleUtc(now);
+            return account.LastActiveUtcTicks > 0 && next.Ticks - account.LastActiveUtcTicks < ActiveWindow.Ticks;
+        }
+
         public static List<CoinAccount> Eligible(IEnumerable<CoinAccount> accounts, DateTime now) =>
             accounts.Where(a => IsActive(a, now)).ToList();
 
@@ -191,6 +198,100 @@ namespace DiscordBot.Services
                     if (lines.Count == 0)
                         throw new BadInputException("There's nobody active to pickpocket right now. Keep it for later.");
                     return $"🕵️ **Pickpocket!** You lifted ${Common.Helpers.FormatHelper.GetCommaNumber(total)} from {string.Join(", ", lines)}.";
+                }
+                case PowerUpIds.RedShell:
+                {
+                    var ranked = Ranked();
+                    int index = ranked.FindIndex(a => a.UserId == user.UserId);
+                    if (index <= 0)
+                        throw new BadInputException("You're in 1st place, so a Red Shell has nobody above you to hit. Keep it for later.");
+                    var target = ranked[index - 1];
+                    if (target.IsShielded(now))
+                        throw new BadInputException($"{target.Name} has a Shield running, so the Red Shell would bounce off. Try again later.");
+                    double amount = Math.Floor(_totalWorth(target) * PowerUpCatalog.RedShellPercent);
+                    if (amount <= 0)
+                        throw new BadInputException($"{target.Name} has nothing to steal.");
+                    var (_, toDebt) = Seize(target, user, amount);
+                    return $"🔴 **Red Shell!** You hit {target.Name}, just above you, and took ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}." +
+                        (toDebt > 0 ? $" They didn't have enough cash, so ${Common.Helpers.FormatHelper.GetCommaNumber(toDebt)} went on their debt." : "");
+                }
+                case PowerUpIds.LightningBolt:
+                {
+                    var ranked = Ranked();
+                    int index = ranked.FindIndex(a => a.UserId == user.UserId);
+                    if (index <= 0)
+                        throw new BadInputException("You're in 1st place, so there's nobody above you to strike. Keep it for later.");
+                    // the nearest players above you, closest first
+                    var targets = ranked.Take(index).Reverse()
+                        .Where(a => !a.IsShielded(now) && _totalWorth(a) >= 1)
+                        .Take(PowerUpCatalog.LightningBoltVictims)
+                        .ToList();
+                    var lines = new List<string>();
+                    double total = 0;
+                    foreach (var target in targets)
+                    {
+                        double amount = Math.Floor(_totalWorth(target) * PowerUpCatalog.LightningBoltPercent);
+                        if (amount <= 0) continue;
+                        Seize(target, user, amount);
+                        total += amount;
+                        lines.Add($"{target.Name} (${Common.Helpers.FormatHelper.GetCommaNumber(amount)})");
+                    }
+                    if (lines.Count == 0)
+                        throw new BadInputException("Everyone above you is shielded or broke right now. Keep it for later.");
+                    return $"⚡ **Lightning Bolt!** You struck ${Common.Helpers.FormatHelper.GetCommaNumber(total)} from {string.Join(", ", lines)}.";
+                }
+                case PowerUpIds.RobinHood:
+                {
+                    var richest = Ranked()
+                        .Where(a => a.UserId != user.UserId && !a.IsShielded(now) && _totalWorth(a) >= 1)
+                        .Take(PowerUpCatalog.RobinHoodVictims)
+                        .ToList();
+                    var lines = new List<string>();
+                    double total = 0;
+                    foreach (var target in richest)
+                    {
+                        double amount = Math.Floor(_totalWorth(target) * PowerUpCatalog.RobinHoodPercent);
+                        if (amount <= 0) continue;
+                        Seize(target, user, amount);
+                        total += amount;
+                        lines.Add($"{target.Name} (${Common.Helpers.FormatHelper.GetCommaNumber(amount)})");
+                    }
+                    if (lines.Count == 0)
+                        throw new BadInputException("Nobody is rich enough to rob right now. Keep it for later.");
+
+                    // the poorest half of the active players, you included if you're among them, share it out
+                    var pool = Eligible(_coinService.GetAll().Accounts, now).OrderBy(_totalWorth).ToList();
+                    var poorest = pool.Take(pool.Count / 2).ToList();
+                    double share = poorest.Count == 0 ? 0 : Math.Floor(total / poorest.Count);
+                    string outcome;
+                    if (share >= 1)
+                    {
+                        foreach (var poor in poorest)
+                        {
+                            user.NetWorth -= share;
+                            poor.NetWorth += share;
+                        }
+                        outcome = $" The poorest {poorest.Count} active player(s) each got ${Common.Helpers.FormatHelper.GetCommaNumber(share)}.";
+                    }
+                    else
+                    {
+                        outcome = " Nobody poor enough to share it with, so you kept it all.";
+                    }
+                    return $"🏹 **Robin Hood!** You took ${Common.Helpers.FormatHelper.GetCommaNumber(total)} from {string.Join(", ", lines)}.{outcome}";
+                }
+                case PowerUpIds.HostileTakeover:
+                {
+                    var leader = Ranked().FirstOrDefault();
+                    if (leader == null || leader.UserId == user.UserId)
+                        throw new BadInputException("You're in 1st place, so there's nobody to take from. Keep it for later.");
+                    if (leader.IsShielded(now))
+                        throw new BadInputException($"{leader.Name} has a Shield running, so the takeover would bounce off. Try again later.");
+                    double amount = Math.Floor(Math.Max(0, leader.NetWorth) * PowerUpCatalog.HostileTakeoverPercent);
+                    if (amount <= 0)
+                        throw new BadInputException($"{leader.Name} has no cash to take. Keep it for later.");
+                    leader.NetWorth -= amount;
+                    user.NetWorth += amount;
+                    return $"🏴 **Hostile Takeover!** You seized ${Common.Helpers.FormatHelper.GetCommaNumber(amount)} of {leader.Name}'s cash.";
                 }
                 case PowerUpIds.Stimulus:
                 {

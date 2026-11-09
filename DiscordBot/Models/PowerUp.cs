@@ -32,6 +32,10 @@ namespace DiscordBot.Models
         public const string JackpotDip = "jackpotdip";
         public const string FreeCardPull = "freecardpull";
         public const string InterestPass = "interestpass";
+        public const string RedShell = "redshell";
+        public const string LightningBolt = "lightningbolt";
+        public const string RobinHood = "robinhood";
+        public const string HostileTakeover = "hostiletakeover";
     }
 
     public class PowerUpDefinition
@@ -82,6 +86,12 @@ namespace DiscordBot.Models
         public const double StimulusPercent = 0.05;
         public const double StimulusMin = 2_000;
         public const double JackpotDipPercent = 0.15;
+        public const double RedShellPercent = 0.05;
+        public const double LightningBoltPercent = 0.02;
+        public const int LightningBoltVictims = 5;
+        public const double RobinHoodPercent = 0.01;
+        public const int RobinHoodVictims = 3;
+        public const double HostileTakeoverPercent = 0.5;
 
         public static readonly IReadOnlyList<PowerUpDefinition> All = new List<PowerUpDefinition>
         {
@@ -114,7 +124,15 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.FreeCardPull, Name = "Free Card Pull", Weight = Common, Kind = PowerUpKind.Instant,
                 Description = "Your free daily card pull is available again." },
             new PowerUpDefinition { Id = PowerUpIds.InterestPass, Name = "Interest Pass", Weight = Common, Kind = PowerUpKind.Instant,
-                Description = "Today counts as a bonus day, so you earn hourly interest without needing a 50% bet." }
+                Description = "Today counts as a bonus day, so you earn hourly interest without needing a 50% bet." },
+            new PowerUpDefinition { Id = PowerUpIds.RedShell, Name = "Red Shell", Weight = Uncommon, Kind = PowerUpKind.Instant,
+                Description = "Steal 5% of the net worth of the player directly above you. Any part they can't pay from cash goes on their debt. Can't be used from 1st place, or on a shielded player." },
+            new PowerUpDefinition { Id = PowerUpIds.LightningBolt, Name = "Lightning Bolt", Weight = Rare, Kind = PowerUpKind.Instant,
+                Description = "Strike up to 5 of the players nearest above you for 2% of their net worth each. Shielded players are skipped. Any part they can't pay from cash goes on their debt." },
+            new PowerUpDefinition { Id = PowerUpIds.RobinHood, Name = "Robin Hood", Weight = Rare, Kind = PowerUpKind.Instant,
+                Description = "Take 1% of the net worth of each of the top 3 players other than you (skipping shielded ones). The lot is split between the bottom half of active players, you included." },
+            new PowerUpDefinition { Id = PowerUpIds.HostileTakeover, Name = "Hostile Takeover", Weight = Rare, Kind = PowerUpKind.Instant,
+                Description = "Seize half of 1st place's cash. Cash only, so no debt is put on them. Can't be used from 1st place, or on a shielded leader." }
         };
 
         public static PowerUpDefinition Find(string id) =>

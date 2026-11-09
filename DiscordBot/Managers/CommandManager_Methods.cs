@@ -892,6 +892,10 @@ namespace DiscordBot.Managers
             if (args.Count != 0) throw new BadSyntaxException();
 
             string output = "";
+            string untilDraw = FormatRemaining(RaffleService.NextRaffleUtc(now) - now);
+            output += RaffleService.IsEnteredInNextDraw(account, now)
+                ? $"🎟️ **You're entered** in the raffle in {untilDraw}.\n"
+                : $"🎟️ **You're not entered** in the raffle in {untilDraw}. Do something with money (bets, trades, donations) to be entered.\n";
             if (account.HeldPowerUps.Count == 0)
                 output += "You have no power-ups.\n";
             else
@@ -918,7 +922,7 @@ namespace DiscordBot.Managers
                 }
             }
 
-            output += $"Next raffle in {FormatRemaining(RaffleService.NextRaffleUtc(now) - now)}. Do something with money (bets, trades, donations) to be entered.";
+            output += $"Next raffle in {untilDraw}.";
             await message.Channel.SendMessageAsync(output);
         }
 
