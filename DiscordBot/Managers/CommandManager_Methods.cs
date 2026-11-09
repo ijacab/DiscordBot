@@ -500,38 +500,6 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is no longer let out. Rates and maintenance still come out each day.");
         }
 
-        private async Task Repay(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            if (args.Count != 1) throw new BadSyntaxException();
-            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
-                throw new BadInputException("Finish your bet before repaying debt.");
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            if (account.Debt <= 0)
-                throw new BadInputException("You don't owe anything.");
-
-            double cash = Math.Max(0, account.NetWorth);
-            double amount;
-            if (args[0].Equals("all", StringComparison.OrdinalIgnoreCase))
-                amount = Math.Min(cash, account.Debt);
-            else if (!double.TryParse(args[0], out amount))
-                throw new BadSyntaxException();
-            amount = Math.Floor(amount * 100) / 100;
-
-            if (amount <= 0)
-                throw new BadInputException("You need cash to repay debt.");
-            if (amount > cash)
-                throw new BadInputException($"You only have ${FormatHelper.GetCommaNumber(cash)} in cash.");
-            amount = Math.Min(amount, account.Debt);
-
-            account.NetWorth -= amount;
-            account.Debt = Math.Round(account.Debt - amount, 2);
-            await _coinService.Update();
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} repaid ${FormatHelper.GetCommaNumber(amount)}. " +
-                (account.Debt > 0 ? $"You still owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "Your debt is clear.") +
-                $" Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
-        }
-
         private static bool TryParsePropertyKind(string text, out PropertyKind kind)
         {
             switch (text.ToLowerInvariant())
@@ -795,7 +763,7 @@ namespace DiscordBot.Managers
             foreach (var property in account.Properties)
                 output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, _coinService.GetAll().PropertyIndex))} after selling costs · {(property.LetOut ? "let out" : "not let")}\n";
             if (account.Debt > 0)
-                output += $"💳 Debt ${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; sales pay it off first, or `.repay`)\n";
+                output += $"💳 Debt ${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first)\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth + propertyValue - account.Debt)}\n";
             output += totalCost > 0
                 ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"

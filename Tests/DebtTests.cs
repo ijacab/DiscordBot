@@ -25,6 +25,36 @@ namespace Tests
         }
 
         [Fact]
+        public void RepayFromCash_PaysAsMuchAsSpareCashCovers()
+        {
+            var account = new CoinAccount { Debt = 1_000, NetWorth = 300.456 };
+            Assert.Equal(300.45, account.RepayFromCash());
+            Assert.Equal(699.55, account.Debt, 2);
+            Assert.InRange(account.NetWorth, -0.01, 0.01);
+        }
+
+        [Fact]
+        public void RepayFromCash_ClearsDebtWhenCashIsEnough()
+        {
+            var account = new CoinAccount { Debt = 200, NetWorth = 5_000 };
+            Assert.Equal(200, account.RepayFromCash());
+            Assert.Equal(0, account.Debt);
+            Assert.Equal(4_800, account.NetWorth, 2);
+        }
+
+        [Fact]
+        public void RepayFromCash_DoesNothingWithoutCashOrDebt()
+        {
+            var broke = new CoinAccount { Debt = 500, NetWorth = 0 };
+            Assert.Equal(0, broke.RepayFromCash());
+            Assert.Equal(500, broke.Debt);
+
+            var clear = new CoinAccount { Debt = 0, NetWorth = 900 };
+            Assert.Equal(0, clear.RepayFromCash());
+            Assert.Equal(900, clear.NetWorth);
+        }
+
+        [Fact]
         public void PayDebtFrom_WithNoDebt_KeepsEverything()
         {
             var account = new CoinAccount();

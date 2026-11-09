@@ -106,6 +106,19 @@ namespace DiscordBot.Services
             }
         }
 
+        /// <summary>
+        /// Pays off debt from whatever spare cash each player has. Called every minute. Players in <paramref name="skipUserIds"/>
+        /// have a bet open, so their cash is on the table and is left alone until it resolves.
+        /// </summary>
+        public async Task RepayDebtsFromCash(IEnumerable<ulong> skipUserIds)
+        {
+            var skip = new HashSet<ulong>(skipUserIds);
+            bool changed = false;
+            foreach (var account in _coinAccounts.Accounts.Where(a => a.Debt > 0 && !skip.Contains(a.UserId)))
+                changed |= account.RepayFromCash() > 0;
+            if (changed) await Update();
+        }
+
         /// <summary>Records each account's total worth once per UTC hour, for the .networth graph.</summary>
         public async Task RecordNetWorthHistory(Func<CoinAccount, double> totalWorthOf)
         {

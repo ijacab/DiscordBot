@@ -60,6 +60,17 @@ namespace DiscordBot.Models
             public static double GrowDebtOneHour(double debt) =>
                 debt <= 0 ? 0 : Math.Round(debt * Math.Pow(1 + DailyDebtInterest, 1.0 / 24), 2);
 
+            /// <summary>Pays off as much debt as the spare cash covers. Returns how much was paid.</summary>
+            public double RepayFromCash()
+            {
+                if (Debt <= 0 || NetWorth <= 0) return 0;
+                double paid = Math.Round(Math.Min(Debt, Math.Floor(NetWorth * 100) / 100), 2);
+                if (paid <= 0) return 0;
+                Debt = Math.Round(Debt - paid, 2);
+                NetWorth -= paid;
+                return paid;
+            }
+
             /// <summary>Sends incoming money to the debt first. Returns what is left over for cash.</summary>
             public double PayDebtFrom(double amount)
             {
