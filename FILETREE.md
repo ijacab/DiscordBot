@@ -69,14 +69,14 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
 
 Common/                        shared netstandard2.1 lib
   Exceptions/                  BadInput, BadSyntax, EnvironmentVariableMissing, NotInGame
-  Helpers/                     Discord, Environment, Format, GPT, List, Random, String helpers
+  Helpers/                     Discord, Environment, Format, GPT, List, Random, String, TextPaginator helpers
   Models/GistSettings.cs
   Services/                    GistService (remote), IFileService, LocalFileService
   _nanogpt/                    unrelated Python nanoGPT; ignore
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests
+Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, TextPaginatorTests
 ```
 
 ## Where to look

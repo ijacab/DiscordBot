@@ -132,26 +132,38 @@ namespace DiscordBot.Managers
                 await Task.Delay(TimeSpan.FromSeconds(3));
                 await message.Channel.SendMessageAsync("just kidding");
             }
-            string helpMessage = "";
+            var helpLines = new List<string>();
             foreach (var command in _commands.Where(c => c.Hidden == false))
             {
                 string desc = string.IsNullOrEmpty(command.Description) ? string.Empty : $" Desc: {command.Description}";
                 string syntax = string.IsNullOrEmpty(command.Description) ? string.Empty : $" Syntax: {command.Syntax}";
-                helpMessage += $"**.{command.Name}** \t{desc}{syntax}\n";
+                helpLines.Add($"**.{command.Name}** \t{desc}{syntax}");
             }
 
-            await message.SendRichEmbedMessage("List of commands available", helpMessage);
+            await SendPagedEmbeds(message.Channel, "List of commands available", helpLines);
 
-            string customCommandsMessage = "";
             var customCommands = await _mappingService.GetAll();
+            var customCommandNames = customCommands.Keys.ToList();
+            if (customCommandNames.Count == 0)
+                await message.SendRichEmbedMessage("Custom commands", "None added yet. Add one with `.add \"key\" \"value\"`");
+            else
+                await SendPagedEmbeds(message.Channel, "Custom commands", new[] { string.Join(", ", customCommandNames) });
+        }
 
-            foreach (var command in customCommands)
+        // Discord caps an embed at 6000 characters, so long lists go out as several embeds (one message each)
+        private static async Task SendPagedEmbeds(IMessageChannel channel, string title, IEnumerable<string> lines)
+        {
+            var pages = TextPaginator.Paginate(lines);
+            for (int i = 0; i < pages.Count; i++)
             {
-                string textToAdd = $"{command.Key}, ";
-                customCommandsMessage += textToAdd;
+                var embed = new EmbedBuilder().WithColor(Color.DarkPurple);
+                for (int f = 0; f < pages[i].Count; f++)
+                {
+                    string fieldName = (i == 0 && f == 0) ? title : "⠀";
+                    embed.AddField(fieldName, pages[i][f]);
+                }
+                await channel.SendMessageAsync(embed: embed.Build());
             }
-
-            await message.SendRichEmbedMessage("Custom commands", customCommandsMessage.TrimEnd(' ').TrimEnd(','));
         }
 
         private async Task Roll(DiscordSocketClient client, SocketMessage message, List<string> args)
