@@ -150,6 +150,15 @@ namespace DiscordBot.Managers
                 await SendPagedEmbeds(message.Channel, "Custom commands", new[] { string.Join(", ", customCommandNames) });
         }
 
+        private async Task ShowPatchNotes(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            bool showAll = args.Count == 1 && args[0].Equals("all", StringComparison.OrdinalIgnoreCase);
+            if (args.Count > 1 || (args.Count == 1 && !showAll)) throw new BadSyntaxException();
+
+            var notes = showAll ? PatchNotes.All : PatchNotes.All.Take(10).ToList();
+            await SendPagedEmbeds(message.Channel, showAll ? "Patch notes" : "Recent patch notes", notes.Select(n => $"**{n.Date}** · {n.Text}"));
+        }
+
         // Discord caps an embed at 6000 characters, so long lists go out as several embeds (one message each)
         private static async Task SendPagedEmbeds(IMessageChannel channel, string title, IEnumerable<string> lines)
         {

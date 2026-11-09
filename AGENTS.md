@@ -47,4 +47,5 @@ The dungeon deletes players' command messages to keep the channel clean. That ne
 - Hardcoded admin/bot IDs live in `CommandManager_Main.cs` (`_adminIds`, `_botId`); blacklists in `appsettings.json` (`AppSettings.cs`).
 - Discord message limit 2000 chars (`_messageCharLimit`); keep replies under it. Embeds are capped at 6000 chars total and 1024 per field, so long lists go through `TextPaginator.Paginate` (`Common/Helpers/TextPaginator.cs`) and send one embed per message, as `.help` does.
 - `mappings.json` / `reminders.json` are runtime data copied to output.
+- Patch notes: a significant change gets a one-line entry at the top of `PatchNotes.All` (`Models/PatchNotes.cs`); `.patchnotes` shows them.
 - Branch `gambling-rework` is active; `master` is the deploy branch.
