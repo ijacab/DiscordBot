@@ -190,9 +190,13 @@ namespace Tests
         public void DefaultMarket_HasExactlyOneStockInEachOfTheSixTiers()
         {
             var market = StockMarket.CreateDefault();
-            Assert.Equal(Enumerable.Range(1, 6), market.Stocks.Select(s => s.RiskTier).OrderBy(t => t));
-            Assert.Equal(market.Stocks.Count, market.Stocks.Select(s => s.Symbol).Distinct().Count());
-            Assert.All(market.Stocks, s => Assert.Contains(StockMarket.Pool, p => p.Symbol == s.Symbol && p.Tier == s.RiskTier));
+            //the random pool is one per tier; gold and bonds are always listed on top of it
+            var pool = market.Stocks.Where(s => s.Role == StockRole.Normal).ToList();
+            Assert.Equal(Enumerable.Range(1, 6), pool.Select(s => s.RiskTier).OrderBy(t => t));
+            Assert.Equal(pool.Count, pool.Select(s => s.Symbol).Distinct().Count());
+            Assert.All(pool, s => Assert.Contains(StockMarket.Pool, p => p.Symbol == s.Symbol && p.Tier == s.RiskTier));
+            Assert.NotNull(market.Find("GOLD"));
+            Assert.NotNull(market.Find("BOND"));
         }
 
         [Fact]

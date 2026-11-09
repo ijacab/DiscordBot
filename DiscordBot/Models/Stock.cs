@@ -3,9 +3,26 @@ using System.Collections.Generic;
 
 namespace DiscordBot.Models
 {
+    /// <summary>What kind of listing a stock is. Safe havens and bonds are not hit the way ordinary stocks are in a crisis.</summary>
+    public enum StockRole
+    {
+        /// <summary>An ordinary company stock, from the random pool.</summary>
+        Normal,
+        /// <summary>Gold: rallies while the market falls, then fades back to its base.</summary>
+        SafeHaven,
+        /// <summary>Government bonds: a small steady yield, almost no swing, unaffected by a crisis.</summary>
+        Bond
+    }
+
     public class Stock
     {
         public const double MinPrice = 1.00;
+        /// <summary>5 minute ticks in a day.</summary>
+        public const int TicksPerDay = 24 * 60 / 5;
+        /// <summary>Bond yield per day, as a log move. About 0.02% a day, or 7% a year.</summary>
+        public const double BondGrowthPerDay = 0.0002;
+        /// <summary>Bond noise per tick, as a log move. Tiny, so the yield is what shows.</summary>
+        public const double BondNoise = 0.0001;
         public const int MinTier = 1;
         public const int MaxTier = 6;
         /// <summary>The crypto tier: calm-ish noise, then sudden bursts of mooning or crashing, and a rebound after a crash.</summary>
@@ -97,6 +114,9 @@ namespace DiscordBot.Models
 
         public bool IsCrypto => RiskTier == CryptoTier;
 
+        /// <summary>Normal, safe haven or bond. Old saved stocks load as Normal.</summary>
+        public StockRole Role { get; set; } = StockRole.Normal;
+
         /// <summary>Standard deviation of one tick's move as a fraction of the price. Used to price options.</summary>
         public double TickVolatility => IsCrypto ? CryptoTickVolatility : MaxSwingByTier[RiskTier] / Math.Sqrt(3);
 
@@ -107,15 +127,30 @@ namespace DiscordBot.Models
         /// bottom and a strong rebound. Random draws, in order: the noise, then for a streak tick the step size, or for an idle
         /// tick the event roll (and, if a streak starts, its length and then the first step size).
         /// </summary>
-        public void ApplyTick(Func<double> random)
+        public void ApplyTick(Func<double> random) => ApplyTick(random, MarketDrift.None);
+
+        /// <summary>As <see cref="ApplyTick(Func{double})"/>, with a market-wide crisis drift on top (see <see cref="MarketCycle"/>).</summary>
+        public void ApplyTick(Func<double> random, MarketDrift drift)
         {
             double noise = random() * 2 - 1; //uniform in [-1, +1)
+
+            if (Role == StockRole.Bond)
+            {
+                //bonds don't round to the cent, or the small daily yield would be lost on every tick
+                double bondMoved = FairPrice * Math.Exp(BondGrowthPerDay / TicksPerDay + noise * BondNoise);
+                PreviousPrice = Price;
+                FairPrice = Math.Max(MinPrice, bondMoved);
+                Impact *= ImpactDecayPerTick;
+                RefreshQuote();
+                return;
+            }
+
             double moved;
             double reversion = MeanReversionRate;
 
             if (!IsCrypto)
             {
-                moved = FairPrice * (1 + noise * MaxSwingByTier[RiskTier]);
+                moved = FairPrice * (1 + noise * MaxSwingByTier[RiskTier] * drift.SwingScale);
             }
             else if (MomentumTicks != 0)
             {
@@ -153,13 +188,16 @@ namespace DiscordBot.Models
                 }
             }
 
+            moved *= Math.Exp(drift.LogPerTick);
             moved = Math.Max(MinPrice, moved);
+            if (!drift.AllowReversion) reversion = 0; //during a crisis the price follows the drift, not the old base
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
             if (BasePrice > 0 && reversion > 0)
                 moved *= Math.Pow(BasePrice / moved, reversion);
 
             PreviousPrice = Price;
-            FairPrice = Math.Max(MinPrice, Math.Round(moved, 2));
+            //four decimals, so a slow crisis drift on a cheap stock isn't rounded away every tick (the quote is still shown to the cent)
+            FairPrice = Math.Max(MinPrice, Math.Round(moved, 4));
             Impact *= ImpactDecayPerTick;
             RefreshQuote();
         }

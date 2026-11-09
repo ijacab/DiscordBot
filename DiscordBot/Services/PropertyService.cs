@@ -15,6 +15,15 @@ namespace DiscordBot.Services
     {
         private static readonly Random _random = new Random();
         private readonly CoinService _coinService;
+        private readonly System.Collections.Generic.List<string> _news = new System.Collections.Generic.List<string>();
+
+        /// <summary>Market headlines since the last call (crash phases starting and ending). Posted by the command manager.</summary>
+        public System.Collections.Generic.List<string> TakeNews()
+        {
+            var news = new System.Collections.Generic.List<string>(_news);
+            _news.Clear();
+            return news;
+        }
 
         public PropertyService(CoinService coinService)
         {
@@ -80,13 +89,24 @@ namespace DiscordBot.Services
 
             if (data.LastPropertyDay != today)
             {
+                //the market crisis calendar moves first, so today's step already follows the new phase
+                string headline = MarketCycle.AdvanceDay(data, today, random);
+                if (headline != null) _news.Add(headline);
+
                 double index = data.PropertyIndex;
-                int direction = data.PropertyTrendDirection;
-                int daysLeft = data.PropertyTrendDaysLeft;
-                PropertyMarket.Step(ref index, ref direction, ref daysLeft, random);
+                if (data.MarketPhase != CrisisPhase.None)
+                {
+                    MarketCycle.StepProperty(ref index, data.MarketPhase);
+                }
+                else
+                {
+                    int direction = data.PropertyTrendDirection;
+                    int daysLeft = data.PropertyTrendDaysLeft;
+                    PropertyMarket.Step(ref index, ref direction, ref daysLeft, random);
+                    data.PropertyTrendDirection = direction;
+                    data.PropertyTrendDaysLeft = daysLeft;
+                }
                 data.PropertyIndex = index;
-                data.PropertyTrendDirection = direction;
-                data.PropertyTrendDaysLeft = daysLeft;
                 data.LastPropertyDay = today;
                 changed = true;
             }

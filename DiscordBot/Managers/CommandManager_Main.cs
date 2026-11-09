@@ -285,6 +285,13 @@ namespace DiscordBot.Managers
             Task propertyTask = _propertyService.TickIfDue();
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
 
+            //market headlines when a crash starts, bottoms out, recovers or ends
+            foreach (var headline in _propertyService.TakeNews())
+            {
+                if (client.GetChannel(_coinService.GetAll().LastActiveChannelId) is Discord.IMessageChannel newsChannel)
+                    await newsChannel.SendMessageAsync(headline);
+            }
+
             //any spare cash goes straight to debt
             await _coinService.RepayDebtsFromCash(_betManager.InitiatedBetUserIds);
 

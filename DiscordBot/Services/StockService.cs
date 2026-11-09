@@ -33,6 +33,7 @@ namespace DiscordBot.Services
             else
             {
                 FillMissingFields();
+                _market.EnsureSafeHavens(); //gold and bonds were added after some markets were saved
             }
         }
 
@@ -58,19 +59,29 @@ namespace DiscordBot.Services
         /// Updates all prices if we've moved into a new 5 minute period since the last update, closes shorts that have lost
         /// their margin, and settles options that have expired. Safe to call every minute.
         /// </summary>
-        public Task TickIfDue()
+        public async Task TickIfDue()
         {
             long now = DateTimeOffset.UtcNow.UtcTicks;
             long slot = now / _tickLengthTicks;
+            bool coinChanged = false;
             lock (_lock)
             {
                 bool changed = false;
                 if (slot != _market.LastTickSlot)
                 {
+                    var data = _coinService.GetAll();
+                    if (data.CrisisResetPending)
+                    {
+                        //the crash has ended: stocks keep their new level instead of drifting back to the old one
+                        MarketCycle.ResetBasePrices(_market.Stocks);
+                        data.CrisisResetPending = false;
+                        coinChanged = true;
+                    }
+
                     //one tick only, even if the bot was down for several periods
                     foreach (var stock in _market.Stocks)
                     {
-                        stock.ApplyTick(_random.NextDouble);
+                        stock.ApplyTick(_random.NextDouble, MarketCycle.DriftFor(stock, data.MarketPhase));
                         stock.RecordHistory();
                     }
                     _market.LastTickSlot = slot;
@@ -81,7 +92,7 @@ namespace DiscordBot.Services
                 changed |= SettleExpiredOptions(now);
                 if (changed) Save();
             }
-            return Task.CompletedTask;
+            if (coinChanged) await _coinService.Update();
         }
 
         public bool HasPositions(ulong userId)

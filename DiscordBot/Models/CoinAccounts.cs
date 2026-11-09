@@ -28,6 +28,13 @@ namespace DiscordBot.Models
         public long LastPropertyDay { get; set; }
         /// <summary>The UTC day (days since 1970) rent was last paid up to.</summary>
         public long LastRentDay { get; set; }
+        /// <summary>Where the market is in a rare crash. None is normal trading. See <see cref="MarketCycle"/>.</summary>
+        public CrisisPhase MarketPhase { get; set; } = CrisisPhase.None;
+        public int MarketPhaseDaysLeft { get; set; }
+        /// <summary>The first UTC day another crash may start (days since 1970).</summary>
+        public long NextCrisisAllowedDay { get; set; }
+        /// <summary>Set when a crash ends, so stocks take their new level as their base on the next tick.</summary>
+        public bool CrisisResetPending { get; set; }
 
         public class CoinAccount
         {

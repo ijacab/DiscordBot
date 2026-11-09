@@ -60,6 +60,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
+    MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts
     Property.cs                house/apartment prices, costs, rent and the shared market index

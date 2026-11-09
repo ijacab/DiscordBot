@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-09", "Rare market crash (about once every 2 years): stocks and property fall for weeks, then slowly recover. Gold rises in a crash, and bonds pay a steady yield."),
             new PatchNote("2026-11-09", "Red Shell, Lightning Bolt, Robin Hood and Hostile Takeover take from players above you. `.pu` shows whether you're in the next raffle."),
             new PatchNote("2026-11-09", "`.portfolio` lists all your assets: cash, stocks, property, debt and total."),
             new PatchNote("2026-11-09", "Property says \"rented out\" instead of \"let out\"."),

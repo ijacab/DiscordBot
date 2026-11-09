@@ -230,7 +230,16 @@ namespace DiscordBot.Models
             ("HODL", "HODL Token", 6, 12.0),
         };
 
-        /// <summary>A new market with one randomly chosen stock from the pool in each tier. Pass a seeded random for a repeatable pick.</summary>
+        /// <summary>
+        /// Safe havens, always listed (not drawn from the pool). Gold rallies in a crash and bonds pay a small steady yield.
+        /// </summary>
+        public static readonly IReadOnlyList<(string Symbol, string Name, int Tier, double Price, StockRole Role)> SafeHavens = new[]
+        {
+            ("GOLD", "Gold Bullion", 2, 150.0, StockRole.SafeHaven),
+            ("BOND", "Treasury Bonds", 1, 100.0, StockRole.Bond),
+        };
+
+        /// <summary>A new market with one randomly chosen stock from the pool in each tier, plus the safe havens. Pass a seeded random for a repeatable pick.</summary>
         public static StockMarket CreateDefault(Random random = null)
         {
             random ??= new Random();
@@ -238,21 +247,36 @@ namespace DiscordBot.Models
                 .GroupBy(p => p.Tier)
                 .OrderBy(g => g.Key)
                 .Select(g => g.ElementAt(random.Next(g.Count())))
-                .Select(p => new Stock
-                {
-                    Symbol = p.Symbol,
-                    Name = p.Name,
-                    RiskTier = p.Tier,
-                    Price = p.Price,
-                    PreviousPrice = p.Price,
-                    BasePrice = p.Price,
-                    FairPrice = p.Price,
-                    SharesOutstanding = p.Tier == Stock.CryptoTier ? Stock.CryptoSharesOutstanding : Stock.DefaultSharesOutstanding,
-                    History = new List<double> { p.Price }
-                })
+                .Select(p => NewStock(p.Symbol, p.Name, p.Tier, p.Price, StockRole.Normal))
                 .ToList();
 
-            return new StockMarket { Stocks = stocks };
+            var market = new StockMarket { Stocks = stocks };
+            market.EnsureSafeHavens();
+            return market;
         }
+
+        /// <summary>Adds any safe haven the market doesn't have yet, at its launch price. Older saved markets get them this way.</summary>
+        public void EnsureSafeHavens()
+        {
+            foreach (var haven in SafeHavens)
+            {
+                if (Find(haven.Symbol) == null)
+                    Stocks.Add(NewStock(haven.Symbol, haven.Name, haven.Tier, haven.Price, haven.Role));
+            }
+        }
+
+        private static Stock NewStock(string symbol, string name, int tier, double price, StockRole role) => new Stock
+        {
+            Symbol = symbol,
+            Name = name,
+            RiskTier = tier,
+            Role = role,
+            Price = price,
+            PreviousPrice = price,
+            BasePrice = price,
+            FairPrice = price,
+            SharesOutstanding = tier == Stock.CryptoTier ? Stock.CryptoSharesOutstanding : Stock.DefaultSharesOutstanding,
+            History = new List<double> { price }
+        };
     }
 }
