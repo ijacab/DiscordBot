@@ -123,10 +123,10 @@ namespace Tests
         [Fact]
         public void Rent_ForAHouseIsAboutRightAfterVacancyAndAgency()
         {
-            //$10 an hour gross, less 4% empty and 8% to the agency, is about $8.83 an hour
+            //$650 an hour gross, less 4% empty and 8% to the agency, is about $574 an hour
             double netRentPerHour = PropertyCatalog.GrossRentPerHour(PropertyKind.House) * (1 - PropertyCatalog.AgencyFeeRate);
-            Assert.InRange(netRentPerHour, 8.7, 9.0);
-            Assert.InRange(PropertyCatalog.RentPerHour(PropertyKind.House) / 1000, 0.009, 0.011); //1% of the $1,000 an hour base income
+            Assert.InRange(netRentPerHour, 570, 580);
+            Assert.InRange(PropertyCatalog.RentPerHour(PropertyKind.House) / 1000, 0.6, 0.7); //about 65% of the $1,000 an hour base income
         }
 
         [Fact]
