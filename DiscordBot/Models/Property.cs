@@ -30,9 +30,10 @@ namespace DiscordBot.Models
     {
         public const double HousePrice = 950_000;
         public const double ApartmentPrice = 720_000;
-        /// <summary>Gross rent per hour while let, before the vacancy allowance and agency fee. Twice the old weekly rents, now paid every hour, against the $1,000 an hour base income.</summary>
-        public const double HouseRentPerHour = 1300;
-        public const double ApartmentRentPerHour = 1040;
+        /// <summary>Realistic gross rental yields per year, as a share of the purchase price. Rent is this spread evenly over every hour.</summary>
+        public const double HouseGrossYieldPerYear = 0.035;
+        public const double ApartmentGrossYieldPerYear = 0.04;
+        public const double HoursPerYear = 24 * 365;
 
         /// <summary>Stamp duty and conveyancing, paid on top of the price when buying.</summary>
         public const double StampDutyRate = 0.045;
@@ -63,7 +64,10 @@ namespace DiscordBot.Models
 
         public static double BasePrice(PropertyKind kind) => kind == PropertyKind.House ? HousePrice : ApartmentPrice;
 
-        public static double RentPerHour(PropertyKind kind) => kind == PropertyKind.House ? HouseRentPerHour : ApartmentRentPerHour;
+        public static double YieldPerYear(PropertyKind kind) => kind == PropertyKind.House ? HouseGrossYieldPerYear : ApartmentGrossYieldPerYear;
+
+        /// <summary>Gross rent for one hour while let, before the vacancy allowance and agency fee. Follows the market price.</summary>
+        public static double RentPerHour(PropertyKind kind, double index) => Price(kind, index) * YieldPerYear(kind) / HoursPerYear;
 
         public static string DisplayName(PropertyKind kind) => kind == PropertyKind.House ? "House" : "Apartment";
 
@@ -81,7 +85,7 @@ namespace DiscordBot.Models
         public static double SaleValue(PropertyKind kind, double index) => Math.Round(Price(kind, index) * (1 - SellingCostRate), 2);
 
         /// <summary>Gross rent for one hour while let, after the vacancy allowance and before the agency fee.</summary>
-        public static double GrossRentPerHour(PropertyKind kind) => RentPerHour(kind) * (1 - VacancyRate);
+        public static double GrossRentPerHour(PropertyKind kind, double index) => RentPerHour(kind, index) * (1 - VacancyRate);
 
         /// <summary>Holding cost for one day on a property at this index.</summary>
         public static double DailyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerYear / 365.0;

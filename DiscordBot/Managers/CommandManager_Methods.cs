@@ -466,7 +466,7 @@ namespace DiscordBot.Managers
             {
                 output += $"🏠 **{PropertyCatalog.DisplayName(kind)}**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(kind, index))} " +
                     $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(kind, index))} to buy with stamp duty), " +
-                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent ${FormatHelper.GetCommaNumber(PropertyCatalog.RentPerHour(kind))} an hour\n";
+                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent {PropertyCatalog.RentPerHour(kind, index):N2} an hour\n";
             }
 
             output += "\n**Your property**\n";
@@ -475,9 +475,9 @@ namespace DiscordBot.Managers
             for (int i = 0; i < account.Properties.Count; i++)
             {
                 var property = account.Properties[i];
-                double netRentPerHour = PropertyCatalog.RentPerHour(property.Kind) * (1 - PropertyCatalog.VacancyRate) * (1 - PropertyCatalog.AgencyFeeRate);
+                double netRentPerHour = PropertyCatalog.GrossRentPerHour(property.Kind, index) * (1 - PropertyCatalog.AgencyFeeRate);
                 output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
-                    (property.LetOut ? $"rented out, about ${FormatHelper.GetCommaNumber(netRentPerHour)} an hour after the agency" : "not rented out, earning nothing") + "\n";
+                    (property.LetOut ? $"rented out, about {netRentPerHour:N2} an hour after the agency" : "not rented out, earning nothing") + "\n";
             }
 
             output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily, rented out or not. " +

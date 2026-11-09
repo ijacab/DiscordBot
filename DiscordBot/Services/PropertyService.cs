@@ -156,7 +156,7 @@ namespace DiscordBot.Services
         {
             foreach (var account in data.Accounts.Where(a => a.Properties.Any(p => p.LetOut)))
             {
-                double gross = account.Properties.Where(p => p.LetOut).Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind));
+                double gross = account.Properties.Where(p => p.LetOut).Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind, data.PropertyIndex));
                 account.NetWorth += gross * (1 - PropertyCatalog.AgencyFeeRate);
             }
         }
