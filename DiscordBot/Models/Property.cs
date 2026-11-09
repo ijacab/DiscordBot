@@ -30,8 +30,9 @@ namespace DiscordBot.Models
     {
         public const double HousePrice = 950_000;
         public const double ApartmentPrice = 720_000;
-        public const double HouseRentPerWeek = 650;
-        public const double ApartmentRentPerWeek = 520;
+        /// <summary>Gross rent per hour while let, before the vacancy allowance and agency fee. A house pays 1% of the $1,000 an hour base income.</summary>
+        public const double HouseRentPerHour = 10;
+        public const double ApartmentRentPerHour = 8;
 
         /// <summary>Stamp duty and conveyancing, paid on top of the price when buying.</summary>
         public const double StampDutyRate = 0.045;
@@ -55,12 +56,14 @@ namespace DiscordBot.Models
         public const int MaxTrendDays = 120;
         /// <summary>Apartments move this much more, in percent, than houses.</summary>
         public const double ApartmentVolatility = 1.2;
-        /// <summary>At most this many days of rent are paid at once, if the bot was down for longer.</summary>
-        public const int MaxRentCatchUpDays = 7;
+        /// <summary>At most this many hours of rent are paid at once (a week), if the bot was down for longer.</summary>
+        public const int MaxRentCatchUpHours = 7 * 24;
+        /// <summary>At most this many days of holding costs are charged at once, if the bot was down for longer.</summary>
+        public const int MaxHoldingCatchUpDays = 7;
 
         public static double BasePrice(PropertyKind kind) => kind == PropertyKind.House ? HousePrice : ApartmentPrice;
 
-        public static double WeeklyRent(PropertyKind kind) => kind == PropertyKind.House ? HouseRentPerWeek : ApartmentRentPerWeek;
+        public static double RentPerHour(PropertyKind kind) => kind == PropertyKind.House ? HouseRentPerHour : ApartmentRentPerHour;
 
         public static string DisplayName(PropertyKind kind) => kind == PropertyKind.House ? "House" : "Apartment";
 
@@ -77,8 +80,8 @@ namespace DiscordBot.Models
         /// <summary>What it would sell for, after agent commission and marketing. This is its value in net worth.</summary>
         public static double SaleValue(PropertyKind kind, double index) => Math.Round(Price(kind, index) * (1 - SellingCostRate), 2);
 
-        /// <summary>Gross rent for one day while let, before the vacancy allowance and the agency fee.</summary>
-        public static double DailyGrossRent(PropertyKind kind) => WeeklyRent(kind) / 7.0 * (1 - VacancyRate);
+        /// <summary>Gross rent for one hour while let, after the vacancy allowance and before the agency fee.</summary>
+        public static double GrossRentPerHour(PropertyKind kind) => RentPerHour(kind) * (1 - VacancyRate);
 
         /// <summary>Holding cost for one day on a property at this index.</summary>
         public static double DailyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerYear / 365.0;
@@ -103,5 +106,7 @@ namespace DiscordBot.Models
         }
 
         public static long DayNumber(DateTime utc) => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToUnixTimeSeconds() / 86400L;
+
+        public static long HourNumber(DateTime utc) => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToUnixTimeSeconds() / 3600L;
     }
 }

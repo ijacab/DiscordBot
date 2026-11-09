@@ -466,7 +466,7 @@ namespace DiscordBot.Managers
             {
                 output += $"🏠 **{PropertyCatalog.DisplayName(kind)}**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(kind, index))} " +
                     $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(kind, index))} to buy with stamp duty), " +
-                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent ${FormatHelper.GetCommaNumber(PropertyCatalog.WeeklyRent(kind))} a week\n";
+                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent ${FormatHelper.GetCommaNumber(PropertyCatalog.RentPerHour(kind))} an hour\n";
             }
 
             output += "\n**Your property**\n";
@@ -475,12 +475,12 @@ namespace DiscordBot.Managers
             for (int i = 0; i < account.Properties.Count; i++)
             {
                 var property = account.Properties[i];
-                double netRentPerWeek = PropertyCatalog.WeeklyRent(property.Kind) * (1 - PropertyCatalog.VacancyRate) * (1 - PropertyCatalog.AgencyFeeRate);
+                double netRentPerHour = PropertyCatalog.RentPerHour(property.Kind) * (1 - PropertyCatalog.VacancyRate) * (1 - PropertyCatalog.AgencyFeeRate);
                 output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
-                    (property.LetOut ? $"rented out, about ${FormatHelper.GetCommaNumber(netRentPerWeek)} a week after the agency" : "not rented out, earning nothing") + "\n";
+                    (property.LetOut ? $"rented out, about ${FormatHelper.GetCommaNumber(netRentPerHour)} an hour after the agency" : "not rented out, earning nothing") + "\n";
             }
 
-            output += "\nRent goes to your cash each day after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily, rented out or not. " +
+            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily, rented out or not. " +
                 "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
                 "`.letout N` / `.unlet N` turn renting on or off, `.sellproperty N` sells.";
             await message.SendRichEmbedMessage("Property", output);
@@ -519,7 +519,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var holding = await _propertyService.SetLetOut(account, number, true);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is rented out. Rent is paid to your cash each day after the agency's cut.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is rented out. Rent is paid to your cash each hour after the agency's cut.");
         }
 
         private async Task Unlet(DiscordSocketClient client, SocketMessage message, List<string> args)

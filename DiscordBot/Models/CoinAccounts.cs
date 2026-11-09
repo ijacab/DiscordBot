@@ -26,8 +26,10 @@ namespace DiscordBot.Models
         public int PropertyTrendDaysLeft { get; set; }
         /// <summary>The UTC day (days since 1970) the market was last stepped. Stepped once a day.</summary>
         public long LastPropertyDay { get; set; }
-        /// <summary>The UTC day (days since 1970) rent was last paid up to.</summary>
+        /// <summary>The UTC day (days since 1970) holding costs were last charged up to.</summary>
         public long LastRentDay { get; set; }
+        /// <summary>The UTC hour (hours since 1970) rent was last paid up to.</summary>
+        public long LastRentHour { get; set; }
         /// <summary>Where the market is in a rare crash. None is normal trading. See <see cref="MarketCycle"/>.</summary>
         public CrisisPhase MarketPhase { get; set; } = CrisisPhase.None;
         public int MarketPhaseDaysLeft { get; set; }

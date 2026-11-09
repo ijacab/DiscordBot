@@ -8,7 +8,7 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and rented out for a daily
+    /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and rented out for an hourly
     /// income after the agency's cut. Holding costs apply every day, rented out or not.
     /// </summary>
     public class PropertyService
@@ -78,7 +78,7 @@ namespace DiscordBot.Services
             return account.Properties[number - 1];
         }
 
-        /// <summary>Called every minute. Steps the market once a UTC day and pays rent and holding costs for each day that has passed.</summary>
+        /// <summary>Called every minute. Steps the market once a UTC day and pays rent for each hour that has passed and holding costs for each day.</summary>
         public Task TickIfDue() => TickIfDue(DateTime.UtcNow, _random.NextDouble);
 
         public async Task TickIfDue(DateTime now, Func<double> random)
@@ -111,17 +111,36 @@ namespace DiscordBot.Services
                 changed = true;
             }
 
-            if (data.LastRentDay == 0)
+            long hour = PropertyMarket.HourNumber(now);
+            if (data.LastRentHour == 0)
             {
-                data.LastRentDay = today; //nothing to catch up on for a brand new market
+                data.LastRentHour = hour; //nothing to catch up on for a brand new market
                 changed = true;
             }
             else
             {
-                //one day at a time, but never more than a week if the bot was down
-                long days = Math.Min(PropertyCatalog.MaxRentCatchUpDays, today - data.LastRentDay);
+                //one hour at a time, but never more than a week if the bot was down
+                long hours = Math.Min(PropertyCatalog.MaxRentCatchUpHours, hour - data.LastRentHour);
+                for (long i = 0; i < hours; i++)
+                    PayRentOneHour(data);
+                if (hours > 0)
+                {
+                    data.LastRentHour = hour;
+                    changed = true;
+                }
+            }
+
+            //holding costs are charged once a day, rented out or not
+            if (data.LastRentDay == 0)
+            {
+                data.LastRentDay = today;
+                changed = true;
+            }
+            else
+            {
+                long days = Math.Min(PropertyCatalog.MaxHoldingCatchUpDays, today - data.LastRentDay);
                 for (long i = 0; i < days; i++)
-                    PayOneDay(data);
+                    PayHoldingOneDay(data);
                 if (days > 0)
                 {
                     data.LastRentDay = today;
@@ -132,17 +151,22 @@ namespace DiscordBot.Services
             if (changed) await _coinService.Update();
         }
 
-        /// <summary>Rent less the agency's cut goes to each landlord's cash. Holding costs come out of cash every day.</summary>
-        public static void PayOneDay(CoinAccounts data)
+        /// <summary>Rent for one hour, less the agency's cut, goes to each landlord's cash.</summary>
+        public static void PayRentOneHour(CoinAccounts data)
+        {
+            foreach (var account in data.Accounts.Where(a => a.Properties.Any(p => p.LetOut)))
+            {
+                double gross = account.Properties.Where(p => p.LetOut).Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind));
+                account.NetWorth += gross * (1 - PropertyCatalog.AgencyFeeRate);
+            }
+        }
+
+        /// <summary>One day of holding costs (rates and maintenance) comes out of cash, whether or not the property is rented out.</summary>
+        public static void PayHoldingOneDay(CoinAccounts data)
         {
             double index = data.PropertyIndex;
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
-            {
-                double gross = account.Properties.Where(p => p.LetOut).Sum(p => PropertyCatalog.DailyGrossRent(p.Kind));
-                double agencyFee = gross * PropertyCatalog.AgencyFeeRate;
-                double holding = account.Properties.Sum(p => PropertyCatalog.DailyHoldingCost(p.Kind, index));
-                account.NetWorth += gross - agencyFee - holding;
-            }
+                account.NetWorth -= account.Properties.Sum(p => PropertyCatalog.DailyHoldingCost(p.Kind, index));
         }
     }
 }

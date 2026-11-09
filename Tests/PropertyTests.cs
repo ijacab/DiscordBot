@@ -114,19 +114,19 @@ namespace Tests
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
-            PropertyService.PayOneDay(data);
+            PropertyService.PayRentOneHour(data);
 
-            double gross = PropertyCatalog.DailyGrossRent(PropertyKind.House);
-            double holding = PropertyCatalog.DailyHoldingCost(PropertyKind.House, 1.0);
-            Assert.Equal(gross * (1 - PropertyCatalog.AgencyFeeRate) - holding, account.NetWorth, 6);
+            double gross = PropertyCatalog.GrossRentPerHour(PropertyKind.House);
+            Assert.Equal(gross * (1 - PropertyCatalog.AgencyFeeRate), account.NetWorth, 6);
         }
 
         [Fact]
         public void Rent_ForAHouseIsAboutRightAfterVacancyAndAgency()
         {
-            //650 a week is about 93 a day, less 4% empty and 8% to the agency, is a little over 82 a day
-            double netRentPerDay = PropertyCatalog.DailyGrossRent(PropertyKind.House) * (1 - PropertyCatalog.AgencyFeeRate);
-            Assert.InRange(netRentPerDay, 80, 84);
+            //$10 an hour gross, less 4% empty and 8% to the agency, is about $8.83 an hour
+            double netRentPerHour = PropertyCatalog.GrossRentPerHour(PropertyKind.House) * (1 - PropertyCatalog.AgencyFeeRate);
+            Assert.InRange(netRentPerHour, 8.7, 9.0);
+            Assert.InRange(PropertyCatalog.RentPerHour(PropertyKind.House) / 1000, 0.009, 0.011); //1% of the $1,000 an hour base income
         }
 
         [Fact]
@@ -137,7 +137,7 @@ namespace Tests
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
-            PropertyService.PayOneDay(data);
+            PropertyService.PayHoldingOneDay(data);
 
             Assert.Equal(1_000 - PropertyCatalog.DailyHoldingCost(PropertyKind.Apartment, 1.0), account.NetWorth, 6);
         }
@@ -149,7 +149,7 @@ namespace Tests
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
-            PropertyService.PayOneDay(data);
+            PropertyService.PayRentOneHour(data);
 
             Assert.Equal(500, account.NetWorth);
         }
