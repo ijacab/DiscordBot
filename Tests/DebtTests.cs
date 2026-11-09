@@ -5,6 +5,7 @@ using DiscordBot.Services;
 using System;
 using System.Linq;
 using Xunit;
+using static DiscordBot.Models.CoinAccounts;
 
 namespace Tests
 {
