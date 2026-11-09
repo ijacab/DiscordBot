@@ -723,19 +723,9 @@ namespace DiscordBot.Managers
 
             var market = _stockService.GetMarket();
             var holdings = market.GetHoldings(account.UserId);
-            bool isOwnPortfolio = account.UserId == message.Author.Id;
 
             var shorts = market.GetShorts(account.UserId);
             var options = market.GetOptions(account.UserId).OrderBy(o => o.ExpiresAtUtcTicks).ToList();
-
-            if (holdings.Count == 0 && shorts.Count == 0 && options.Count == 0)
-            {
-                string noStocks = isOwnPortfolio
-                    ? $"{message.Author.Mention} you don't own any stocks. Type `.stocks` to see what's available."
-                    : $"{account.Name} doesn't own any stocks.";
-                await message.Channel.SendMessageAsync(noStocks);
-                return;
-            }
 
             string output = "";
             foreach (var holding in holdings.OrderBy(x => x.Key))
@@ -771,17 +761,27 @@ namespace DiscordBot.Managers
             var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
             double propertyValue = _coinService.PropertyValue(account);
-            output += $"\n💰 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
-            foreach (var property in account.Properties)
-                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, _coinService.GetAll().PropertyIndex))} after selling costs · {(property.LetOut ? "let out" : "not let")}\n";
-            if (account.Debt > 0)
-                output += $"💳 Debt ${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first)\n";
-            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth + propertyValue - account.Debt)}\n";
-            output += totalCost > 0
-                ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
-                : "📊 Gain/loss n/a, no known buy prices";
+            double index = _coinService.GetAll().PropertyIndex;
 
-            await message.SendRichEmbedMessage($"{account.Name}'s portfolio", output);
+            output += "\n**Everything you own**\n";
+            output += $"💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
+            if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0)
+                output += $"📈 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)}\n";
+            foreach (var property in account.Properties)
+                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} after selling costs · {(property.LetOut ? "let out" : "not let")}\n";
+            if (account.Properties.Count > 0)
+                output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
+            if (account.Debt > 0)
+                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first)\n";
+            output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
+            if (holdings.Count > 0)
+            {
+                output += totalCost > 0
+                    ? $"📊 Stock gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
+                    : "📊 Stock gain/loss n/a, no known buy prices";
+            }
+
+            await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", output.Split('\n'));
         }
 
         private static string SignedMoney(double amount) =>
