@@ -22,7 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
-            new PatchNote("2026-11-09", "Rent is paid hourly: $650/h for a house and $520/h for an apartment, gross of the agency and vacancy."),
+            new PatchNote("2026-11-09", "Rent is paid hourly: $1,300/h for a house and $1,040/h for an apartment, gross of the agency and vacancy."),
             new PatchNote("2026-11-09", "Tiers 1 and 2 are safe havens only (bonds and gold). Tiers 3-6 hold the ordinary stocks. Holders of the removed stocks are paid out at current value."),
             new PatchNote("2026-11-09", "`.stocks` lists gold (🥇) and bonds (🏦) in their own Safe havens section, and their graphs say what they are."),
             new PatchNote("2026-11-09", "Rare market crash (about once every 2 years): stocks and property fall for weeks, then slowly recover. Gold rises in a crash, and bonds pay a steady yield."),

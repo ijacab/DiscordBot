@@ -30,9 +30,9 @@ namespace DiscordBot.Models
     {
         public const double HousePrice = 950_000;
         public const double ApartmentPrice = 720_000;
-        /// <summary>Gross rent per hour while let, before the vacancy allowance and agency fee. These are the old weekly rents, now paid every hour, against the $1,000 an hour base income.</summary>
-        public const double HouseRentPerHour = 650;
-        public const double ApartmentRentPerHour = 520;
+        /// <summary>Gross rent per hour while let, before the vacancy allowance and agency fee. Twice the old weekly rents, now paid every hour, against the $1,000 an hour base income.</summary>
+        public const double HouseRentPerHour = 1300;
+        public const double ApartmentRentPerHour = 1040;
 
         /// <summary>Stamp duty and conveyancing, paid on top of the price when buying.</summary>
         public const double StampDutyRate = 0.045;
