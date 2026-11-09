@@ -9,7 +9,7 @@ namespace DiscordBot.Services
 {
     /// <summary>
     /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and rented out for a daily
-    /// income after the agency's cut. Holding costs apply every day, let or not.
+    /// income after the agency's cut. Holding costs apply every day, rented out or not.
     /// </summary>
     public class PropertyService
     {
@@ -53,7 +53,7 @@ namespace DiscordBot.Services
         {
             var holding = Get(account, number);
             if (holding.LetOut == letOut)
-                throw new BadInputException(letOut ? "That property is already let out." : "That property isn't let out.");
+                throw new BadInputException(letOut ? "That property is already rented out." : "That property isn't rented out.");
 
             holding.LetOut = letOut;
             await _coinService.Update();
