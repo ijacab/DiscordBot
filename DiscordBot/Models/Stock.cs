@@ -117,6 +117,12 @@ namespace DiscordBot.Models
         /// <summary>Normal, safe haven or bond. Old saved stocks load as Normal.</summary>
         public StockRole Role { get; set; } = StockRole.Normal;
 
+        /// <summary>Marks a safe haven or bond in listings. Null for an ordinary stock.</summary>
+        public string TypeEmoji => Role == StockRole.SafeHaven ? "🥇" : Role == StockRole.Bond ? "🏦" : null;
+
+        /// <summary>What kind of listing this is, for headers: "safe haven", "bond", or the tier for ordinary stocks.</summary>
+        public string KindLabel => Role == StockRole.SafeHaven ? "safe haven" : Role == StockRole.Bond ? "bond" : $"tier {RiskTier}";
+
         /// <summary>Standard deviation of one tick's move as a fraction of the price. Used to price options.</summary>
         public double TickVolatility => IsCrypto ? CryptoTickVolatility : MaxSwingByTier[RiskTier] / Math.Sqrt(3);
 

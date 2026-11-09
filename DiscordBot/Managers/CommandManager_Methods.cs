@@ -325,20 +325,30 @@ namespace DiscordBot.Managers
             await SendMarketChart(message, market.Stocks);
 
             string output = "";
-            foreach (var tier in market.Stocks.GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
+            foreach (var tier in market.Stocks.Where(s => s.Role == StockRole.Normal).GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
             {
                 output += tier.Key == Stock.CryptoTier ? $"**Tier {tier.Key} (crypto)**\n" : $"**Tier {tier.Key}**\n";
                 foreach (var stock in tier.OrderBy(s => s.Symbol))
-                {
-                    string arrow = stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖";
-                    output += $"{arrow} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {stock.AllTimeChange:+0.00;-0.00;0.00}% all time)\n";
-                }
+                    output += StockRow(stock, stock.PercentChange > 0 ? "📈" : stock.PercentChange < 0 ? "📉" : "➖");
+                output += "\n";
+            }
+
+            // safe havens and bonds are a different kind of listing, so they get their own section
+            var havens = market.Stocks.Where(s => s.Role != StockRole.Normal).ToList();
+            if (havens.Count > 0)
+            {
+                output += "**Safe havens** (not hit like normal stocks: gold rises in a crash, bonds pay a steady yield)\n";
+                foreach (var stock in havens)
+                    output += StockRow(stock, stock.TypeEmoji);
                 output += "\n";
             }
             output += "*Prices change every 5 minutes. Tier 1 is stable, tier 6 is crypto and insane. Use `.stocks SYMBOL 48h` for a graph, `.buy`/`.sell`, `.short`/`.cover`, `.call`/`.put`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
         }
+
+        private static string StockRow(Stock stock, string lead) =>
+            $"{lead} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {stock.AllTimeChange:+0.00;-0.00;0.00}% all time)\n";
 
         /// <summary>
         /// Every stock's % change since its first kept tick, as one panel per stock in a single image (two per row), so
@@ -408,7 +418,8 @@ namespace DiscordBot.Managers
             double last = history[history.Count - 1];
             double windowChange = first <= 0 ? 0 : (last - first) / first * 100;
 
-            string output = $"{stock.Name} (tier {stock.RiskTier}): ${stock.Price:N2}\n" +
+            string title = stock.TypeEmoji == null ? stock.Name : $"{stock.TypeEmoji} {stock.Name}";
+            string output = $"{title} ({stock.KindLabel}): ${stock.Price:N2}\n" +
                 $"{windowChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count, _stockTick)}{windowNote} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
                 $"All time {stock.AllTimeChange:+0.00;-0.00;0.00}% (launched at ${stock.BasePrice:N2}), line is {(stock.AllTimeChange >= 0 ? "green" : "red")} for that.\n" +
                 "*Each point is one 5 minute price tick, newest on the right. Add a time like `48h` to change the window.*";

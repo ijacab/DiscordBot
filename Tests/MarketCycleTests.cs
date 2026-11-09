@@ -220,6 +220,18 @@ namespace Tests
         }
 
         [Fact]
+        public void Listing_SafeHavensAreLabelledAsTheirOwnType()
+        {
+            Assert.Equal("🥇", Listing("GOLD", 2, 150, StockRole.SafeHaven).TypeEmoji);
+            Assert.Equal("🏦", Listing("BOND", 1, 100, StockRole.Bond).TypeEmoji);
+            Assert.Null(Listing("MID", 3, 100).TypeEmoji);
+
+            Assert.Equal("safe haven", Listing("GOLD", 2, 150, StockRole.SafeHaven).KindLabel);
+            Assert.Equal("bond", Listing("BOND", 1, 100, StockRole.Bond).KindLabel);
+            Assert.Equal("tier 3", Listing("MID", 3, 100).KindLabel);
+        }
+
+        [Fact]
         public void Market_OldSavesGetTheSafeHavensAdded()
         {
             var market = StockMarket.CreateDefault(new Random(1));
