@@ -41,6 +41,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           5-hourly raffle that gives power-ups, and using them (`.pu`)
+    PropertyService.cs         houses and apartments: buy/sell with cash, letting out, daily market step and rent
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
@@ -59,6 +60,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
+    PowerUp.cs                 raffle power-up catalog and the buffs on accounts
+    Property.cs                house/apartment prices, costs, rent and the shared market index
     ConvoService/LLMOptions.cs
     DuckDuckGoService/         ImageResult, ImageSearch
   Installers/OllamaInstaller.cs

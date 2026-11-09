@@ -54,6 +54,10 @@ namespace DiscordBot.Services
             _coinAccounts.LastActiveChannelId = channelId;
         }
 
+        /// <summary>What the player's houses and apartments would sell for right now, after selling costs.</summary>
+        public double PropertyValue(CoinAccount account) =>
+            account.Properties.Sum(p => PropertyCatalog.SaleValue(p.Kind, _coinAccounts.PropertyIndex));
+
         /// <summary>Empties the jackpot and returns what was in it. Saved with the next Update.</summary>
         public double TakeJackpot()
         {

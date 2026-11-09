@@ -181,8 +181,11 @@ namespace DiscordBot.Managers
 
             //an all-in bet is every dollar they have, with everything in cash, whether it wins or loses.
             //trading is blocked while a bet is open, so their holdings are the same as when the bet was placed
-            bool allInWithNothingInStocks = betAmount >= netWorthBeforeBet - 1 && !_stockService.HasPositions(userId);
-            if (allInWithNothingInStocks)
+            //property counts the same as stocks: owning any blocks the jackpot
+            bool allInWithNothingElseInvested = betAmount >= netWorthBeforeBet - 1
+                && !_stockService.HasPositions(userId)
+                && coinAccount.Properties.Count == 0;
+            if (allInWithNothingElseInvested)
                 RollJackpot(coinAccount);
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
@@ -196,7 +199,7 @@ namespace DiscordBot.Managers
         /// </summary>
         private IEnumerable<CoinAccount> RankedAccounts()
         {
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId);
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a);
             var accounts = _coinService.GetAll().Accounts;
             return _appSettings.PrestigeDisabled
                 ? accounts.OrderByDescending(TotalWorth)

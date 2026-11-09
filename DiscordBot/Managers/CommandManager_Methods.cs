@@ -196,7 +196,7 @@ namespace DiscordBot.Managers
             string output = "";
             int? prestige = null;
             bool prestigeDisabled = _appSettings.PrestigeDisabled;
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId); //cash + stocks
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a); //cash + stocks + property
             var ordered = prestigeDisabled
                 ? accounts.Accounts.OrderByDescending(TotalWorth)
                 : accounts.Accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
@@ -214,11 +214,14 @@ namespace DiscordBot.Managers
                     output += "   \\*";
                 output += "\n";
 
-                //what the total is made of: cash and the combined value of stocks held
+                //what the total is made of: cash, stocks held and property
                 var parts = new List<string> { $"💵 ${FormatHelper.GetCommaNumber(account.NetWorth)}" };
                 double stocksValue = _stockService.GetPortfolioValue(account.UserId);
                 if (stocksValue > 0)
                     parts.Add($"📈 ${FormatHelper.GetCommaNumber(stocksValue)}");
+                double propertyValue = _coinService.PropertyValue(account);
+                if (propertyValue > 0)
+                    parts.Add($"🏠 ${FormatHelper.GetCommaNumber(propertyValue)}");
                 output += $"  ↳ {string.Join(" · ", parts)}\n";
             }
             if (showHints && prestigeDisabled)
@@ -418,6 +421,99 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
+        private async Task Property(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var data = _coinService.GetAll();
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            double index = data.PropertyIndex;
+
+            string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices move about 0.5% a day at most, and the market runs in booms and busts.\n\n";
+            foreach (var kind in new[] { PropertyKind.House, PropertyKind.Apartment })
+            {
+                output += $"🏠 **{PropertyCatalog.DisplayName(kind)}**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(kind, index))} " +
+                    $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(kind, index))} to buy with stamp duty), " +
+                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent ${FormatHelper.GetCommaNumber(PropertyCatalog.WeeklyRent(kind))} a week\n";
+            }
+
+            output += "\n**Your property**\n";
+            if (account.Properties.Count == 0)
+                output += "None yet. Buy one with `.buyproperty house` or `.buyproperty apartment`.\n";
+            for (int i = 0; i < account.Properties.Count; i++)
+            {
+                var property = account.Properties[i];
+                double netRentPerWeek = PropertyCatalog.WeeklyRent(property.Kind) * (1 - PropertyCatalog.VacancyRate) * (1 - PropertyCatalog.AgencyFeeRate);
+                output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
+                    (property.LetOut ? $"let out, about ${FormatHelper.GetCommaNumber(netRentPerWeek)} a week after the agency" : "not let, earning nothing") + "\n";
+            }
+
+            output += "\nRent goes to your cash each day after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily, let or not. " +
+                "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
+                "`.letout N` / `.unlet N` turn renting on or off, `.sellproperty N` sells.";
+            await message.SendRichEmbedMessage("Property", output);
+        }
+
+        private async Task BuyProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1 || !TryParsePropertyKind(args[0], out PropertyKind kind)) throw new BadSyntaxException();
+            EnsureNotBettingForProperty(message);
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            double price = PropertyCatalog.Price(kind, _coinService.GetAll().PropertyIndex);
+            var (_, cost) = await _propertyService.Buy(account, kind);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought a {PropertyCatalog.DisplayName(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
+                $"${FormatHelper.GetCommaNumber(cost - price)} stamp duty and conveyancing included in ${FormatHelper.GetCommaNumber(cost)} total. " +
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. Let it out with `.letout {account.Properties.Count}` if you want rent.");
+        }
+
+        private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
+            EnsureNotBettingForProperty(message);
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var (holding, proceeds) = await _propertyService.Sell(account, number);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} for ${FormatHelper.GetCommaNumber(proceeds)} after agent commission and marketing. " +
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
+        private async Task LetOut(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var holding = await _propertyService.SetLetOut(account, number, true);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is let out. Rent is paid to your cash each day after the agency's cut.");
+        }
+
+        private async Task Unlet(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            var holding = await _propertyService.SetLetOut(account, number, false);
+
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is no longer let out. Rates and maintenance still come out each day.");
+        }
+
+        private static bool TryParsePropertyKind(string text, out PropertyKind kind)
+        {
+            switch (text.ToLowerInvariant())
+            {
+                case "house": kind = PropertyKind.House; return true;
+                case "apartment": case "apt": kind = PropertyKind.Apartment; return true;
+                default: kind = default; return false;
+            }
+        }
+
+        private void EnsureNotBettingForProperty(SocketMessage message)
+        {
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Finish your bet before buying or selling property.");
+        }
+
         private void EnsureNotBetting(SocketMessage message)
         {
             if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
@@ -538,13 +634,13 @@ namespace DiscordBot.Managers
             }
 
             //history is sampled hourly, so end the line at the current value
-            double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId);
+            double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId) + _coinService.PropertyValue(account);
             var points = account.NetWorthHistory.Append(current).ToList();
             TimeSpan interval = TimeSpan.FromHours(1);
 
             double first = points[0];
             double change = first == 0 ? 0 : (current - first) / first * 100;
-            string output = $"Net worth (cash + stocks): ${FormatHelper.GetCommaNumber(current)}\n" +
+            string output = $"Net worth (cash + stocks + property): ${FormatHelper.GetCommaNumber(current)}\n" +
                 $"{change:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(points.Count, interval)} | low ${FormatHelper.GetCommaNumber(points.Min())} | high ${FormatHelper.GetCommaNumber(points.Max())}";
 
             using var chart = StockChart.RenderPng(points, interval);
@@ -558,7 +654,7 @@ namespace DiscordBot.Managers
         private async Task NetWorthGraphAll(SocketMessage message)
         {
             var ranked = _coinService.GetAll().Accounts
-                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId)))
+                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a)))
                 .OrderByDescending(x => x.Current)
                 .ToList();
             if (ranked.Count == 0 || ranked.All(x => x.Account.NetWorthHistory.Count == 0))
@@ -660,8 +756,11 @@ namespace DiscordBot.Managers
 
             var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
+            double propertyValue = _coinService.PropertyValue(account);
             output += $"\n💰 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
-            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth)}\n";
+            foreach (var property in account.Properties)
+                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, _coinService.GetAll().PropertyIndex))} after selling costs · {(property.LetOut ? "let out" : "not let")}\n";
+            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth + propertyValue)}\n";
             output += totalCost > 0
                 ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
                 : "📊 Gain/loss n/a, no known buy prices";

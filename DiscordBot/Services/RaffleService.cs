@@ -25,7 +25,7 @@ namespace DiscordBot.Services
         private readonly Func<CoinAccount, double> _totalWorth;
 
         public RaffleService(CoinService coinService, StockService stockService, AppSettings appSettings)
-            : this(coinService, appSettings, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId))
+            : this(coinService, appSettings, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId) + coinService.PropertyValue(a))
         {
         }
 

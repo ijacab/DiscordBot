@@ -22,6 +22,7 @@ namespace DiscordBot.Managers
         private readonly CoinService _coinService;
         private readonly StockService _stockService;
         private readonly RaffleService _raffleService;
+        private readonly PropertyService _propertyService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
@@ -44,13 +45,13 @@ namespace DiscordBot.Managers
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
             "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng",
-            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull"
+            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty"
         };
 
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
@@ -61,6 +62,7 @@ namespace DiscordBot.Managers
             _coinService = coinService;
             _stockService = stockService;
             _raffleService = raffleService;
+            _propertyService = propertyService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
             _blackjackManager = blackjackManager;
@@ -106,6 +108,11 @@ namespace DiscordBot.Managers
                 new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks) over the last 30 days, sampled hourly. Pass a user to see theirs, or `all` to put everyone on the same graph. Shorthand: `.nw`", Syntax = "`.networth`, `.networth @person` or `.networth all`" },
                 new Command("nw", NetWorthGraph) { Description = "Shorthand for `.networth`.", Syntax = "`.nw`, `.nw @person` or `.nw all`", Hidden = true },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
+                new Command("property", Property) { Description = "Shows the house and apartment prices, the market, and what you own. Rent is paid daily after the agency's cut.", Syntax = "`.property`" },
+                new Command("buyproperty", BuyProperty) { Description = "Buys a house or apartment at the current market price, with cash only. Stamp duty and conveyancing are 4.5% on top.", Syntax = "`.buyproperty house` or `.buyproperty apartment`" },
+                new Command("sellproperty", SellProperty) { Description = "Sells a property you own at market value, less 3% for agent commission and marketing.", Syntax = "`.sellproperty 1`" },
+                new Command("letout", LetOut) { Description = "Rents out a property you own. Rent is paid daily after the agency takes 8% and a 4% vacancy allowance.", Syntax = "`.letout 1`" },
+                new Command("unlet", Unlet) { Description = "Stops renting out a property. Rates and maintenance still come out daily.", Syntax = "`.unlet 1`" },
                 new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 5 hours among everyone who used money in the last 24h) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
@@ -274,10 +281,11 @@ namespace DiscordBot.Managers
             //coin tasks
             Task coinServiceTask = _coinService.AddInterest();
             Task stockTask = _stockService.TickIfDue();
-            await Task.WhenAll(reminderTask, coinServiceTask, stockTask);
+            Task propertyTask = _propertyService.TickIfDue();
+            await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
 
             //after interest and stock ticks, so the hourly sample reflects both
-            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId));
+            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a));
 
             try
             {
