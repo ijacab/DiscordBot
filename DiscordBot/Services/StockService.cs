@@ -149,7 +149,7 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 int owned = _market.GetShares(account.UserId, stock.Symbol);
-                int shares = amount.Equals("all", StringComparison.OrdinalIgnoreCase) ? owned : ParseShares(amount);
+                int shares = IsAllOrMax(amount) ? owned : ParseShares(amount);
 
                 if (shares < 1 || owned < 1)
                     throw new BadInputException($"You don't own any {stock.Symbol}.");
@@ -210,7 +210,7 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 var position = _market.GetShort(account.UserId, stock.Symbol) ?? throw new BadInputException($"You aren't short any {stock.Symbol}.");
-                int shares = amount.Equals("all", StringComparison.OrdinalIgnoreCase) ? position.Shares : ParseShares(amount);
+                int shares = IsAllOrMax(amount) ? position.Shares : ParseShares(amount);
                 if (shares > position.Shares)
                     throw new BadInputException($"You're only short {position.Shares} shares of {stock.Symbol}.");
 
@@ -225,6 +225,27 @@ namespace DiscordBot.Services
                 return PersistAccount(account, (stock, shares, returned, returned - released));
             }
         }
+
+        /// <summary>The most option contracts the account can pay for (premium plus fee) at this duration.</summary>
+        public int MaxAffordableContracts(CoinAccount account, string symbol, TimeSpan duration)
+        {
+            lock (_lock)
+            {
+                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                if (duration < MinOptionDuration || duration > MaxOptionDuration)
+                    throw new BadInputException("Options last between 15m and 3d.");
+
+                double perShare = stock.OptionPremiumPerShare(duration);
+                int contracts = Stock.MaxAffordableContracts(account.NetWorth, perShare);
+                if (contracts < 1)
+                    throw new BadInputException($"One contract of {stock.Symbol} costs ${Stock.OptionCost(perShare, 1):N2} (premium plus fee) and you only have ${account.NetWorth:N2}.");
+                return contracts;
+            }
+        }
+
+        /// <summary>Whether a sell, cover or option amount means everything: "all" or "max".</summary>
+        private static bool IsAllOrMax(string amount) =>
+            amount.Equals("all", StringComparison.OrdinalIgnoreCase) || amount.Equals("max", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Buys at-the-money options that expire after <paramref name="duration"/>. The strike is the fair price (not the quote,

@@ -285,6 +285,24 @@ namespace DiscordBot.Models
         public const double OptionHouseEdge = 1.10;
         /// <summary>Fee on the premium, paid into the jackpot.</summary>
         public const double OptionFeeRate = 0.02;
+
+        /// <summary>Premium plus the jackpot fee for a number of contracts, to the cent. Same rounding as a purchase.</summary>
+        public static double OptionCost(double premiumPerShare, int contracts)
+        {
+            double premium = Math.Round(premiumPerShare * OptionContractSize * contracts, 2);
+            return premium + Math.Round(premium * OptionFeeRate, 2);
+        }
+
+        /// <summary>The most contracts that premium plus fee can buy with this cash. Zero when not even one is affordable.</summary>
+        public static int MaxAffordableContracts(double cash, double premiumPerShare)
+        {
+            if (cash <= 0 || premiumPerShare <= 0) return 0;
+            const int limit = 1_000_000_000;
+            int contracts = (int)Math.Min(limit, Math.Floor(cash / OptionCost(premiumPerShare, 1)));
+            while (contracts > 0 && OptionCost(premiumPerShare, contracts) > cash) contracts--;
+            while (contracts < limit && OptionCost(premiumPerShare, contracts + 1) <= cash) contracts++;
+            return contracts;
+        }
         public const double MinOptionPremiumPerShare = 0.01;
 
         /// <summary>

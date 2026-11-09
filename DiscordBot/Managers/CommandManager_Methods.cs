@@ -582,11 +582,15 @@ namespace DiscordBot.Managers
 
         private async Task BuyOptionCommand(SocketMessage message, List<string> args, bool isCall)
         {
-            if (args.Count != 3 || !int.TryParse(args[1], out int contracts) || contracts < 1 || !DurationParser.TryParse(args[2], out TimeSpan duration))
+            if (args.Count != 3 || !DurationParser.TryParse(args[2], out TimeSpan duration))
+                throw new BadSyntaxException();
+            bool useMax = args[1].Equals("max", StringComparison.OrdinalIgnoreCase);
+            if (!useMax && (!int.TryParse(args[1], out int typed) || typed < 1))
                 throw new BadSyntaxException();
             EnsureNotBetting(message);
 
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], duration) : int.Parse(args[1]);
             var (option, premium, fee) = _stockService.BuyOption(account, args[0], isCall, contracts, duration);
 
             string kind = isCall ? "call" : "put";
