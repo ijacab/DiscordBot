@@ -14,7 +14,7 @@ dotnet build DiscordBot/DiscordBot.sln
 dotnet test Tests/Tests.csproj
 dotnet run --project DiscordBot
 ```
-CI/CD: `azure-pipelines.yml` publishes linux-arm64 to a Pi and restarts the `DiscordBot` systemd service (`DiscordBot/DiscordBot.service`). Pushing to `master` deploys.
+CI/CD: `azure-pipelines.yml` publishes linux-arm64 to a Pi and restarts the `DiscordBot` systemd service (`DiscordBot/DiscordBot.service`). Pushing to `master` deploys. The pipeline stops the service before `dotnet publish`, so a failed build leaves the bot offline: build locally before pushing to `master`.
 
 ## Env vars (see `Common/Helpers/EnvironmentHelper.cs`)
 `DiscordBotToken`, `GITHUB_PAT_TOKEN`, `GITHUB_USERNAME`, `GITHUB_GIST_ID`, `S_U`, `S_P`, `PORT` (default 5000), `IS_HEROKU`. Never commit secrets.
