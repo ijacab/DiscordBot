@@ -67,9 +67,26 @@ namespace DiscordBot.Services
             lock (_lock)
             {
                 bool changed = false;
+                var data = _coinService.GetAll();
+
+                if (_market.SchemaVersion < StockMarket.CurrentSchemaVersion)
+                {
+                    //tiers 1 and 2 are safe havens only now: take their ordinary stocks off, paying out every holder
+                    foreach (var stock in _market.Stocks.Where(s => s.Role == StockRole.Normal && s.RiskTier < 3).ToList())
+                    {
+                        foreach (var (userId, amount) in _market.Retire(stock))
+                        {
+                            var account = data.Accounts.FirstOrDefault(a => a.UserId == userId);
+                            if (account != null) account.NetWorth += account.PayDebtFrom(amount);
+                        }
+                    }
+                    _market.SchemaVersion = StockMarket.CurrentSchemaVersion;
+                    changed = true;
+                    coinChanged = true;
+                }
+
                 if (slot != _market.LastTickSlot)
                 {
-                    var data = _coinService.GetAll();
                     if (data.CrisisResetPending)
                     {
                         //the crash has ended: stocks keep their new level instead of drifting back to the old one
@@ -291,7 +308,9 @@ namespace DiscordBot.Services
             foreach (var stock in _market.Stocks)
             {
                 if (stock.BasePrice <= 0)
-                    stock.BasePrice = StockMarket.Pool.Where(p => p.Symbol == stock.Symbol).Select(p => p.Price).DefaultIfEmpty(stock.Price).First();
+                    stock.BasePrice = StockMarket.Pool.Select(p => (p.Symbol, p.Price))
+                        .Concat(StockMarket.SafeHavens.Select(h => (h.Symbol, h.Price)))
+                        .Where(p => p.Symbol == stock.Symbol).Select(p => p.Price).DefaultIfEmpty(stock.Price).First();
                 if (stock.FairPrice <= 0)
                     stock.FairPrice = stock.Price;
             }

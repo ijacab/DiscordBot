@@ -60,6 +60,12 @@ namespace DiscordBot.Models
         public Dictionary<ulong, List<string>> RecentSettled { get; set; } = new Dictionary<ulong, List<string>>();
         /// <summary>Number of 5 minute periods since the unix epoch that prices were last updated for.</summary>
         public long LastTickSlot { get; set; }
+        /// <summary>
+        /// Layout version. 0 is the old layout, where tiers 1 and 2 also had an ordinary stock. Markets are created at
+        /// <see cref="CurrentSchemaVersion"/>, and older ones are migrated by <see cref="StockService"/>.
+        /// </summary>
+        public int SchemaVersion { get; set; }
+        public const int CurrentSchemaVersion = 2;
 
         public Stock Find(string symbol)
         {
@@ -204,13 +210,7 @@ namespace DiscordBot.Models
         /// </summary>
         public static readonly IReadOnlyList<(string Symbol, string Name, int Tier, double Price)> Pool = new[]
         {
-            //tier 1 - very stable
-            ("BNDX", "Boring Bond Index", 1, 100.0),
-            ("UTIL", "Utility Co", 1, 60.0),
-            //tier 2 - stable
-            ("GROC", "Grocery Giant", 2, 45.0),
-            ("WANG", "Wang Holdings", 2, 25.0),
-            ("JSON", "JSON Logistics", 2, 30.0),
+            //tiers 1 and 2 hold only safe havens (see SafeHavens), so the pool starts at tier 3
             //tier 3 - moderate
             ("SCORT", "Scort Industries", 3, 50.0),
             ("JCB", "JCB Group", 3, 80.0),
@@ -250,9 +250,52 @@ namespace DiscordBot.Models
                 .Select(p => NewStock(p.Symbol, p.Name, p.Tier, p.Price, StockRole.Normal))
                 .ToList();
 
-            var market = new StockMarket { Stocks = stocks };
+            var market = new StockMarket { Stocks = stocks, SchemaVersion = CurrentSchemaVersion };
             market.EnsureSafeHavens();
             return market;
+        }
+
+        /// <summary>
+        /// Takes an ordinary stock off the market. Every holder is paid out at its current value, with no sell tax:
+        /// shares at the quote, shorts at their equity (margin plus or minus the gain), and open options at their fair-price payout.
+        /// Returns what each user is owed in cash. Caller credits it and saves.
+        /// </summary>
+        public Dictionary<ulong, double> Retire(Stock stock)
+        {
+            var owed = new Dictionary<ulong, double>();
+            void Owe(ulong userId, double amount) =>
+                owed[userId] = (owed.TryGetValue(userId, out double so_far) ? so_far : 0) + amount;
+
+            string symbol = stock.Symbol;
+            foreach (ulong userId in Portfolios.Keys.ToList())
+            {
+                int shares = GetShares(userId, symbol);
+                if (shares <= 0) continue;
+                AddShares(userId, symbol, -shares);
+                Owe(userId, Math.Round(shares * stock.Price, 2));
+                AddSettledResult(userId, $"{symbol} was taken off the market. Your {shares} shares were paid out at ${stock.Price:N2}.");
+            }
+
+            foreach (ulong userId in Shorts.Keys.ToList())
+            {
+                var position = GetShort(userId, symbol);
+                if (position == null) continue;
+                double equity = Math.Round(position.EquityAt(stock.Price), 2);
+                ReduceShort(userId, symbol, position.Shares);
+                Owe(userId, equity);
+                AddSettledResult(userId, $"Short {symbol} closed when it was taken off the market. Returned ${equity:N2}.");
+            }
+
+            foreach (var option in Options.Where(o => o.Symbol == symbol).ToList())
+            {
+                double payout = option.PayoutAt(stock.FairPrice);
+                Options.Remove(option);
+                Owe(option.UserId, payout);
+                AddSettledResult(option.UserId, $"{option.Contracts}x {symbol} {(option.IsCall ? "call" : "put")} settled when it was taken off the market: paid ${payout:N2}.");
+            }
+
+            Stocks.Remove(stock);
+            return owed;
         }
 
         /// <summary>Adds any safe haven the market doesn't have yet, at its launch price. Older saved markets get them this way.</summary>

@@ -342,7 +342,7 @@ namespace DiscordBot.Managers
                     output += StockRow(stock, stock.TypeEmoji);
                 output += "\n";
             }
-            output += "*Prices change every 5 minutes. Tier 1 is stable, tier 6 is crypto and insane. Use `.stocks SYMBOL 48h` for a graph, `.buy`/`.sell`, `.short`/`.cover`, `.call`/`.put`.*";
+            output += "*Prices change every 5 minutes. Tiers 3 to 6 run from moderate to crypto and insane. Use `.stocks SYMBOL 48h` for a graph, `.buy`/`.sell`, `.short`/`.cover`, `.call`/`.put`.*";
 
             await message.SendRichEmbedMessage("Stock Market", output);
         }

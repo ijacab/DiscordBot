@@ -96,7 +96,7 @@ namespace DiscordBot.Managers
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
                 new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
-                new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock over a time window. Prices change every 5 minutes. Higher risk tiers (1-6) swing more, 6 is crypto. Graphs are green above the launch price and red below.", Syntax = "`.stocks`, `.stocks SYMBOL` or `.stocks SYMBOL 48h`" },
+                new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock over a time window. Prices change every 5 minutes. Higher risk tiers (3-6) swing more, 6 is crypto. Graphs are green above the launch price and red below.", Syntax = "`.stocks`, `.stocks SYMBOL` or `.stocks SYMBOL 48h`" },
                 new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SYMBOL 10` or `.buy SYMBOL max`" },
                 new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SYMBOL 10` or `.sell SYMBOL all`" },
                 new Command("short", ShortStock) { Description = "Sells borrowed shares, locking the sale value as margin. You profit if the price falls. At 2x the entry price you lose the margin.", Syntax = "`.short SYMBOL 10` or `.short SYMBOL max`" },

@@ -187,12 +187,13 @@ namespace Tests
         }
 
         [Fact]
-        public void DefaultMarket_HasExactlyOneStockInEachOfTheSixTiers()
+        public void DefaultMarket_HasExactlyOneOrdinaryStockInEachTierFromThreeToSix()
         {
             var market = StockMarket.CreateDefault();
-            //the random pool is one per tier; gold and bonds are always listed on top of it
+            //tiers 3-6 hold the random pool, one per tier; tiers 1 and 2 hold only the safe havens
             var pool = market.Stocks.Where(s => s.Role == StockRole.Normal).ToList();
-            Assert.Equal(Enumerable.Range(1, 6), pool.Select(s => s.RiskTier).OrderBy(t => t));
+            Assert.Equal(Enumerable.Range(3, 4), pool.Select(s => s.RiskTier).OrderBy(t => t));
+            Assert.DoesNotContain(pool, s => s.RiskTier < 3);
             Assert.Equal(pool.Count, pool.Select(s => s.Symbol).Distinct().Count());
             Assert.All(pool, s => Assert.Contains(StockMarket.Pool, p => p.Symbol == s.Symbol && p.Tier == s.RiskTier));
             Assert.NotNull(market.Find("GOLD"));
@@ -210,9 +211,10 @@ namespace Tests
         [Fact]
         public void Pool_HasChoiceInEveryTierAndTheRequestedNames()
         {
-            foreach (int tier in Enumerable.Range(1, 6))
+            foreach (int tier in Enumerable.Range(3, 4))
                 Assert.True(StockMarket.Pool.Count(p => p.Tier == tier) >= 2, $"tier {tier} needs a choice");
-            foreach (string name in new[] { "COCK", "PUBE", "SAMOA", "JSON", "DAVD" })
+            Assert.DoesNotContain(StockMarket.Pool, p => p.Tier < 3);
+            foreach (string name in new[] { "COCK", "PUBE", "SAMOA", "DAVD" })
                 Assert.Contains(StockMarket.Pool, p => p.Symbol == name);
         }
 
