@@ -30,10 +30,9 @@ namespace DiscordBot.Models
     {
         public const double HousePrice = 950_000;
         public const double ApartmentPrice = 720_000;
-        /// <summary>Realistic gross rental yields per year, as a share of the purchase price. Rent is this spread evenly over every hour.</summary>
-        public const double HouseGrossYieldPerYear = 0.035;
-        public const double ApartmentGrossYieldPerYear = 0.04;
-        public const double HoursPerYear = 24 * 365;
+        /// <summary>Gross rent per hour as a share of the current market price: 3.5% for a house, 4% for an apartment.</summary>
+        public const double HouseGrossYieldPerHour = 0.035;
+        public const double ApartmentGrossYieldPerHour = 0.04;
 
         /// <summary>Stamp duty and conveyancing, paid on top of the price when buying.</summary>
         public const double StampDutyRate = 0.045;
@@ -64,10 +63,10 @@ namespace DiscordBot.Models
 
         public static double BasePrice(PropertyKind kind) => kind == PropertyKind.House ? HousePrice : ApartmentPrice;
 
-        public static double YieldPerYear(PropertyKind kind) => kind == PropertyKind.House ? HouseGrossYieldPerYear : ApartmentGrossYieldPerYear;
+        public static double YieldPerHour(PropertyKind kind) => kind == PropertyKind.House ? HouseGrossYieldPerHour : ApartmentGrossYieldPerHour;
 
         /// <summary>Gross rent for one hour while let, before the vacancy allowance and agency fee. Follows the market price.</summary>
-        public static double RentPerHour(PropertyKind kind, double index) => Price(kind, index) * YieldPerYear(kind) / HoursPerYear;
+        public static double RentPerHour(PropertyKind kind, double index) => Price(kind, index) * YieldPerHour(kind);
 
         public static string DisplayName(PropertyKind kind) => kind == PropertyKind.House ? "House" : "Apartment";
 

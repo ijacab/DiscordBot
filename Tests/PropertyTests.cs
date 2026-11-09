@@ -123,16 +123,16 @@ namespace Tests
         [Fact]
         public void Rent_ForAHouseIsAboutRightAfterVacancyAndAgency()
         {
-            //3.5% a year of the $950,000 price is about $3.80 an hour gross, about $3.35 after the vacancy and agency
+            //3.5% of the $950,000 price per hour is $33,250 gross, about $29,366 after the vacancy and agency
             double netRentPerHour = PropertyCatalog.GrossRentPerHour(PropertyKind.House, 1.0) * (1 - PropertyCatalog.AgencyFeeRate);
-            Assert.InRange(netRentPerHour, 3.3, 3.4);
+            Assert.InRange(netRentPerHour, 29_300, 29_400);
         }
 
         [Fact]
-        public void Rent_IsRealisticAsAYearlyShareOfThePrice()
+        public void Rent_IsTheHourlyShareOfThePrice()
         {
-            Assert.Equal(PropertyCatalog.HouseGrossYieldPerYear, PropertyCatalog.RentPerHour(PropertyKind.House, 1.0) * PropertyCatalog.HoursPerYear / PropertyCatalog.BasePrice(PropertyKind.House), 9);
-            Assert.Equal(PropertyCatalog.ApartmentGrossYieldPerYear, PropertyCatalog.RentPerHour(PropertyKind.Apartment, 1.0) * PropertyCatalog.HoursPerYear / PropertyCatalog.BasePrice(PropertyKind.Apartment), 9);
+            Assert.Equal(PropertyCatalog.HouseGrossYieldPerHour * PropertyCatalog.BasePrice(PropertyKind.House), PropertyCatalog.RentPerHour(PropertyKind.House, 1.0), 6);
+            Assert.Equal(PropertyCatalog.ApartmentGrossYieldPerHour * PropertyCatalog.BasePrice(PropertyKind.Apartment), PropertyCatalog.RentPerHour(PropertyKind.Apartment, 1.0), 6);
         }
 
         [Fact]
