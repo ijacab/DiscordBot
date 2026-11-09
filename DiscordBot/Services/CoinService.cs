@@ -142,6 +142,10 @@ namespace DiscordBot.Services
             var dateString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
             if (_coinAccounts.TimesInterestPaidForList.Contains(hourDateString)) return; //if already paid for the hour, exit
 
+            //debt grows every hour until it is paid off from asset sales or repaid
+            foreach (var debtor in _coinAccounts.Accounts.Where(a => a.Debt > 0))
+                debtor.Debt = CoinAccount.GrowDebtOneHour(debtor.Debt);
+
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {

@@ -199,7 +199,7 @@ namespace DiscordBot.Managers
         /// </summary>
         private IEnumerable<CoinAccount> RankedAccounts()
         {
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a);
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt;
             var accounts = _coinService.GetAll().Accounts;
             return _appSettings.PrestigeDisabled
                 ? accounts.OrderByDescending(TotalWorth)

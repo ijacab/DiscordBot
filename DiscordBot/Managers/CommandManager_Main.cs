@@ -45,7 +45,7 @@ namespace DiscordBot.Managers
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
             "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng",
-            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty"
+            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty", "repay"
         };
 
         private bool _stopped;
@@ -113,6 +113,7 @@ namespace DiscordBot.Managers
                 new Command("sellproperty", SellProperty) { Description = "Sells a property you own at market value, less 3% for agent commission and marketing.", Syntax = "`.sellproperty 1`" },
                 new Command("letout", LetOut) { Description = "Rents out a property you own. Rent is paid daily after the agency takes 8% and a 4% vacancy allowance.", Syntax = "`.letout 1`" },
                 new Command("unlet", Unlet) { Description = "Stops renting out a property. Rates and maintenance still come out daily.", Syntax = "`.unlet 1`" },
+                new Command("repay", Repay) { Description = "Pays off some or all of your debt from cash. Debt from power-ups grows 1% a day, and sales of stocks and property pay it off first.", Syntax = "`.repay 500` or `.repay all`" },
                 new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 5 hours among everyone who used money in the last 24h) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
@@ -285,7 +286,7 @@ namespace DiscordBot.Managers
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
 
             //after interest and stock ticks, so the hourly sample reflects both
-            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a));
+            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt);
 
             try
             {

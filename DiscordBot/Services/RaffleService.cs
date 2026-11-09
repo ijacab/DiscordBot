@@ -25,7 +25,7 @@ namespace DiscordBot.Services
         private readonly Func<CoinAccount, double> _totalWorth;
 
         public RaffleService(CoinService coinService, StockService stockService, AppSettings appSettings)
-            : this(coinService, appSettings, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId) + coinService.PropertyValue(a))
+            : this(coinService, appSettings, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId) + coinService.PropertyValue(a) - a.Debt)
         {
         }
 
@@ -139,6 +139,20 @@ namespace DiscordBot.Services
             return message;
         }
 
+        /// <summary>
+        /// Takes <paramref name="amount"/> from the victim's worth and gives it to the thief. The victim's cash is taken first;
+        /// whatever they can't pay goes on their debt, which grows with interest until asset sales or repayment clear it.
+        /// </summary>
+        public static (double FromCash, double ToDebt) Seize(CoinAccount victim, CoinAccount thief, double amount)
+        {
+            double fromCash = Math.Min(Math.Max(0, victim.NetWorth), amount);
+            victim.NetWorth -= fromCash;
+            double toDebt = amount - fromCash;
+            victim.Debt = Math.Round(victim.Debt + toDebt, 2);
+            thief.NetWorth += amount;
+            return (fromCash, toDebt);
+        }
+
         private string ApplyInstant(PowerUpDefinition power, CoinAccount user, DateTime now, Func<double> random)
         {
             switch (power.Id)
@@ -150,17 +164,17 @@ namespace DiscordBot.Services
                         throw new BadInputException("You're in 1st place, so a Blue Shell has nobody to hit. Keep it for later.");
                     if (leader.IsShielded(now))
                         throw new BadInputException($"{leader.Name} has a Shield running, so the Blue Shell would bounce off. Try again later.");
-                    double amount = Math.Floor(leader.NetWorth * PowerUpCatalog.BlueShellPercent);
+                    double amount = Math.Floor(_totalWorth(leader) * PowerUpCatalog.BlueShellPercent);
                     if (amount <= 0)
-                        throw new BadInputException($"{leader.Name} has no cash to steal.");
-                    leader.NetWorth -= amount;
-                    user.NetWorth += amount;
-                    return $"💥 **Blue Shell!** You hit {leader.Name} in 1st place and took ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}.";
+                        throw new BadInputException($"{leader.Name} has nothing to steal.");
+                    var (_, toDebt) = Seize(leader, user, amount);
+                    return $"💥 **Blue Shell!** You hit {leader.Name} in 1st place and took ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}." +
+                        (toDebt > 0 ? $" They didn't have enough cash, so ${Common.Helpers.FormatHelper.GetCommaNumber(toDebt)} went on their debt." : "");
                 }
                 case PowerUpIds.Pickpocket:
                 {
                     var targets = RaffleService.Eligible(_coinService.GetAll().Accounts, now)
-                        .Where(a => a.UserId != user.UserId && a.NetWorth >= 1 && !a.IsShielded(now))
+                        .Where(a => a.UserId != user.UserId && _totalWorth(a) >= 1 && !a.IsShielded(now))
                         .OrderBy(_ => random())
                         .Take(PowerUpCatalog.PickpocketVictims)
                         .ToList();
@@ -168,10 +182,9 @@ namespace DiscordBot.Services
                     double total = 0;
                     foreach (var target in targets)
                     {
-                        double amount = Math.Floor(target.NetWorth * PowerUpCatalog.PickpocketPercent);
+                        double amount = Math.Floor(_totalWorth(target) * PowerUpCatalog.PickpocketPercent);
                         if (amount <= 0) continue;
-                        target.NetWorth -= amount;
-                        user.NetWorth += amount;
+                        Seize(target, user, amount);
                         total += amount;
                         lines.Add($"{target.Name} (${Common.Helpers.FormatHelper.GetCommaNumber(amount)})");
                     }

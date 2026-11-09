@@ -196,7 +196,7 @@ namespace DiscordBot.Managers
             string output = "";
             int? prestige = null;
             bool prestigeDisabled = _appSettings.PrestigeDisabled;
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a); //cash + stocks + property
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt; //cash + stocks + property - debt
             var ordered = prestigeDisabled
                 ? accounts.Accounts.OrderByDescending(TotalWorth)
                 : accounts.Accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
@@ -222,6 +222,8 @@ namespace DiscordBot.Managers
                 double propertyValue = _coinService.PropertyValue(account);
                 if (propertyValue > 0)
                     parts.Add($"🏠 ${FormatHelper.GetCommaNumber(propertyValue)}");
+                if (account.Debt > 0)
+                    parts.Add($"💳 -${FormatHelper.GetCommaNumber(account.Debt)}");
                 output += $"  ↳ {string.Join(" · ", parts)}\n";
             }
             if (showHints && prestigeDisabled)
@@ -498,6 +500,38 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is no longer let out. Rates and maintenance still come out each day.");
         }
 
+        private async Task Repay(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1) throw new BadSyntaxException();
+            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
+                throw new BadInputException("Finish your bet before repaying debt.");
+
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            if (account.Debt <= 0)
+                throw new BadInputException("You don't owe anything.");
+
+            double cash = Math.Max(0, account.NetWorth);
+            double amount;
+            if (args[0].Equals("all", StringComparison.OrdinalIgnoreCase))
+                amount = Math.Min(cash, account.Debt);
+            else if (!double.TryParse(args[0], out amount))
+                throw new BadSyntaxException();
+            amount = Math.Floor(amount * 100) / 100;
+
+            if (amount <= 0)
+                throw new BadInputException("You need cash to repay debt.");
+            if (amount > cash)
+                throw new BadInputException($"You only have ${FormatHelper.GetCommaNumber(cash)} in cash.");
+            amount = Math.Min(amount, account.Debt);
+
+            account.NetWorth -= amount;
+            account.Debt = Math.Round(account.Debt - amount, 2);
+            await _coinService.Update();
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} repaid ${FormatHelper.GetCommaNumber(amount)}. " +
+                (account.Debt > 0 ? $"You still owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "Your debt is clear.") +
+                $" Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        }
+
         private static bool TryParsePropertyKind(string text, out PropertyKind kind)
         {
             switch (text.ToLowerInvariant())
@@ -634,7 +668,7 @@ namespace DiscordBot.Managers
             }
 
             //history is sampled hourly, so end the line at the current value
-            double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId) + _coinService.PropertyValue(account);
+            double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId) + _coinService.PropertyValue(account) - account.Debt;
             var points = account.NetWorthHistory.Append(current).ToList();
             TimeSpan interval = TimeSpan.FromHours(1);
 
@@ -654,7 +688,7 @@ namespace DiscordBot.Managers
         private async Task NetWorthGraphAll(SocketMessage message)
         {
             var ranked = _coinService.GetAll().Accounts
-                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a)))
+                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt))
                 .OrderByDescending(x => x.Current)
                 .ToList();
             if (ranked.Count == 0 || ranked.All(x => x.Account.NetWorthHistory.Count == 0))
@@ -760,7 +794,9 @@ namespace DiscordBot.Managers
             output += $"\n💰 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)} · 💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
             foreach (var property in account.Properties)
                 output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, _coinService.GetAll().PropertyIndex))} after selling costs · {(property.LetOut ? "let out" : "not let")}\n";
-            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth + propertyValue)}\n";
+            if (account.Debt > 0)
+                output += $"💳 Debt ${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; sales pay it off first, or `.repay`)\n";
+            output += $"🧾 Total ${FormatHelper.GetCommaNumber(stocksValue + account.NetWorth + propertyValue - account.Debt)}\n";
             output += totalCost > 0
                 ? $"📊 Gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
                 : "📊 Gain/loss n/a, no known buy prices";

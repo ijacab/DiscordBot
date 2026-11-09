@@ -43,7 +43,7 @@ namespace DiscordBot.Services
             double proceeds = PropertyCatalog.SaleValue(holding.Kind, index);
 
             account.Properties.Remove(holding);
-            account.NetWorth += proceeds;
+            account.NetWorth += account.PayDebtFrom(proceeds); //sale money pays any debt first
             await _coinService.Update();
             return (holding, proceeds);
         }

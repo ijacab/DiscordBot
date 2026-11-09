@@ -51,6 +51,24 @@ namespace DiscordBot.Models
             /// <summary>Houses and apartments the player owns. Bought with cash only.</summary>
             public List<PropertyHolding> Properties { get; set; } = new List<PropertyHolding>();
 
+            /// <summary>Money owed, from power-ups that take more than the player's cash. Counts against net worth and grows with interest.</summary>
+            public double Debt { get; set; }
+            /// <summary>Interest on debt per day, compounded hourly. High on purpose: pay it off.</summary>
+            public const double DailyDebtInterest = 0.01;
+
+            /// <summary>Debt after one hour of interest.</summary>
+            public static double GrowDebtOneHour(double debt) =>
+                debt <= 0 ? 0 : Math.Round(debt * Math.Pow(1 + DailyDebtInterest, 1.0 / 24), 2);
+
+            /// <summary>Sends incoming money to the debt first. Returns what is left over for cash.</summary>
+            public double PayDebtFrom(double amount)
+            {
+                if (amount <= 0 || Debt <= 0) return Math.Max(0, amount);
+                double paid = Math.Min(Debt, amount);
+                Debt = Math.Round(Debt - paid, 2);
+                return amount - paid;
+            }
+
             public const int MaxNetWorthHistoryPoints = 30 * 24; //30 days of hourly samples
             /// <summary>Total worth (cash + stocks) sampled once an hour, oldest first. Used for the .networth graph.</summary>
             public List<double> NetWorthHistory { get; set; } = new List<double>();
