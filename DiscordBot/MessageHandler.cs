@@ -58,10 +58,23 @@ namespace DiscordBot
             return Task.CompletedTask;
         }
 
-        private async Task DownloadChannels()
+        private Task DownloadChannels()
         {
-            var guilds = _client.Guilds.ToList();
-            await _client.DownloadUsersAsync(guilds);
+            // Runs off the gateway task: the member download waits on gateway events, so awaiting it inside
+            // the Ready handler could hold the gateway up.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var guilds = _client.Guilds.ToList();
+                    await _client.DownloadUsersAsync(guilds);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error downloading guild users: {ex.Message}");
+                }
+            });
+            return Task.CompletedTask;
         }
 
         private Task CommandHandler(SocketMessage message)
@@ -78,7 +91,7 @@ namespace DiscordBot
                 {
                     message.Channel.SendMessageAsync($"HOLY FUCK! I just encountered an error... Check my FUCKING logs");
 
-                    var dmChannel = _client.GetUser(Constants.CreatorId).GetOrCreateDMChannelAsync().GetAwaiter().GetResult();
+                    var dmChannel = _client.GetUser(Constants.CreatorId).CreateDMChannelAsync().GetAwaiter().GetResult();
                     dmChannel.SendMessageAsync($"Message by {message.Author.Username}.\nError in {nameof(MessageHandler)}: {ex.Message}\n\n{ex.StackTrace}").GetAwaiter().GetResult();
                 }
                 catch (Exception ex2)

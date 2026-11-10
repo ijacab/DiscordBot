@@ -1,7 +1,7 @@
 # FILETREE.md — navigation map (keep updated when adding/moving files)
 
 ```
-azure-pipelines.yml            CI/CD → Pi (linux-arm64), systemd restart
+azure-pipelines.yml            CI/CD on the Pi: .NET 10 SDK, staged publish, deploy, Ready check, rollback
 AGENTS.md / FILETREE.md        agent docs
 
 DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
@@ -69,7 +69,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Installers/OllamaInstaller.cs
   Text/                        NameGenerator.cs, adjectives.txt, names.txt
 
-Common/                        shared netstandard2.1 lib
+Common/                        shared net10.0 lib
   Exceptions/                  BadInput, BadSyntax, EnvironmentVariableMissing, NotInGame
   Helpers/                     Discord, Environment, Format, GPT, List, Random, String, TextPaginator helpers
   Models/GistSettings.cs
@@ -78,7 +78,7 @@ Common/                        shared netstandard2.1 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, TextPaginatorTests
+Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look

@@ -1,10 +1,10 @@
 ﻿# AGENTS.md
 
-Discord bot (C#, .NET Core 3.1, Discord.Net 2.4) with virtual-money games, custom commands, reminders, and a local-LLM chat (Ollama). See [FILETREE.md](FILETREE.md) for a navigable file map — read it before searching.
+Discord bot (C#, .NET 10, Discord.Net 3.20) with virtual-money games, custom commands, reminders, and a local-LLM chat (Ollama). See [FILETREE.md](FILETREE.md) for a navigable file map — read it before searching.
 
 ## Solution layout (`DiscordBot/DiscordBot.sln`)
 - `DiscordBot/` — main app (exe). Bot, commands, games, services, ASP.NET host.
-- `Common/` — shared netstandard2.1 lib: exceptions, helpers, Gist/local file storage. `Common/_nanogpt/` is unrelated Python (nanoGPT); ignore.
+- `Common/` — shared net10.0 lib: exceptions, helpers, Gist/local file storage. `Common/_nanogpt/` is unrelated Python (nanoGPT); ignore.
 - `WebAlerter/` — Strawman trade checker (`StrawmanChecker`); its worker is currently disabled in `Startup.cs`.
 - `Tests/` — xunit + Moq (`BlackjackTests`, `GPTHelperTests`, `WebAlerterTests`).
 
@@ -14,10 +14,11 @@ dotnet build DiscordBot/DiscordBot.sln
 dotnet test Tests/Tests.csproj
 dotnet run --project DiscordBot
 ```
-CI/CD: `azure-pipelines.yml` publishes linux-arm64 to a Pi and restarts the `DiscordBot` systemd service (`DiscordBot/DiscordBot.service`). Pushing to `master` deploys. The pipeline stops the service before `dotnet publish`, so a failed build leaves the bot offline: build locally before pushing to `master`.
+CI/CD: `azure-pipelines.yml` runs on the Pi itself (self-hosted pool `Pi`). It installs the .NET 10 SDK (`UseDotNet@2`), publishes linux-arm64 self-contained to a staging folder while the old bot keeps running, then stops the `DiscordBot` systemd service (`DiscordBot/DiscordBot.service`), backs up the files it is about to replace to `/srv/DiscordBot.prev`, copies the new build in and starts it. If the journal shows no Discord.Net `Gateway Ready` line within 5 minutes, or systemd restarts it, the old files are restored, the old bot restarted and the run fails. Save files (`coinaccounts.json`, `stockmarket.json`) are never touched, and live `mappings.json` / `reminders.json` are kept. Pushing to `master` deploys. Still build and test locally before pushing to `master`.
 
 ## Env vars (see `Common/Helpers/EnvironmentHelper.cs`)
 `DiscordBotToken`, `GITHUB_PAT_TOKEN`, `GITHUB_USERNAME`, `GITHUB_GIST_ID`, `S_U`, `S_P`, `PORT` (default 5000), `IS_HEROKU`. Never commit secrets.
+Gateway intents are set in `Startup.CreateDiscordConfig` (unprivileged + Message Content + Server Members; tested in `DiscordConfigTests`). Message Content and Server Members are privileged and are switched on in the Discord Developer Portal. To add another privileged intent (Presence), switch it on in the portal first, or Discord refuses the connection.
 The dungeon deletes players' command messages to keep the channel clean. That needs the bot's **Manage Messages** permission in the server. Without it the commands stay, and the dashboard still works.
 
 ## Architecture

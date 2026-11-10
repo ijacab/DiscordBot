@@ -1,85 +1,174 @@
-# ASP.NET Core
-# Build and test ASP.NET Core projects targeting .NET Core.
-# Add steps that run tests, create a NuGet package, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+# Builds the bot on the Pi (self-hosted agent pool "Pi") and deploys it as the DiscordBot systemd service.
+#
+# Order matters: the new build is published to a staging folder while the old bot keeps running. Only once it
+# has built is the service stopped and the new files copied in. If the new bot does not reach Discord's
+# "Ready" within 5 minutes, the old files are put back, the old bot is restarted and the run fails.
 
 trigger:
 - master
 
 pool:
   name: Pi
-  vmImage: ubuntu-latest
 
 variables:
   buildConfiguration: 'Release'
+  serviceName: 'DiscordBot'
+  appDir: '/srv/DiscordBot/DiscordBot'
+  backupDir: '/srv/DiscordBot.prev'
+  stagingDir: '$(Agent.TempDirectory)/DiscordBotPublish'
 
 steps:
 - task: Bash@3
-  continueOnError: true
-  displayName: export PATH="$PATH:$(DOTNET_PATH)"
-  inputs:
-    targetType: 'inline'
-    script: export PATH="$PATH:$(DOTNET_PATH)"
-- task: Bash@3
-  continueOnError: true
-  displayName: Display env variables
-  inputs:
-    targetType: 'inline'
-    script: env
-- task: Bash@3
-  displayName: "make directory service directory if it doesn't exist and apply permissions"
+  displayName: 'Show Pi system info'
   continueOnError: true
   inputs:
     targetType: 'inline'
     script: |
-      sudo mkdir /srv/DiscordBot
-      sudo chmod 777 /srv/DiscordBot
+      cat /etc/os-release || true
+      uname -m
+      ldd --version | head -1 || true
+      df -h / /srv || true
+      free -h || true
+
+- task: UseDotNet@2
+  displayName: 'Install .NET 10 SDK'
+  inputs:
+    packageType: 'sdk'
+    version: '10.0.x'
 
 - task: Bash@3
-  displayName: "stop service"
-  continueOnError: true
+  displayName: 'Clean staging folder'
   inputs:
     targetType: 'inline'
-    script: sudo systemctl stop DiscordBot
+    script: |
+      rm -rf "$(stagingDir)"
+      mkdir -p "$(stagingDir)"
 
 - task: DotNetCoreCLI@2
-  displayName: 'dotnet publish'
+  displayName: 'dotnet publish (to staging, old bot still running)'
   inputs:
     command: 'publish'
     publishWebProjects: false
-    projects: 'DiscordBot/DiscordBot.sln'
-    arguments: '--configuration $(buildConfiguration) -r linux-arm64 --self-contained true -o /srv/DiscordBot /p:useapphost=true'
+    projects: 'DiscordBot/DiscordBot.csproj'
+    arguments: '--configuration $(buildConfiguration) -r linux-arm64 --self-contained true -o $(stagingDir)/DiscordBot /p:useapphost=true'
     zipAfterPublish: false
+    modifyOutputPath: false
 
 - task: Bash@3
-  displayName: "copy linux service file"
+  displayName: 'Deploy, start and check the bot (rolls back on failure)'
+  env:
+    S_U: $(S_U)
+    S_P: $(S_P)
+    BOT_TOKEN: $(DiscordBotToken)
+    GIST_ID: $(GITHUB_GIST_ID)
+    PAT_TOKEN: $(GITHUB_PAT_TOKEN)
+    GH_USERNAME: $(GITHUB_USERNAME)
   inputs:
     targetType: 'inline'
     script: |
-      sudo cp /srv/DiscordBot/DiscordBot/DiscordBot.service /etc/systemd/system/DiscordBot.service
+      set -uo pipefail
 
-- task: Bash@3
-  displayName: "create and populate environment file"
-  inputs:
-    targetType: 'inline'
-    script: |
-      cat > /srv/DiscordBot/DiscordBot/DiscordBotEnv.conf << EOF
-      S_U=$(S_U)
-      S_P=$(S_P)
-      DiscordBotToken=$(DiscordBotToken)
-      GITHUB_GIST_ID=$(GITHUB_GIST_ID)
-      GITHUB_PAT_TOKEN=$(GITHUB_PAT_TOKEN)
-      GITHUB_USERNAME=$(GITHUB_USERNAME)
+      APP="$(appDir)"
+      PREV="$(backupDir)"
+      NEW="$(stagingDir)/DiscordBot"
+      SERVICE="$(serviceName)"
+      LIST="$(stagingDir)/files.txt"
+
+      if [ ! -x "$NEW/DiscordBot" ]; then
+        echo "##vso[task.logissue type=error]Publish output has no DiscordBot executable; nothing deployed."
+        exit 1
+      fi
+
+      sudo mkdir -p /srv/DiscordBot "$PREV"
+      sudo chmod 777 /srv/DiscordBot
+      sudo chown "$(id -u):$(id -g)" "$PREV"
+      mkdir -p "$APP"
+
+      # mappings.json and reminders.json are edited by the bot at runtime: keep the live copies.
+      for f in mappings.json reminders.json; do
+        if [ -e "$APP/$f" ]; then rm -f "$NEW/$f"; fi
+      done
+
+      # The files this deploy writes. Only these are backed up and restored, so the bot's save files
+      # (coinaccounts.json, stockmarket.json, ...) are never touched.
+      (cd "$NEW" && find . -type f) > "$LIST"
+
+      find "$PREV" -mindepth 1 -delete
+      while IFS= read -r f; do
+        if [ -e "$APP/$f" ]; then
+          mkdir -p "$PREV/$(dirname "$f")"
+          cp -a "$APP/$f" "$PREV/$f"
+        fi
+      done < "$LIST"
+      echo "Backed up $(cd "$PREV" && find . -type f | wc -l) existing files to $PREV"
+
+      write_env() {
+        cat > "$APP/DiscordBotEnv.conf" << EOF
+      S_U=${S_U}
+      S_P=${S_P}
+      DiscordBotToken=${BOT_TOKEN}
+      GITHUB_GIST_ID=${GIST_ID}
+      GITHUB_PAT_TOKEN=${PAT_TOKEN}
+      GITHUB_USERNAME=${GH_USERNAME}
       EOF
-      chmod 700 /srv/DiscordBot/DiscordBot/DiscordBotEnv.conf
+        chmod 700 "$APP/DiscordBotEnv.conf"
+      }
 
+      start_service() {
+        sudo cp "$APP/DiscordBot.service" "/etc/systemd/system/$SERVICE.service"
+        sudo systemctl daemon-reload
+        sudo systemctl enable "$SERVICE"
+        sudo systemctl start "$SERVICE"
+      }
 
-- task: Bash@3
-  displayName: "copy linux service file and start service"
-  inputs:
-    targetType: 'inline'
-    script: |
-      sudo cp /srv/DiscordBot/DiscordBot/DiscordBot.service /etc/systemd/system/DiscordBot.service
-      sudo systemctl daemon-reload
-      sudo systemctl start DiscordBot
-      sudo systemctl enable DiscordBot
+      # Waits up to 5 minutes for Discord.Net's "Gateway ... Ready" log line, with no crash restarts.
+      wait_ready() {
+        local since="$1" restarts_before="$2"
+        for i in $(seq 1 60); do
+          sleep 5
+          local restarts
+          restarts=$(systemctl show -p NRestarts --value "$SERVICE" 2>/dev/null || echo 0)
+          if [ "${restarts:-0}" -gt "${restarts_before:-0}" ]; then
+            echo "Service restarted itself (crash) after $((i * 5))s."
+            return 1
+          fi
+          if sudo journalctl -u "$SERVICE" --since "$since" --no-pager -o cat 2>/dev/null | grep -qE "Gateway +Ready"; then
+            echo "Bot is connected to Discord (Ready after about $((i * 5))s)."
+            return 0
+          fi
+        done
+        echo "No Ready from Discord within 5 minutes."
+        return 1
+      }
+
+      sudo systemctl stop "$SERVICE" || true
+
+      cp -a "$NEW/." "$APP/"
+      write_env
+
+      SINCE=$(date '+%Y-%m-%d %H:%M:%S')
+      start_service
+      # Read after the start: an explicit start can reset systemd's restart counter.
+      RESTARTS=$(systemctl show -p NRestarts --value "$SERVICE" 2>/dev/null || echo 0)
+
+      if wait_ready "$SINCE" "$RESTARTS"; then
+        exit 0
+      fi
+
+      echo "----- Log from the new bot -----"
+      sudo journalctl -u "$SERVICE" --since "$SINCE" --no-pager -o cat | tail -80
+
+      echo "Rolling back to the previous build."
+      sudo systemctl stop "$SERVICE" || true
+      while IFS= read -r f; do
+        if [ -e "$PREV/$f" ]; then
+          cp -a "$PREV/$f" "$APP/$f"
+        else
+          rm -f "$APP/$f"
+        fi
+      done < "$LIST"
+      write_env
+      start_service
+
+      echo "##vso[task.logissue type=error]New build did not come up; the previous build was restored and restarted. See the log above."
+      exit 1

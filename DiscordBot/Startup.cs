@@ -21,6 +21,19 @@ namespace DiscordBot
 {
     public class Startup
     {
+        /// <summary>
+        /// Discord.Net 3 sends only unprivileged intents by default. Commands need the message text, and
+        /// GetUser / DownloadUsersAsync need the member list. Both intents are privileged and must also be
+        /// switched on in the Developer Portal (Bot page), or Discord refuses the connection.
+        /// </summary>
+        public static DiscordSocketConfig CreateDiscordConfig() => new DiscordSocketConfig()
+        {
+            AlwaysDownloadUsers = true,
+            GatewayIntents = GatewayIntents.AllUnprivileged
+                | GatewayIntents.MessageContent
+                | GatewayIntents.GuildMembers
+        };
+
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddHttpsRedirection(options => { options.HttpsPort = 443; });
@@ -33,16 +46,7 @@ namespace DiscordBot
             var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
             services.AddSingleton<AppSettings>(appSettings);
 
-            services.AddSingleton<DiscordSocketClient>(sp => 
-                {
-                    var config = new DiscordSocketConfig()
-                    {
-                        AlwaysDownloadUsers = true
-                    };
-                    var client = new DiscordSocketClient(config);
-                    return client;
-                }
-            );
+            services.AddSingleton<DiscordSocketClient>(sp => new DiscordSocketClient(CreateDiscordConfig()));
             services.AddTransient<MappingService>();
             services.AddTransient<ReminderService>();
             services.AddSingleton<CoinService>();

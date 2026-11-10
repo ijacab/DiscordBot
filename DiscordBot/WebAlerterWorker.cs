@@ -62,7 +62,7 @@ namespace DiscordBot
 
                         try
                         {
-                            var dmChannel = await _client.GetUser(Constants.CreatorId).GetOrCreateDMChannelAsync();
+                            var dmChannel = await _client.GetUser(Constants.CreatorId).CreateDMChannelAsync();
                             await dmChannel.SendMessageAsync($"Error while running strawman checks: {ex.Message}\n\n{ex.StackTrace}");
                         }
                         catch (Exception ex2)

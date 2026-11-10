@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-10", "The bot runs on .NET 10 and the latest Discord.Net. Nothing should change in play."),
             new PatchNote("2026-11-09", "`max` works for calls, puts, shorts, sells and covers: it buys or sells as much as you can afford, or everything you hold."),
             new PatchNote("2026-11-09", "Rent is paid hourly: 3.5% of a house's market price per hour, 4% for an apartment, before the agency and vacancy."),
             new PatchNote("2026-11-09", "Tiers 1 and 2 are safe havens only (bonds and gold). Tiers 3-6 hold the ordinary stocks. Holders of the removed stocks are paid out at current value."),
