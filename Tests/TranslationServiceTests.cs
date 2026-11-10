@@ -37,7 +37,7 @@ namespace Tests
         {
             var fake = new FakeTranslator();
             var client = new HttpClient(fake) { BaseAddress = new Uri("https://translate.example/") };
-            return (new TranslationService(client, new Random(seed)), fake);
+            return (new TranslationService(client) { Random = new Random(seed) }, fake);
         }
 
         [Fact]

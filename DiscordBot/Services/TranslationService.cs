@@ -34,17 +34,17 @@ namespace DiscordBot.Services
 
         public const int HopCount = 8;
         private readonly HttpClient _client;
-        private readonly Random _random;
 
-        public TranslationService(HttpClient client) : this(client, new Random())
-        {
-        }
-
-        public TranslationService(HttpClient client, Random random)
+        /// <summary>
+        /// Only one constructor: this is a typed HttpClient, and dependency injection refuses to start the bot when it
+        /// can't pick between constructors. Tests set <see cref="Random"/> for a fixed route.
+        /// </summary>
+        public TranslationService(HttpClient client)
         {
             _client = client;
-            _random = random;
         }
+
+        public Random Random { get; set; } = new Random();
 
         /// <summary>
         /// Translates through <see cref="HopCount"/> different languages, then back to English. A hop that fails
@@ -52,7 +52,7 @@ namespace DiscordBot.Services
         /// </summary>
         public async Task<TranslationResult> TranslateThroughLanguages(string text)
         {
-            List<string> hops = Languages.Keys.OrderBy(_ => _random.Next()).Take(HopCount).ToList();
+            List<string> hops = Languages.Keys.OrderBy(_ => Random.Next()).Take(HopCount).ToList();
 
             var result = new TranslationResult { Text = text };
             string source = "en";
