@@ -167,7 +167,7 @@ namespace DiscordBot.Games.Managers
             else
             {
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
-                await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type `.bj hit` or `.bj stay` to play.");
+                await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type {playCommands} to play.");
             }
         }
 

@@ -8,6 +8,8 @@ namespace DiscordBot.Games.Models.BattleArena
         public BattleArenaPlayer Player { get; set; }
         public BattleAction Action { get; set; }
         public int DiceRoll { get; set; }
+        /// <summary>The opponent an Attack or Gamble was aimed at, or null.</summary>
+        public BattleArenaPlayer Target { get; set; }
         public string Result { get; set; }
         public List<Hit> Hits { get; set; } = new List<Hit>();
     }

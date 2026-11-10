@@ -18,18 +18,18 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   DiscordBot.service           systemd unit
   Managers/
     CommandManager_Main.cs     ctor, _commands registry, RunCommand dispatch/parsing
-    CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace handlers
+    CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace .dungeon handlers (typed paths)
     CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, lang, ban/unban, ...)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
-    Blackjack.cs  Roulette.cs  BattleArena.cs     game rules
+    Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
-      BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
+      BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/
       Dungeon/DungeonSession.cs    pure session rules: lobby, floor-per-tick crawl, boss doors, checkpoints, PvP pool, idle cash out
@@ -39,7 +39,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
-      BattleArena/             AttackInfo, BattlePerson, BattleStats, CardTraits
+      BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, RoundOutcome, SpectatorPool (side bets)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           5-hourly raffle that gives power-ups, and using them (`.pu`)
@@ -49,6 +49,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
     DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player (HP, floor pips, potions)
+    FaceOffRenderer.cs         Face Off arena picture: card art, rarity borders, HP bars, picked/reveal/winner states
     LiveMessage.cs             a dashboard message edited in place: images swapped per frame, embeds, buttons, bump
     LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
     ConvoService.cs            LLM conversation (Ollama)

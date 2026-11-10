@@ -1181,8 +1181,10 @@ namespace DiscordBot.Managers
 
             if (coinAccount.BattlePerson?.FilePath != null && File.Exists(coinAccount.BattlePerson.FilePath))
                 File.Delete(coinAccount.BattlePerson.FilePath); //replacing the old card removes its image
+            FaceOffRenderer.ForgetArt(coinAccount.BattlePerson?.FilePath);
 
             string savedImagePath = Path.Combine(CardDirectory, $"{prefix}.jpg");
+            FaceOffRenderer.ForgetArt(savedImagePath);
             File.Move(unsavedImagePath, savedImagePath);
             File.Delete(unsavedJsonPath);
 
