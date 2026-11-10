@@ -27,6 +27,11 @@ namespace DiscordBot
         public async Task StartAsync()
         {
             _client.MessageReceived += CommandHandler;
+            //interactions run off the gateway task, so a slow handler can't delay other events; each one must
+            //acknowledge Discord within 3 seconds, which the handlers in CommandManager_Components do first
+            _client.ButtonExecuted += component => RunInteraction(() => _commandManager.RunComponent(component));
+            _client.SelectMenuExecuted += component => RunInteraction(() => _commandManager.RunComponent(component));
+            _client.ModalSubmitted += modal => RunInteraction(() => _commandManager.RunModal(modal));
             _client.Log += Log;
             _client.Ready += DownloadChannels;
 
@@ -55,6 +60,22 @@ namespace DiscordBot
         {
             _logger.LogDebug($"Discord log message: {msg}");
             Console.WriteLine(msg.ToString());
+            return Task.CompletedTask;
+        }
+
+        private Task RunInteraction(Func<Task> handler)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await handler();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error handling an interaction: {ex.Message}");
+                }
+            });
             return Task.CompletedTask;
         }
 

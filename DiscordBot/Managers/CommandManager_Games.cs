@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
 using DiscordBot.Games.Managers;
+using DiscordBot.Games.Models.Dungeon;
 using DiscordBot.Games.Models;
 using DiscordBot.Games.Models.BattleArena;
 using DiscordBot.Services;
@@ -284,33 +285,67 @@ namespace DiscordBot.Managers
             //the dashboard shows the result, so the command itself is just noise in the channel
             await TryDeleteMessageAsync(message);
 
+            string refusal;
             switch (action)
             {
                 case "":
                 case "status":
-                    await _dungeonManager.Status(name, channel);
+                    refusal = await _dungeonManager.Status(channel);
                     break;
                 case "join":
-                    await _dungeonManager.Join(await _coinService.Get(userId, name), channel);
+                    refusal = await _dungeonManager.Join(await _coinService.Get(userId, name));
+                    break;
+                case "leave":
+                    refusal = await _dungeonManager.Leave(userId);
                     break;
                 case "start":
-                    await _dungeonManager.Start(userId, name, channel);
+                    refusal = await _dungeonManager.Start(userId);
                     break;
                 case "go":
-                    await _dungeonManager.Go(userId, name, channel);
+                    refusal = await _dungeonManager.Go(userId);
                     break;
                 case "cash":
-                    await _dungeonManager.Cash(userId, name, channel);
+                    refusal = await _dungeonManager.Cash(userId);
                     break;
                 case "fight":
-                    await _dungeonManager.Fight(userId, name, channel);
+                case "pvp":
+                    refusal = await _dungeonManager.EnterPool(userId);
+                    break;
+                case "boss":
+                    refusal = await _dungeonManager.Boss(userId, BossChoice.Fight);
+                    break;
+                case "sneak":
+                    refusal = await _dungeonManager.Boss(userId, BossChoice.Sneak);
+                    break;
+                case "potion":
+                    refusal = await _dungeonManager.Potion(userId);
                     break;
                 default:
                     CoinAccount host = await _coinService.Get(userId, name);
                     if (!TryExtractBetAmount(args, host, out double buyIn))
                         throw new BadSyntaxException();
-                    await _dungeonManager.Open(host, buyIn, channel);
+                    refusal = await _dungeonManager.Open(host, buyIn, channel);
                     break;
+            }
+
+            if (refusal != null)
+                _ = PostTransientAsync(channel, $"{message.Author.Mention} {refusal}");
+        }
+
+        private static readonly TimeSpan TransientLifetime = TimeSpan.FromSeconds(15);
+
+        /// <summary>Posts a short message, then deletes it, so refusals to typed game commands don't stay in the channel.</summary>
+        private static async Task PostTransientAsync(IMessageChannel channel, string text)
+        {
+            try
+            {
+                IUserMessage note = await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
+                await Task.Delay(TransientLifetime);
+                await note.DeleteAsync();
+            }
+            catch (Exception)
+            {
+                //the note is only a hint, so failing to post or delete it doesn't matter
             }
         }
 

@@ -9,8 +9,12 @@ namespace DiscordBot.Games.Models.Dungeon
     /// <summary>
     /// Where a run is. A run crawls a block of 10 floors, then waits at a checkpoint to cash out or fight.
     /// Fighters wait in the pool until every run in the session has decided. Losers are out, and winners crawl on.
+    /// Before each boss floor the run stops at the boss door until the player picks a <see cref="BossChoice"/>.
     /// </summary>
-    public enum RunPhase { Crawling, AtCheckpoint, InPool, Out }
+    public enum RunPhase { Crawling, AtCheckpoint, InPool, Out, AtBossDoor }
+
+    /// <summary>What to do at a boss door: fight it, try to sneak past, or drink a potion and then fight.</summary>
+    public enum BossChoice { Fight, Sneak, Potion }
 
     public class RoomResult
     {
@@ -26,6 +30,12 @@ namespace DiscordBot.Games.Models.Dungeon
         public int? EnemyMaxHp { get; set; }
         /// <summary>Loot that dropped in this room, or null.</summary>
         public LootItem Drop { get; set; }
+        /// <summary>True when a healing potion was found in this room.</summary>
+        public bool FoundPotion { get; set; }
+        /// <summary>True for the stop in front of a boss: no floor was entered yet, and the player must choose.</summary>
+        public bool AtBossDoor { get; set; }
+        /// <summary>True when the player slipped past the boss without a fight.</summary>
+        public bool Sneaked { get; set; }
     }
 
     /// <summary>
@@ -44,7 +54,13 @@ namespace DiscordBot.Games.Models.Dungeon
         /// Extra monster strength per block. Loot piles up for players who survive, so each block gets harder to hold the odds near 50%, 25%, 12.5%.
         /// Tuned with the balance sim, and checked by the seeded odds test.
         /// </summary>
-        public const double BlockDifficultyStep = 1.12;
+        public const double BlockDifficultyStep = 1.4;
+        /// <summary>Chance that sneaking past a boss works. If it fails, the boss strikes first, enraged.</summary>
+        public const double SneakChance = 0.5;
+        /// <summary>Share of max HP a potion heals.</summary>
+        public const double PotionHealShare = 0.5;
+        public const double TreasurePotionChance = 0.25;
+        public const double QuietPotionChance = 0.10;
 
         private static readonly (string Name, SpriteKind Sprite)[] Monsters =
         {
@@ -98,6 +114,11 @@ namespace DiscordBot.Games.Models.Dungeon
         /// <summary>Percent more gold from rooms, from loot.</summary>
         public int GoldFinderPercent { get; private set; }
         public bool Alive => _me.Alive;
+        /// <summary>Healing potions carried. Drink one with <see cref="DrinkPotion"/> or <see cref="BossChoice.Potion"/>.</summary>
+        public int Potions { get; private set; }
+        /// <summary>The boss waiting at the door, while <see cref="Phase"/> is <see cref="RunPhase.AtBossDoor"/>.</summary>
+        public string PendingBossName { get; private set; }
+        public SpriteKind PendingBossSprite { get; private set; } = SpriteKind.None;
         /// <summary>True once the run is finished, by death or by cashing out.</summary>
         public bool IsOver { get; private set; }
 
@@ -120,8 +141,9 @@ namespace DiscordBot.Games.Models.Dungeon
         }
 
         /// <summary>
-        /// Crawls the next block of 10 floors in one go. If the player goes down, the run is out.
-        /// Otherwise the run waits at a checkpoint for a choice to cash out or fight.
+        /// Crawls the rest of the block in one go, fighting every boss. If the player goes down, the run is out.
+        /// Otherwise the run waits at a checkpoint for a choice to cash out or fight. The dungeon itself crawls floor by floor
+        /// with <see cref="RunFloor"/>; this is the same crawl with the default choice, used by the odds tests.
         /// </summary>
         public List<RoomResult> RunBlock()
         {
@@ -129,19 +151,112 @@ namespace DiscordBot.Games.Models.Dungeon
                 throw new InvalidOperationException("This run isn't ready for another block.");
 
             var rooms = new List<RoomResult>();
-            for (int i = 0; i < FloorsPerBlock && Alive; i++)
-                rooms.Add(Descend());
-
-            if (!Alive)
+            while (true)
             {
-                Phase = RunPhase.Out;
+                if (Phase == RunPhase.AtBossDoor)
+                {
+                    rooms.Add(FaceBoss(BossChoice.Fight));
+                }
+                else if (Phase == RunPhase.Crawling)
+                {
+                    RoomResult room = RunFloor();
+                    if (!room.AtBossDoor)
+                        rooms.Add(room);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return rooms;
+        }
+
+        /// <summary>
+        /// Crawls one floor. If the next floor is a boss, nothing is entered yet: the run stops at the boss door and the
+        /// result describes the boss, until the player calls <see cref="FaceBoss"/>.
+        /// </summary>
+        public RoomResult RunFloor()
+        {
+            if (Phase != RunPhase.Crawling)
+                throw new InvalidOperationException("This run isn't crawling right now.");
+
+            if (NextIsBoss)
+            {
+                (PendingBossName, PendingBossSprite) = Pick(Bosses);
+                Phase = RunPhase.AtBossDoor;
+                var door = new RoomResult { Type = RoomType.Boss, AtBossDoor = true, Enemy = PendingBossSprite, EnemyName = PendingBossName };
+                door.Lines.Add($"**Floor {NextFloor}: BOSS.** {PendingBossName} blocks the way.");
+                return door;
+            }
+
+            return Descend();
+        }
+
+        /// <summary>
+        /// Resolves the boss floor with the player's choice. Fight is the normal boss fight. Sneak skips the floor
+        /// with no hoard half the time; otherwise the boss strikes first, enraged. Potion heals, then fights.
+        /// </summary>
+        public RoomResult FaceBoss(BossChoice choice)
+        {
+            if (Phase != RunPhase.AtBossDoor)
+                throw new InvalidOperationException("You're not at a boss door.");
+            if (choice == BossChoice.Potion && Potions == 0)
+                throw new InvalidOperationException("You have no potions.");
+
+            string bossName = PendingBossName;
+            SpriteKind bossSprite = PendingBossSprite;
+            PendingBossName = null;
+            PendingBossSprite = SpriteKind.None;
+            Phase = RunPhase.Crawling;
+
+            Floor++;
+            var result = new RoomResult { Type = RoomType.Boss, Enemy = bossSprite, EnemyName = bossName };
+            LastRoom = RoomType.Boss;
+
+            if (choice == BossChoice.Potion)
+                result.Lines.Add($"You drink a potion and heal {Drink()} HP.");
+
+            if (choice == BossChoice.Sneak)
+            {
+                if (_random.NextDouble() < SneakChance)
+                {
+                    result.Sneaked = true;
+                    result.Lines.Add($"**Floor {Floor}:** you sneak past {bossName}. No hoard, but no fight.");
+                }
+                else
+                {
+                    result.Lines.Add($"**Floor {Floor}:** {bossName} spots you and strikes first, enraged!");
+                    Fight(result, bossName, bossSprite, boss: true, dropChance: 1, ambushed: true);
+                }
             }
             else
             {
-                Phase = RunPhase.AtCheckpoint;
-                BlocksCleared++;
+                result.Lines.Add($"**Floor {Floor}: BOSS.** You face {bossName}.");
+                Fight(result, bossName, bossSprite, boss: true, dropChance: 1);
             }
-            return rooms;
+
+            FinishRoom(result);
+            return result;
+        }
+
+        /// <summary>Drinks a potion now. Allowed any time the run is still going and not in the pool.</summary>
+        public int DrinkPotion()
+        {
+            if (IsOver || Phase == RunPhase.InPool || Phase == RunPhase.Out)
+                throw new InvalidOperationException("You can't drink a potion right now.");
+            if (Potions == 0)
+                throw new InvalidOperationException("You have no potions.");
+            if (Hp >= MaxHp)
+                throw new InvalidOperationException("You're already at full HP.");
+            return Drink();
+        }
+
+        private int Drink()
+        {
+            Potions--;
+            int before = Hp;
+            _me.Heal(Math.Max(1, (int)Math.Round(MaxHp * PotionHealShare)));
+            return Hp - before;
         }
 
         /// <summary>The player chooses to fight at the checkpoint, which puts the run in the pool.</summary>
@@ -213,7 +328,7 @@ namespace DiscordBot.Games.Models.Dungeon
         {
             int f = FloorInBlock;
             double scale = 1 + BlockDifficultyStep * BlockIndex;
-            int hp = (int)Math.Round((boss ? 10 + 2 * f : 6 + 2 * f) * scale) + _random.Next(0, 6);
+            int hp = (int)Math.Round((boss ? 12 + 2 * f : 6 + 2 * f) * scale) + _random.Next(0, 6);
             int attack = (int)Math.Round((boss ? 3 + f / 3 : f / 4) * scale);
             return new Combatant
             {
@@ -225,7 +340,7 @@ namespace DiscordBot.Games.Models.Dungeon
             };
         }
 
-        /// <summary>Enters the next room and resolves it. Only the block crawl calls this.</summary>
+        /// <summary>Enters the next room, which is never a boss, and resolves it. Bosses go through <see cref="FaceBoss"/>.</summary>
         private RoomResult Descend()
         {
             if (IsOver)
@@ -237,13 +352,6 @@ namespace DiscordBot.Games.Models.Dungeon
 
             switch (result.Type)
             {
-                case RoomType.Boss:
-                    (string bossName, SpriteKind bossSprite) = Pick(Bosses);
-                    result.Enemy = bossSprite;
-                    result.EnemyName = bossName;
-                    result.Lines.Add($"**Floor {Floor}: BOSS.** {bossName} blocks the way.");
-                    Fight(result, bossName, bossSprite, boss: true, dropChance: 1);
-                    break;
                 case RoomType.Monster:
                     (string monsterName, SpriteKind monsterSprite) = Pick(Monsters);
                     result.Enemy = monsterSprite;
@@ -258,7 +366,9 @@ namespace DiscordBot.Games.Models.Dungeon
                     SpringTrap(result);
                     break;
                 case RoomType.Quiet:
-                    result.Lines.Add($"**Floor {Floor}:** a quiet corridor. Nothing here.");
+                    result.Lines.Add($"**Floor {Floor}:** a quiet corridor.");
+                    if (!MaybePotion(result, QuietPotionChance))
+                        result.Lines.Add("Nothing here.");
                     break;
                 case RoomType.Gear:
                     FindGear(result);
@@ -270,20 +380,39 @@ namespace DiscordBot.Games.Models.Dungeon
                     break;
             }
 
+            FinishRoom(result);
+            return result;
+        }
+
+        /// <summary>After a room: a downed player is out, and the last floor of a block leads to the checkpoint.</summary>
+        private void FinishRoom(RoomResult result)
+        {
             if (!Alive)
             {
                 IsOver = true;
+                Phase = RunPhase.Out;
                 result.Died = true;
                 result.Lines.Add($"You went down on floor {Floor}.");
             }
-            return result;
+            else if (Floor % FloorsPerBlock == 0)
+            {
+                Phase = RunPhase.AtCheckpoint;
+                BlocksCleared++;
+            }
+        }
+
+        private bool MaybePotion(RoomResult result, double chance)
+        {
+            if (_random.NextDouble() >= chance)
+                return false;
+            Potions++;
+            result.FoundPotion = true;
+            result.Lines.Add($"You find a healing potion ({Potions} carried).");
+            return true;
         }
 
         private RoomType PickRoom()
         {
-            if (NextIsBoss)
-                return RoomType.Boss;
-
             double roll = _random.NextDouble();
             if (roll < 0.40) return RoomType.Monster;
             if (roll < 0.52) return RoomType.Treasure;
@@ -355,6 +484,7 @@ namespace DiscordBot.Games.Models.Dungeon
             result.Lines.Add($"**Floor {Floor}:** a treasure chest, unlocked.");
             AddGold(result, Gold(0.12 + _random.NextDouble() * 0.18));
             MaybeDrop(result, Loot.TreasureDropChance);
+            MaybePotion(result, TreasurePotionChance);
         }
 
         private void SpringTrap(RoomResult result)
@@ -393,11 +523,19 @@ namespace DiscordBot.Games.Models.Dungeon
         /// Fights round by round using the shared combat rules. The player strikes first each round.
         /// Stops when the enemy dies, the player goes down, or the round cap is reached.
         /// </summary>
-        private void Fight(RoomResult result, string enemyName, SpriteKind enemySprite, bool boss, double dropChance)
+        private void Fight(RoomResult result, string enemyName, SpriteKind enemySprite, bool boss, double dropChance, bool ambushed = false)
         {
             Combatant enemy = MonsterFor(enemyName, boss);
             bool enraged = false;
             int dealt = 0, taken = 0, rounds = 0, misses = 0, crits = 0;
+
+            if (ambushed)
+            {
+                //a failed sneak: the boss is enraged from the start and gets a free strike
+                enraged = true;
+                enemy.Attack += 1;
+                taken += Combat.Attack(enemy, _me, _random).Damage;
+            }
 
             for (int round = 1; round <= Combat.MaxRounds && Alive && enemy.Alive; round++)
             {

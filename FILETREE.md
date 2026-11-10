@@ -8,7 +8,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Program.cs                   entry; Kestrel + generic host
   Startup.cs                   DI registration, HttpClients, middleware  ← register services here
   ChatWorker.cs                BackgroundService: Ollama install + start MessageHandler
-  MessageHandler.cs            Discord event hooks → CommandManager; background tasks (reminders, interest)
+  MessageHandler.cs            Discord event hooks → CommandManager (messages, buttons, select menus, modals); background tasks
   WebAlerterWorker.cs          worker for WebAlerter (disabled in Startup)
   AppSettings.cs               blacklist config + PrestigeDisabled feature flag
   Constants.cs                 shared constants
@@ -21,6 +21,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace handlers
     CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, lang, ban/unban, ...)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
+    CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
@@ -29,9 +30,10 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file)
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs
-      DungeonManager.cs            the one open session (global): lobby, 10-floor blocks, checkpoints, PvP pool, idle cash out
+      DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/
-      Dungeon/DungeonRun.cs        one solo run in 10-floor blocks: rooms, fights, checkpoints, automatic loot, haul
+      Dungeon/DungeonSession.cs    pure session rules: lobby, floor-per-tick crawl, boss doors, checkpoints, PvP pool, idle cash out
+      Dungeon/DungeonRun.cs        one solo run: RunFloor, boss doors (fight/sneak/potion), potions, checkpoints, loot, haul
       Dungeon/Combat.cs            shared attack rules: hit, d10 damage, crit, lifesteal, thorns, Second Wind, round cap
       Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls (10 rounds max)
       Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances
@@ -46,7 +48,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     StockChart.cs              text price graph for `.stocks {symbol}`
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
-    DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player
+    DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player (HP, floor pips, potions)
+    LiveMessage.cs             a dashboard message edited in place: images swapped per frame, embeds, buttons, bump
     LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
     ConvoService.cs            LLM conversation (Ollama)
     GPTService.cs              GPT/LLM calls

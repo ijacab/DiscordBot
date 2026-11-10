@@ -52,6 +52,20 @@ namespace Tests
         }
 
         [Fact]
+        public void Scene_WithPipsPotionsAndABossDoor_RendersAtFixedSize()
+        {
+            DungeonScene scene = SceneWith(4, SpriteKind.Dragon);
+            scene.Players[0].FloorInBlock = 4;
+            scene.Players[0].AtBossDoor = true;
+            scene.Players[0].Potions = 3;
+            scene.Players[1].FloorInBlock = 10;
+            scene.Players[2].FloorInBlock = 0;
+            scene.Players[3].Status = "CASHED OUT";
+
+            AssertPngOfSize(DungeonSceneRenderer.Render(scene), DungeonSceneRenderer.Width, DungeonSceneRenderer.Height);
+        }
+
+        [Fact]
         public void Scene_WithADownedPlayer_RendersAtFixedSize()
         {
             var scene = SceneWith(2, SpriteKind.Skull);
