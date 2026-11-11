@@ -1344,14 +1344,11 @@ namespace DiscordBot.Managers
 
             TranslationResult result = await _translationService.TranslateThroughLanguages(string.Join(" ", args));
 
-            //the route is part of the joke, so it goes on a small line under the result
-            string route = "-# via " + string.Join(" → ", result.Route.Select(TranslationService.NameOf));
             string translated = result.Text;
-            int room = _messageCharLimit - route.Length - 1;
-            if (translated.Length > room)
-                translated = translated.Substring(0, room);
+            if (translated.Length > _messageCharLimit)
+                translated = translated.Substring(0, _messageCharLimit);
 
-            await message.Channel.SendMessageAsync($"{translated}\n{route}", allowedMentions: AllowedMentions.None);
+            await message.Channel.SendMessageAsync(translated, allowedMentions: AllowedMentions.None);
         }
 
         private async Task Ban(DiscordSocketClient client, SocketMessage message, List<string> args)

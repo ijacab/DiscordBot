@@ -22,7 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
-            new PatchNote("2026-11-10", "`.lang` mangles harder: 8 hops through far-flung languages like Yoruba, Khmer and Latin, and it shows the route it took."),
+            new PatchNote("2026-11-10", "`.lang` mangles harder: 8 hops through far-flung languages like Yoruba, Khmer and Latin."),
             new PatchNote("2026-11-10", "Face Off is reworked: buttons, a live arena with card art, hidden picks, pick your target, a 20 is always best, and spectators can back a fighter."),
             new PatchNote("2026-11-10", "Dungeon has buttons and a live dashboard. You crawl floor by floor, and at each boss door you fight, sneak past or drink a potion. Bosses are on floors 5 and 10 again."),
             new PatchNote("2026-11-10", "The bot runs on .NET 10 and the latest Discord.Net. Nothing should change in play."),

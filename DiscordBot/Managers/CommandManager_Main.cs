@@ -134,7 +134,7 @@ namespace DiscordBot.Managers
                 new Command("stop", Stop, hidden: true, requiresAdmin: true),
                 new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
                 new Command("convo", Convo),
-                new Command("lang", Lang) { Description = "Mangles your text by bouncing it through 8 random far-flung languages (Yoruba, Khmer, Latin, Hmong and friends) and back to English, and shows the route it took.", Syntax = "`.lang some text to mangle`" },
+                new Command("lang", Lang) { Description = "Mangles your text by bouncing it through 8 random far-flung languages (Yoruba, Khmer, Latin, Hmong and friends) and back to English.", Syntax = "`.lang some text to mangle`" },
                 new Command("ban", Ban) { Syntax = "`.ban @someone`", Hidden = true, RequiresAdmin = true },
                 new Command("unban", Unban) { Syntax = "`.unban @someone`", Hidden = true, RequiresAdmin = true },
 
