@@ -1328,7 +1328,16 @@ namespace DiscordBot.Managers
             if (args.Count == 0)
                 throw new BadSyntaxException();
 
-            TranslationResult result = await _translationService.TranslateThroughLanguages(string.Join(" ", args));
+            TranslationResult result;
+            try
+            {
+                result = await _translationService.TranslateThroughLanguages(string.Join(" ", args));
+            }
+            catch (TranslationUnavailableException)
+            {
+                await message.Channel.SendMessageAsync("Google Translate isn't answering right now. Try again in a minute.");
+                return;
+            }
 
             string translated = result.Text;
             if (translated.Length > _messageCharLimit)

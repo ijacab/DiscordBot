@@ -1,4 +1,5 @@
 ﻿using DiscordBot.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,7 +38,7 @@ namespace Tests
         {
             var fake = new FakeTranslator();
             var client = new HttpClient(fake) { BaseAddress = new Uri("https://translate.example/") };
-            return (new TranslationService(client) { Random = new Random(seed) }, fake);
+            return (new TranslationService(client, NullLogger<TranslationService>.Instance) { Random = new Random(seed), HopDelay = TimeSpan.Zero, RetryDelay = TimeSpan.Zero }, fake);
         }
 
         [Fact]
@@ -68,7 +69,7 @@ namespace Tests
         }
 
         [Fact]
-        public async Task AFailedHop_IsSkippedAndTheChainCarriesOn()
+        public async Task ALanguageThatKeepsFailing_IsSwappedForAnother()
         {
             var (service, fake) = Create();
             string broken = null;
@@ -77,9 +78,53 @@ namespace Tests
             TranslationResult result = await service.TranslateThroughLanguages("hello");
 
             Assert.DoesNotContain(broken, result.Route);
-            Assert.Equal(TranslationService.HopCount, result.Route.Count);
-            int skipped = fake.Calls.FindIndex(c => c.To == broken);
-            Assert.Equal(fake.Calls[skipped].From, fake.Calls[skipped + 1].From);
+            Assert.Equal(TranslationService.HopCount + 1, result.Route.Count);
+            Assert.Equal(TranslationService.AttemptsPerHop, fake.Calls.Count(c => c.To == broken));
+            int after = fake.Calls.FindLastIndex(c => c.To == broken) + 1;
+            Assert.Equal(fake.Calls[after - 1].From, fake.Calls[after].From);
+        }
+
+        [Fact]
+        public async Task AHiccup_IsRetriedAndTheLanguageKept()
+        {
+            var (service, fake) = Create();
+            string flaky = null;
+            int failed = 0;
+            fake.Fails = to => to != "en" && (flaky ??= to) == to && failed++ == 0;
+
+            TranslationResult result = await service.TranslateThroughLanguages("hello");
+
+            Assert.Contains(flaky, result.Route);
+            Assert.Equal(TranslationService.HopCount + 1, result.Route.Count);
+        }
+
+        [Fact]
+        public async Task WhenGoogleRefusesEverything_ItGivesUpQuicklyAndSaysSo()
+        {
+            var (service, fake) = Create();
+            fake.Fails = _ => true;
+
+            await Assert.ThrowsAsync<TranslationUnavailableException>(() => service.TranslateThroughLanguages("hello"));
+            Assert.Equal(TranslationService.MaxFailures, fake.Calls.Count);
+        }
+
+        [Fact]
+        public async Task WhenEveryHopFails_ItSaysSoInsteadOfEchoingTheText()
+        {
+            var (service, fake) = Create();
+            fake.Fails = to => to != "en";
+
+            await Assert.ThrowsAsync<TranslationUnavailableException>(() => service.TranslateThroughLanguages("hello"));
+        }
+
+        [Fact]
+        public async Task WhenTheWayBackFails_ItSaysSo()
+        {
+            var (service, fake) = Create();
+            fake.Fails = to => to == "en";
+
+            await Assert.ThrowsAsync<TranslationUnavailableException>(() => service.TranslateThroughLanguages("hello"));
+            Assert.Equal(3, fake.Calls.Count(c => c.To == "en"));
         }
 
         [Fact]

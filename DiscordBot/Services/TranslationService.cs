@@ -1,4 +1,5 @@
-﻿﻿using Newtonsoft.Json.Linq;
+﻿﻿using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +13,12 @@ namespace DiscordBot.Services
     {
         public string Text { get; set; }
         public List<string> Route { get; set; } = new List<string>();
+    }
+
+    /// <summary>Google refused the requests, so there's no mangled text to show.</summary>
+    public class TranslationUnavailableException : Exception
+    {
+        public TranslationUnavailableException() : base("Google Translate isn't answering right now.") { }
     }
 
     /// <summary>
@@ -33,50 +40,95 @@ namespace DiscordBot.Services
         };
 
         public const int HopCount = 8;
+        /// <summary>Tries at each hop before it gives up on that language and moves to another.</summary>
+        public const int AttemptsPerHop = 2;
+        /// <summary>Failed requests allowed in one chain, so a Google outage can't hold the command up for long.</summary>
+        public const int MaxFailures = 8;
+
         private readonly HttpClient _client;
+        private readonly ILogger<TranslationService> _logger;
 
         /// <summary>
         /// Only one constructor: this is a typed HttpClient, and dependency injection refuses to start the bot when it
-        /// can't pick between constructors. Tests set <see cref="Random"/> for a fixed route.
+        /// can't pick between constructors. Tests set <see cref="Random"/> for a fixed route and zero the delays.
         /// </summary>
-        public TranslationService(HttpClient client)
+        public TranslationService(HttpClient client, ILogger<TranslationService> logger)
         {
             _client = client;
+            _logger = logger;
         }
 
         public Random Random { get; set; } = new Random();
+        /// <summary>Pause between hops. Google's free endpoint refuses quick bursts, so the 9 requests are spaced out.</summary>
+        public TimeSpan HopDelay { get; set; } = TimeSpan.FromMilliseconds(300);
+        /// <summary>Pause before trying a failed request again.</summary>
+        public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1.5);
 
         /// <summary>
-        /// Translates through <see cref="HopCount"/> different languages, then back to English. A hop that fails
-        /// (a language Google drops, or a hiccup) is skipped and the chain carries on from the last language that worked.
+        /// Translates through <see cref="HopCount"/> different languages, then back to English. A request that fails is
+        /// tried again after a pause; a language that still fails is swapped for another from the pool, so the chain keeps
+        /// its full length unless Google is refusing almost everything.
         /// </summary>
         public async Task<TranslationResult> TranslateThroughLanguages(string text)
         {
-            List<string> hops = Languages.Keys.OrderBy(_ => Random.Next()).Take(HopCount).ToList();
+            var pool = new Queue<string>(Languages.Keys.OrderBy(_ => Random.Next()));
 
             var result = new TranslationResult { Text = text };
             string source = "en";
-            foreach (string target in hops)
+            int failures = 0;
+            while (result.Route.Count < HopCount && pool.Count > 0 && failures < MaxFailures)
             {
-                try
+                string target = pool.Dequeue();
+                string translated = null;
+                for (int attempt = 0; attempt < AttemptsPerHop && translated == null && failures < MaxFailures; attempt++)
                 {
-                    result.Text = await Translate(result.Text, source, target);
-                    result.Route.Add(target);
-                    source = target;
+                    if (result.Route.Count > 0 || attempt > 0)
+                        await Task.Delay(attempt > 0 ? RetryDelay : HopDelay);
+                    translated = await TryTranslate(result.Text, source, target);
+                    if (translated == null) failures++;
                 }
-                catch (Exception)
-                {
-                    //skip this language; the text is still in the source language
-                }
+                if (translated == null)
+                    continue; //the text is still in the source language; try the next language in the pool
+
+                result.Text = translated;
+                result.Route.Add(target);
+                source = target;
             }
 
+            if (result.Route.Count < HopCount)
+                _logger.LogWarning("Translation chain only managed {Hops} of {HopCount} hops ({Failures} failed requests).", result.Route.Count, HopCount, failures);
+
+            //with no hop at all the text would come back word for word, which isn't the joke
+            if (result.Route.Count == 0)
+                throw new TranslationUnavailableException();
+
             //the last hop has to work, or there's nothing readable to show
-            result.Text = await Translate(result.Text, source, "en");
+            string english = null;
+            for (int attempt = 0; attempt < 3 && english == null; attempt++)
+            {
+                await Task.Delay(attempt > 0 ? RetryDelay : HopDelay);
+                english = await TryTranslate(result.Text, source, "en");
+            }
+            result.Text = english ?? throw new TranslationUnavailableException();
             result.Route.Add("en");
             return result;
         }
 
         public static string NameOf(string code) => code == "en" ? "English" : Languages.TryGetValue(code, out string name) ? name : code;
+
+        /// <summary>One request. Returns null and logs when it fails (refused, rate limited, or an answer that isn't a translation).</summary>
+        private async Task<string> TryTranslate(string text, string from, string to)
+        {
+            try
+            {
+                return await Translate(text, from, to);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Translating {From} to {To} failed: {Error}", from, to, ex.Message);
+                return null;
+            }
+        }
 
         private async Task<string> Translate(string text, string from, string to)
         {
