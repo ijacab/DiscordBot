@@ -477,12 +477,12 @@ namespace DiscordBot.Managers
                 var property = account.Properties[i];
                 double netRentPerHour = PropertyCatalog.GrossRentPerHour(property.Kind, index) * (1 - PropertyCatalog.AgencyFeeRate);
                 output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
-                    (property.LetOut ? $"rented out, about {netRentPerHour:N2} an hour after the agency" : "not rented out, earning nothing") + "\n";
+                    $"rented out, about {netRentPerHour:N2} an hour after the agency\n";
             }
 
-            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily, rented out or not. " +
+            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily. " +
                 "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
-                "`.letout N` / `.unlet N` turn renting on or off, `.sellproperty N` sells.";
+                "Every property is rented out automatically. `.sellproperty N` sells.";
             await message.SendRichEmbedMessage("Property", output);
         }
 
@@ -497,7 +497,7 @@ namespace DiscordBot.Managers
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} bought a {PropertyCatalog.DisplayName(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
                 $"${FormatHelper.GetCommaNumber(cost - price)} stamp duty and conveyancing included in ${FormatHelper.GetCommaNumber(cost)} total. " +
-                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. Rent it out with `.letout {account.Properties.Count}` if you want rent.");
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. It's rented out straight away, and rent comes in every hour.");
         }
 
         private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -512,24 +512,10 @@ namespace DiscordBot.Managers
                 $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
-        private async Task LetOut(DiscordSocketClient client, SocketMessage message, List<string> args)
+        /// <summary>Old .letout / .unlet: every property is rented out automatically now.</summary>
+        private async Task RentingIsAutomatic(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var holding = await _propertyService.SetLetOut(account, number, true);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is rented out. Rent is paid to your cash each hour after the agency's cut.");
-        }
-
-        private async Task Unlet(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var holding = await _propertyService.SetLetOut(account, number, false);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} is no longer rented out. Rates and maintenance still come out each day.");
+            await message.Channel.SendMessageAsync("Every property is rented out automatically now, so there's nothing to switch. See `.property` for your rent.");
         }
 
         private static bool TryParsePropertyKind(string text, out PropertyKind kind)
@@ -792,7 +778,7 @@ namespace DiscordBot.Managers
             if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0)
                 output += $"📈 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)}\n";
             foreach (var property in account.Properties)
-                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} after selling costs · {(property.LetOut ? "rented out" : "not rented out")}\n";
+                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} after selling costs · rented out\n";
             if (account.Properties.Count > 0)
                 output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
             if (account.Debt > 0)

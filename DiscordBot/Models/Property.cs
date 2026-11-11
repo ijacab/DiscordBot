@@ -18,8 +18,7 @@ namespace DiscordBot.Models
         /// <summary>Everything paid for it, including stamp duty and conveyancing.</summary>
         public double PurchaseCost { get; set; }
         public long PurchasedUtcTicks { get; set; }
-        /// <summary>Whether it is rented out. Rent is only paid while it is rented out.</summary>
-        public bool LetOut { get; set; }
+        //every property is rented out automatically; old saves' "LetOut" flag is ignored when loading
     }
 
     /// <summary>
@@ -42,7 +41,7 @@ namespace DiscordBot.Models
         public const double AgencyFeeRate = 0.08;
         /// <summary>Share of the year a let property sits empty.</summary>
         public const double VacancyRate = 0.04;
-        /// <summary>Council rates and maintenance, a share of the current value per year. Charged whether or not it is rented out.</summary>
+        /// <summary>Council rates and maintenance, a share of the current value per year. Charged every day, on top of the rent coming in.</summary>
         public const double HoldingCostPerYear = 0.015;
 
         /// <summary>The market index can't go below or above these, so prices can't run away.</summary>

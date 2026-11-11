@@ -8,8 +8,8 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and rented out for an hourly
-    /// income after the agency's cut. Holding costs apply every day, rented out or not.
+    /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and always rented out for an
+    /// hourly income after the agency's cut. Holding costs apply every day.
     /// </summary>
     public class PropertyService
     {
@@ -55,18 +55,6 @@ namespace DiscordBot.Services
             account.NetWorth += account.PayDebtFrom(proceeds); //sale money pays any debt first
             await _coinService.Update();
             return (holding, proceeds);
-        }
-
-        /// <summary>Turns renting out on or off for the <paramref name="number"/>th property.</summary>
-        public async Task<PropertyHolding> SetLetOut(CoinAccount account, int number, bool letOut)
-        {
-            var holding = Get(account, number);
-            if (holding.LetOut == letOut)
-                throw new BadInputException(letOut ? "That property is already rented out." : "That property isn't rented out.");
-
-            holding.LetOut = letOut;
-            await _coinService.Update();
-            return holding;
         }
 
         public PropertyHolding Get(CoinAccount account, int number)
@@ -130,7 +118,7 @@ namespace DiscordBot.Services
                 }
             }
 
-            //holding costs are charged once a day, rented out or not
+            //holding costs are charged once a day
             if (data.LastRentDay == 0)
             {
                 data.LastRentDay = today;
@@ -151,17 +139,17 @@ namespace DiscordBot.Services
             if (changed) await _coinService.Update();
         }
 
-        /// <summary>Rent for one hour, less the agency's cut, goes to each landlord's cash.</summary>
+        /// <summary>Rent for one hour on every property, less the agency's cut, goes to each landlord's cash. Every property is rented out.</summary>
         public static void PayRentOneHour(CoinAccounts data)
         {
-            foreach (var account in data.Accounts.Where(a => a.Properties.Any(p => p.LetOut)))
+            foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
             {
-                double gross = account.Properties.Where(p => p.LetOut).Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind, data.PropertyIndex));
+                double gross = account.Properties.Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind, data.PropertyIndex));
                 account.NetWorth += gross * (1 - PropertyCatalog.AgencyFeeRate);
             }
         }
 
-        /// <summary>One day of holding costs (rates and maintenance) comes out of cash, whether or not the property is rented out.</summary>
+        /// <summary>One day of holding costs (rates and maintenance) comes out of cash.</summary>
         public static void PayHoldingOneDay(CoinAccounts data)
         {
             double index = data.PropertyIndex;

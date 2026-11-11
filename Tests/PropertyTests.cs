@@ -107,10 +107,10 @@ namespace Tests
         }
 
         [Fact]
-        public void Rent_IsPaidOnlyWhileLetAndLessTheAgencyFee()
+        public void Rent_IsPaidOnEveryPropertyLessTheAgencyFee()
         {
             var account = new CoinAccount { UserId = 1, NetWorth = 0 };
-            account.Properties.Add(new PropertyHolding { Kind = PropertyKind.House, LetOut = true });
+            account.Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
@@ -142,10 +142,23 @@ namespace Tests
         }
 
         [Fact]
-        public void HoldingCost_IsChargedWhenNotLet()
+        public void Rent_IsPaidOnPropertySavedAsNotRentedOut()
+        {
+            //saves from before renting was automatic still carry "LetOut": false
+            var data = Newtonsoft.Json.JsonConvert.DeserializeObject<CoinAccounts>(
+                "{\"PropertyIndex\":1.0,\"Accounts\":[{\"UserId\":1,\"NetWorth\":0,\"Properties\":[{\"Kind\":1,\"LetOut\":false}]}]}");
+
+            PropertyService.PayRentOneHour(data);
+
+            double net = PropertyCatalog.GrossRentPerHour(PropertyKind.Apartment, 1.0) * (1 - PropertyCatalog.AgencyFeeRate);
+            Assert.Equal(net, data.Accounts[0].NetWorth, 6);
+        }
+
+        [Fact]
+        public void HoldingCost_IsChargedDaily()
         {
             var account = new CoinAccount { UserId = 1, NetWorth = 1_000 };
-            account.Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment, LetOut = false });
+            account.Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
