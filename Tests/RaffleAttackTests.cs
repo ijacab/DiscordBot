@@ -37,9 +37,9 @@ namespace Tests
 
             raffle.ApplyUse(user, 1, Now, () => 0.5);
 
-            Assert.Equal(475, Player(coins, 2).NetWorth, 2);
+            Assert.Equal(450, Player(coins, 2).NetWorth, 2);
             Assert.Equal(1000, Player(coins, 1).NetWorth, 2);
-            Assert.Equal(125, user.NetWorth, 2);
+            Assert.Equal(150, user.NetWorth, 2);
             Assert.Empty(user.HeldPowerUps);
         }
 
@@ -63,15 +63,15 @@ namespace Tests
 
             raffle.ApplyUse(user, 1, Now, () => 0.5);
 
-            // 2% of each of the five nearest above: 10 + 8 + 6 + 4 + 2 = 30
+            // 4% of each of the five nearest above: 20 + 16 + 12 + 8 + 4 = 60
             Assert.Equal(700, Player(coins, 1).NetWorth, 2);
             Assert.Equal(600, Player(coins, 2).NetWorth, 2);
-            Assert.Equal(490, Player(coins, 3).NetWorth, 2);
-            Assert.Equal(392, Player(coins, 4).NetWorth, 2);
-            Assert.Equal(294, Player(coins, 5).NetWorth, 2);
-            Assert.Equal(196, Player(coins, 6).NetWorth, 2);
-            Assert.Equal(98, Player(coins, 7).NetWorth, 2);
-            Assert.Equal(80, user.NetWorth, 2);
+            Assert.Equal(480, Player(coins, 3).NetWorth, 2);
+            Assert.Equal(384, Player(coins, 4).NetWorth, 2);
+            Assert.Equal(288, Player(coins, 5).NetWorth, 2);
+            Assert.Equal(192, Player(coins, 6).NetWorth, 2);
+            Assert.Equal(96, Player(coins, 7).NetWorth, 2);
+            Assert.Equal(110, user.NetWorth, 2);
         }
 
         [Fact]
@@ -83,18 +83,18 @@ namespace Tests
 
             raffle.ApplyUse(user, 1, Now, () => 0.5);
 
-            // 1% of the top three (10 + 8 + 6 = 24), split three ways between the poorest half (you, 6 and 5) at 8 each
-            Assert.Equal(990, Player(coins, 1).NetWorth, 2);
-            Assert.Equal(792, Player(coins, 2).NetWorth, 2);
-            Assert.Equal(594, Player(coins, 3).NetWorth, 2);
+            // 5% of the top three (50 + 40 + 30 = 120), split three ways between the poorest half (you, 6 and 5) at 40 each
+            Assert.Equal(950, Player(coins, 1).NetWorth, 2);
+            Assert.Equal(760, Player(coins, 2).NetWorth, 2);
+            Assert.Equal(570, Player(coins, 3).NetWorth, 2);
             Assert.Equal(400, Player(coins, 4).NetWorth, 2);
-            Assert.Equal(208, Player(coins, 5).NetWorth, 2);
-            Assert.Equal(108, Player(coins, 6).NetWorth, 2);
-            Assert.Equal(58, user.NetWorth, 2);
+            Assert.Equal(240, Player(coins, 5).NetWorth, 2);
+            Assert.Equal(140, Player(coins, 6).NetWorth, 2);
+            Assert.Equal(90, user.NetWorth, 2);
         }
 
         [Fact]
-        public void HostileTakeover_SeizesHalfTheLeadersCashWithNoDebt()
+        public void HostileTakeover_SeizesHalfTheLeadersCash_WhenThatIsMoreThanAFifthOfTheirWorth()
         {
             var (coins, raffle) = Board((1, 1000), (2, 0));
             var user = Player(coins, 2);

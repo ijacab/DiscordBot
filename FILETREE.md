@@ -1,4 +1,4 @@
-# FILETREE.md — navigation map (keep updated when adding/moving files)
+﻿# FILETREE.md — navigation map (keep updated when adding/moving files)
 
 ```
 azure-pipelines.yml            CI/CD on the Pi: .NET 10 SDK, staged publish, deploy, Ready check, rollback
@@ -42,7 +42,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, RoundOutcome, SpectatorPool (side bets)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
-    RaffleService.cs           5-hourly raffle that gives power-ups, and using them (`.pu`)
+    RaffleService.cs           30-minute rubber-banded raffle that gives power-ups, and using them (`.pu`)
     PropertyService.cs         houses and apartments: buy/sell with cash, letting out, daily market step and rent
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`

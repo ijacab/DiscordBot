@@ -15,8 +15,11 @@ namespace DiscordBot.Models
         public string LastNetWorthSampleHour { get; set; } //yyyyMMddHH (UTC) of the most recent net worth history sample
         /// <summary>Every tax collected (sell tax, donation tax). An all-in bet has a small chance to win the whole pool.</summary>
         public double JackpotPool { get; set; }
-        /// <summary>The 5 hour raffle slot that was last drawn, so each slot is drawn once.</summary>
+        /// <summary>The 30 minute raffle slot that was last drawn, so each slot is drawn once.</summary>
         public long LastRaffleSlot { get; set; }
+        /// <summary>The last power-up anyone used, and who used it, for Copycat.</summary>
+        public string LastUsedPowerUpId { get; set; }
+        public ulong LastUsedPowerUpUserId { get; set; }
         /// <summary>The channel of the last money command, where raffle winners are announced.</summary>
         public ulong LastActiveChannelId { get; set; }
         /// <summary>The shared property market index. 1.0 is the base national median; see <see cref="PropertyCatalog"/>.</summary>
@@ -57,6 +60,9 @@ namespace DiscordBot.Models
             public List<HeldPowerUp> HeldPowerUps { get; set; } = new List<HeldPowerUp>();
             /// <summary>Power-ups that have been used and are running.</summary>
             public List<ActivePowerUp> ActivePowerUps { get; set; } = new List<ActivePowerUp>();
+            /// <summary>What the player lost on their last losing bet, and when (UTC ticks), for Time Machine.</summary>
+            public double LastLossAmount { get; set; }
+            public long LastLossUtcTicks { get; set; }
             /// <summary>Houses and apartments the player owns. Bought with cash only.</summary>
             public List<PropertyHolding> Properties { get; set; } = new List<PropertyHolding>();
 

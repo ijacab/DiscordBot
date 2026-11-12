@@ -140,12 +140,18 @@ namespace DiscordBot.Services
         }
 
         /// <summary>Rent for one hour on every property, less the agency's cut, goes to each landlord's cash. Every property is rented out.</summary>
-        public static void PayRentOneHour(CoinAccounts data)
+        public static void PayRentOneHour(CoinAccounts data) => PayRentOneHour(data, DateTime.UtcNow);
+
+        /// <summary>As <see cref="PayRentOneHour(CoinAccounts)"/>. A landlord with Squatters in pays their rent to the squatter instead.</summary>
+        public static void PayRentOneHour(CoinAccounts data, DateTime now)
         {
-            foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
+            foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0).ToList())
             {
                 double gross = account.Properties.Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind, data.PropertyIndex));
-                account.NetWorth += gross * (1 - PropertyCatalog.AgencyFeeRate);
+                double net = gross * (1 - PropertyCatalog.AgencyFeeRate);
+                var squat = account.Running(PowerUpIds.Squatted, now).OrderBy(s => s.ExpiresAtTicks).FirstOrDefault();
+                var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
+                (squatter ?? account).NetWorth += net;
             }
         }
 

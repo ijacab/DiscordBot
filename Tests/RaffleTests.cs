@@ -38,9 +38,9 @@ namespace Tests
         private static void Hold(CoinAccount account, string id) => account.Grant(id, Now);
 
         [Fact]
-        public void Catalog_HasBetweenTenAndTwentyUniquePowerUps()
+        public void Catalog_HasBetweenThirtyAndFortyUniquePowerUps()
         {
-            Assert.InRange(PowerUpCatalog.All.Count, 10, 20);
+            Assert.InRange(PowerUpCatalog.All.Count, 30, 40);
             Assert.Equal(PowerUpCatalog.All.Count, PowerUpCatalog.All.Select(p => p.Id).Distinct().Count());
             Assert.All(PowerUpCatalog.All, p => Assert.True(p.Weight > 0 && !string.IsNullOrEmpty(p.Description)));
         }
@@ -53,13 +53,13 @@ namespace Tests
         }
 
         [Fact]
-        public void Slots_AreFiveHoursLong()
+        public void Slots_AreThirtyMinutesLong()
         {
             var start = new DateTime(2026, 11, 8, 0, 0, 0, DateTimeKind.Utc);
             long slot = RaffleService.SlotOf(start);
-            Assert.Equal(slot + 1, RaffleService.SlotOf(start.AddHours(5)));
+            Assert.Equal(slot + 1, RaffleService.SlotOf(start.AddMinutes(30)));
             Assert.Equal(slot, RaffleService.SlotOf(RaffleService.NextRaffleUtc(start).AddSeconds(-1)));
-            Assert.Equal(TimeSpan.FromHours(5), RaffleService.NextRaffleUtc(start.AddHours(5)) - RaffleService.NextRaffleUtc(start));
+            Assert.Equal(TimeSpan.FromMinutes(30), RaffleService.NextRaffleUtc(start.AddMinutes(30)) - RaffleService.NextRaffleUtc(start));
             Assert.True(RaffleService.NextRaffleUtc(Now) > Now);
         }
 
@@ -93,8 +93,8 @@ namespace Tests
             var service = Service(player);
 
             Assert.NotNull(service.Draw(Now, () => 0));
-            Assert.Null(service.Draw(Now.AddMinutes(30), () => 0));
-            Assert.NotNull(service.Draw(Now.AddHours(5), () => 0));
+            Assert.Null(service.Draw(Now.AddMinutes(10), () => 0));
+            Assert.NotNull(service.Draw(Now.AddMinutes(30), () => 0));
             Assert.Equal(2, player.HeldPowerUps.Count);
         }
 
@@ -131,42 +131,41 @@ namespace Tests
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.SafetyNet), Now);
-            Assert.True(player.TryConsumeCharge(PowerUpIds.SafetyNet, Now));
-            Assert.True(player.TryConsumeCharge(PowerUpIds.SafetyNet, Now));
-            Assert.True(player.TryConsumeCharge(PowerUpIds.SafetyNet, Now));
+            for (int i = 0; i < PowerUpCatalog.SafetyNetCharges; i++)
+                Assert.True(player.TryConsumeCharge(PowerUpIds.SafetyNet, Now));
             Assert.False(player.TryConsumeCharge(PowerUpIds.SafetyNet, Now));
             Assert.False(player.IsActive(PowerUpIds.SafetyNet, Now));
         }
 
         [Fact]
-        public void BetBonus_HotStreakAddsAQuarterOfTheWin()
+        public void BetBonus_HotStreakAddsHalfTheWin()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.HotStreak), Now);
-            Assert.Equal(250, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
+            Assert.Equal(500, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
             Assert.Equal(0, player.BetBonus(baseWinnings: 0, betAmount: 1_000, Now));
         }
 
         [Fact]
-        public void BetBonus_GoldenTicketDoublesOneWin_WithNoCap()
+        public void BetBonus_GoldenTicketTriplesOneWin_WithNoCap()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.GoldenTicket), Now);
             Assert.Equal(0, player.BetBonus(0, 1_000, Now)); //a loss keeps the ticket
-            Assert.Equal(1_000, player.BetBonus(2_000, 1_000, Now));
+            Assert.Equal(2_000, player.BetBonus(2_000, 1_000, Now));
             Assert.Equal(0, player.BetBonus(2_000, 1_000, Now)); //used up
 
             player.Start(PowerUpCatalog.Find(PowerUpIds.GoldenTicket), Now);
-            Assert.Equal(99_000_000, player.BetBonus(100_000_000, 1_000_000, Now)); //extra is the full win, however big
+            Assert.Equal(198_000_000, player.BetBonus(100_000_000, 1_000_000, Now)); //extra is twice the win, however big
         }
 
         [Fact]
-        public void BetBonus_SafetyNetRefundsHalfOfThreeLosses()
+        public void BetBonus_SafetyNetRefundsThreeQuartersOfFiveLosses()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.SafetyNet), Now);
-            for (int i = 0; i < 3; i++)
-                Assert.Equal(500, player.BetBonus(0, 1_000, Now));
+            for (int i = 0; i < 5; i++)
+                Assert.Equal(750, player.BetBonus(0, 1_000, Now));
             Assert.Equal(0, player.BetBonus(0, 1_000, Now));
         }
 
@@ -211,7 +210,7 @@ namespace Tests
             service.ApplyUse(player, 2, Now, () => 0); //the Stimulus
 
             Assert.Equal(new[] { PowerUpIds.FreeCardPull, PowerUpIds.HotStreak }, player.HeldPowerUps.Select(h => h.Id));
-            Assert.Equal(12_000, player.NetWorth);
+            Assert.Equal(15_000, player.NetWorth); //Stimulus: 10% of $10,000 is under the $5,000 floor
         }
 
         [Fact]
@@ -239,12 +238,12 @@ namespace Tests
             service.ApplyUse(poor, 1, Now, () => 0);
             service.ApplyUse(rich, 1, Now, () => 0);
 
-            Assert.Equal(2_100, poor.NetWorth);
-            Assert.Equal(10_500_000, rich.NetWorth); //5% of 10M, no ceiling
+            Assert.Equal(5_100, poor.NetWorth);
+            Assert.Equal(11_000_000, rich.NetWorth); //10% of 10M, no ceiling
         }
 
         [Fact]
-        public void BlueShell_StealsTenPercentFromFirst()
+        public void BlueShell_StealsTwentyPercentFromFirst()
         {
             var leader = Account(1, cash: 100_000);
             var player = Account(2, cash: 1_000);
@@ -253,8 +252,8 @@ namespace Tests
 
             service.ApplyUse(player, 1, Now, () => 0);
 
-            Assert.Equal(90_000, leader.NetWorth);
-            Assert.Equal(11_000, player.NetWorth);
+            Assert.Equal(80_000, leader.NetWorth);
+            Assert.Equal(21_000, player.NetWorth);
         }
 
         [Fact]
@@ -285,7 +284,7 @@ namespace Tests
         }
 
         [Fact]
-        public void Pickpocket_TakesThreePercentFromEachVictim_SkippingShielded()
+        public void Pickpocket_TakesSixPercentFromEachVictim_SkippingShielded()
         {
             var thief = Account(1, cash: 1_000);
             var rich = Account(2, cash: 10_000_000);
@@ -298,15 +297,15 @@ namespace Tests
 
             service.ApplyUse(thief, 1, Now, () => 0.5);
 
-            Assert.Equal(10_000_000 - 300_000, rich.NetWorth);
-            Assert.Equal(10_000 - 300, normal.NetWorth);
+            Assert.Equal(10_000_000 - 600_000, rich.NetWorth);
+            Assert.Equal(10_000 - 600, normal.NetWorth);
             Assert.Equal(10_000, shielded.NetWorth);
             Assert.Equal(10_000, inactive.NetWorth);
-            Assert.Equal(1_000 + 300_000 + 300, thief.NetWorth);
+            Assert.Equal(1_000 + 600_000 + 600, thief.NetWorth);
         }
 
         [Fact]
-        public void JackpotDip_TakesFifteenPercentOfThePool()
+        public void JackpotDip_TakesThirtyPercentOfThePool()
         {
             var player = Account(1);
             var service = Service(player);
@@ -315,7 +314,7 @@ namespace Tests
 
             service.ApplyUse(player, 1, Now, () => 0);
 
-            Assert.Equal(10_150, player.NetWorth);
+            Assert.Equal(10_300, player.NetWorth);
         }
 
         [Fact]

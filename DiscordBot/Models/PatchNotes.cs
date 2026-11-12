@@ -22,6 +22,9 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-12", "The raffle draws every 30 minutes, and lower on the leaderboard you draw more attacks. Every power-up is about twice as strong."),
+            new PatchNote("2026-11-12", "Catch-up power-ups that nothing blocks: Tax the Rich, Audit, Bailout, Squatters and Leech. The rich pay in debt if they're short on cash."),
+            new PatchNote("2026-11-12", "New power-ups: Mirror, Golden Parachute, Toll Booth, Time Machine, Echo, Copycat, Scratchie, Rigged Raffle, Heist, Musical Chairs, Sticky Fingers and Freeze Ray."),
             new PatchNote("2026-11-11", "Every property is rented out automatically, including ones you already own. `.letout` and `.unlet` are gone."),
             new PatchNote("2026-11-10", "`.lang` mangles harder: 8 hops through far-flung languages like Yoruba, Khmer and Latin."),
             new PatchNote("2026-11-10", "Face Off is reworked: buttons, a live arena with card art, hidden picks, pick your target, a 20 is always best, and spectators can back a fighter."),

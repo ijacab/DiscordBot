@@ -114,7 +114,7 @@ namespace DiscordBot.Managers
                 new Command("sellproperty", SellProperty) { Description = "Sells a property you own at market value, less 3% for agent commission and marketing.", Syntax = "`.sellproperty 1`" },
                 new Command("letout", RentingIsAutomatic) { Hidden = true },
                 new Command("unlet", RentingIsAutomatic) { Hidden = true },
-                new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 5 hours among everyone who used money in the last 24h) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
+                new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 30 minutes among everyone who used money in the last 24h; lower on the leaderboard you draw more attacks and catch-up items) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },

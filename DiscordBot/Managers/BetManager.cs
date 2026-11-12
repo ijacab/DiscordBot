@@ -157,7 +157,15 @@ namespace DiscordBot.Managers
             var now = DateTime.UtcNow;
             double bonusWinnings = GetBonus(coinAccount, baseWinnings);
             bonusWinnings += coinAccount.BetBonus(baseWinnings, betAmount, now);
+            //an Audit, a Leech or someone's Toll Booth takes a cut of a win; it comes off the bonus line
+            bonusWinnings -= PowerUps.SettleWin(_coinService.GetAll(), coinAccount, baseWinnings + bonusWinnings - betAmount, now);
             double totalWinnings = baseWinnings + bonusWinnings;
+            if (totalWinnings < betAmount)
+            {
+                //remembered for a Time Machine
+                coinAccount.LastLossAmount = betAmount - totalWinnings;
+                coinAccount.LastLossUtcTicks = now.Ticks;
+            }
 
             double netWinnings = Math.Floor(baseWinnings - betAmount);
             if (firstGameOfTheDay)

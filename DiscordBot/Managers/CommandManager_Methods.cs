@@ -882,8 +882,16 @@ namespace DiscordBot.Managers
 
             if (args.Count >= 1 && args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
             {
-                string catalog = string.Join("\n", PowerUpCatalog.All.Select(p => $"**{p.Name}**: {p.Description}"));
-                await message.Channel.SendMessageAsync($"Power-ups the raffle can give:\n{catalog}");
+                var lines = new List<string>();
+                foreach (var (category, heading) in new[] { (PowerUpCategory.Boost, "✨ **Boosts** (anyone can draw these)"),
+                    (PowerUpCategory.Attack, "⚔️ **Attacks** (not drawn by the top of the leaderboard; Shield, Mirror and Golden Parachute work against them)"),
+                    (PowerUpCategory.CatchUp, "🧾 **Catch-up** (only for players below the top, much more common when 1st runs away; nothing blocks them)") })
+                {
+                    lines.Add(heading);
+                    lines.AddRange(PowerUpCatalog.All.Where(p => p.Category == category)
+                        .Select(p => $"**{p.Name}** ({PowerUpCatalog.RarityOf(p)}): {p.Description}"));
+                }
+                await SendPagedEmbeds(message.Channel, "Power-ups the raffle can give", lines);
                 return;
             }
 
@@ -919,10 +927,22 @@ namespace DiscordBot.Managers
                 }
             }
 
-            if (account.ActivePowerUps.Count > 0)
+            var debuffs = account.ActivePowerUps.Where(a => PowerUpCatalog.Find(a.Id)?.Category == PowerUpCategory.Debuff).ToList();
+            if (debuffs.Count > 0)
+            {
+                output += "**Debuffs on you:**\n";
+                foreach (var debuff in debuffs)
+                {
+                    var power = PowerUpCatalog.Find(debuff.Id);
+                    output += $"- {power.Name}: {power.Description} ({FormatRemaining(new DateTime(debuff.ExpiresAtTicks) - now)} left)\n";
+                }
+            }
+
+            var running = account.ActivePowerUps.Except(debuffs).ToList();
+            if (running.Count > 0)
             {
                 output += "**Running now:**\n";
-                foreach (var active in account.ActivePowerUps)
+                foreach (var active in running)
                 {
                     var power = PowerUpCatalog.Find(active.Id);
                     string left = active.ChargesLeft == ActivePowerUp.Unlimited
@@ -933,7 +953,19 @@ namespace DiscordBot.Managers
             }
 
             output += $"Next raffle in {untilDraw}.";
-            await message.Channel.SendMessageAsync(output);
+            //ten held power-ups with their descriptions can pass Discord's 2000 characters, so long lists go in parts
+            var part = new System.Text.StringBuilder();
+            foreach (string line in output.Split('\n'))
+            {
+                if (part.Length + line.Length + 1 > _messageCharLimit - 50)
+                {
+                    await message.Channel.SendMessageAsync(part.ToString());
+                    part.Clear();
+                }
+                part.Append(line).Append('\n');
+            }
+            if (part.Length > 0)
+                await message.Channel.SendMessageAsync(part.ToString());
         }
 
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)

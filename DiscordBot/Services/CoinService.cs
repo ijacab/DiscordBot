@@ -169,6 +169,8 @@ namespace DiscordBot.Services
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDateBonusMet == dateString);
             foreach (var account in accountsToAction)
             {
+                if (account.IsActive(PowerUpIds.Audited, DateTime.UtcNow))
+                    continue; //an Audit power-up stops their interest
                 double multiplier = account.IsActive(PowerUpIds.CompoundInterest, DateTime.UtcNow) ? PowerUpCatalog.CompoundInterestMultiplier : 1;
                 account.NetWorth += CalculateAddedInterest(account) * multiplier; //add interest per hour if they are granted the bonus
             }
