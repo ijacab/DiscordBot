@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-12", "`.portfolio` groups your houses and apartments into one line each, with the average you paid."),
             new PatchNote("2026-11-12", "The raffle draws every hour among everyone who used money in the hour before, and power-ups go off the moment they're won."),
             new PatchNote("2026-11-12", "Squatters take one property (1st place's best rental), not all their rent."),
             new PatchNote("2026-11-12", "`.autosell on` sells your stocks and then property automatically to pay off debt."),

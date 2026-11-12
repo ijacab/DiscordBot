@@ -796,8 +796,18 @@ namespace DiscordBot.Managers
             output += $"💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
             if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0)
                 output += $"📈 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)}\n";
-            foreach (var property in account.Properties)
-                output += $"🏠 {PropertyCatalog.DisplayName(property.Kind)} (bought ${FormatHelper.GetCommaNumber(property.PurchaseCost)}) · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} after selling costs · rented out\n";
+            //grouped by kind: every house is worth the same (one market index), so one line each with the average paid
+            foreach (var group in account.Properties.GroupBy(p => p.Kind).OrderBy(g => g.Key))
+            {
+                int count = group.Count();
+                string name = PropertyCatalog.DisplayName(group.Key);
+                double worthEach = PropertyCatalog.SaleValue(group.Key, index);
+                double averagePaid = group.Average(p => p.PurchaseCost);
+                string icon = group.Key == PropertyKind.House ? "🏠" : "🏢";
+                output += count == 1
+                    ? $"{icon} {name} (bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} after selling costs · rented out\n"
+                    : $"{icon} {count} {name.ToLower()}s (avg bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} each, ${FormatHelper.GetCommaNumber(worthEach * count)} in all, after selling costs · rented out\n";
+            }
             if (account.Properties.Count > 0)
                 output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
             if (account.Debt > 0)
