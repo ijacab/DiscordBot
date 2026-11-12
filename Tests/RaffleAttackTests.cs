@@ -119,17 +119,18 @@ namespace Tests
         }
 
         [Fact]
-        public void IsEnteredInNextDraw_TrueWhenActiveWithinADayOfTheDraw()
+        public void IsEnteredInNextDraw_TrueWhenActiveWithinTheHourBeforeTheDraw()
         {
-            var account = new CoinAccount { LastActiveUtcTicks = Now.AddHours(-1).Ticks };
-            Assert.True(RaffleService.IsEnteredInNextDraw(account, Now));
+            //the next draw is at 12:00
+            var account = new CoinAccount { LastActiveUtcTicks = Now.AddMinutes(-50).Ticks };
+            Assert.True(RaffleService.IsEnteredInNextDraw(account, Now.AddMinutes(-5)));
         }
 
         [Fact]
         public void IsEnteredInNextDraw_FalseWhenLastActivityIsTooOld()
         {
-            var account = new CoinAccount { LastActiveUtcTicks = Now.AddHours(-30).Ticks };
-            Assert.False(RaffleService.IsEnteredInNextDraw(account, Now));
+            var account = new CoinAccount { LastActiveUtcTicks = Now.AddMinutes(-61).Ticks };
+            Assert.False(RaffleService.IsEnteredInNextDraw(account, Now.AddMinutes(-5)));
         }
 
         [Fact]

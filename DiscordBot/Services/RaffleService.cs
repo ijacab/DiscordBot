@@ -11,14 +11,17 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// A raffle every 30 minutes. Anyone who did something with money in the last 24 hours is entered, and the winner is
-    /// given a power-up to hold. The draw rubber-bands like kart racing items: the top of the leaderboard only draws boosts,
+    /// A raffle every hour. Anyone who did something with money in the hour before the draw is entered, and the winner's
+    /// power-up goes off the moment it's won (one that can't be used right then is kept for `.pu use`). The draw rubber-bands like kart racing items: the top of the leaderboard only draws boosts,
     /// and the further down you are the more likely attacks and catch-up items are (more so when 1st place runs away).
     /// Also handles using held power-ups.
     /// </summary>
     public class RaffleService
     {
-        public const int SlotMinutes = 30;
+        public const int SlotMinutes = 60;
+        /// <summary>A money action within this long before a draw enters you in it.</summary>
+        public static readonly TimeSpan EntryWindow = TimeSpan.FromHours(1);
+        /// <summary>Players count as active for attack and sharing pools (Pickpocket, Robin Hood, Tax the Rich...) for this long.</summary>
         public static readonly TimeSpan ActiveWindow = TimeSpan.FromHours(24);
         private static readonly Random _random = new Random();
 
@@ -44,31 +47,42 @@ namespace DiscordBot.Services
         public static DateTime NextRaffleUtc(DateTime utc) =>
             DateTimeOffset.FromUnixTimeSeconds((SlotOf(utc) + 1) * SlotMinutes * 60L).UtcDateTime;
 
+        /// <summary>The time the draw for the slot holding <paramref name="utc"/> is due.</summary>
+        public static DateTime SlotStartUtc(DateTime utc) =>
+            DateTimeOffset.FromUnixTimeSeconds(SlotOf(utc) * SlotMinutes * 60L).UtcDateTime;
+
+        /// <summary>
+        /// Entered in the draw due at <paramref name="drawTime"/>: a money action in the hour before it. Measured from the
+        /// draw's due time, not the minute the loop gets to it, so acting just after a draw still enters you in the next.
+        /// </summary>
+        public static bool IsEnteredIn(CoinAccount account, DateTime drawTime) =>
+            account.LastActiveUtcTicks > 0 && drawTime.Ticks - account.LastActiveUtcTicks <= EntryWindow.Ticks;
+
         public static bool IsActive(CoinAccount account, DateTime now) =>
             account.LastActiveUtcTicks > 0 && now.Ticks - account.LastActiveUtcTicks < ActiveWindow.Ticks;
 
-        /// <summary>True when the account would be in the next raffle draw, which is the same test <see cref="IsActive"/> applies at draw time.</summary>
-        public static bool IsEnteredInNextDraw(CoinAccount account, DateTime now)
-        {
-            DateTime next = NextRaffleUtc(now);
-            return account.LastActiveUtcTicks > 0 && next.Ticks - account.LastActiveUtcTicks < ActiveWindow.Ticks;
-        }
+        /// <summary>True when the account would be in the next raffle draw.</summary>
+        public static bool IsEnteredInNextDraw(CoinAccount account, DateTime now) => IsEnteredIn(account, NextRaffleUtc(now));
 
         public static List<CoinAccount> Eligible(IEnumerable<CoinAccount> accounts, DateTime now) =>
             accounts.Where(a => IsActive(a, now)).ToList();
 
         /// <summary>
         /// Draws the raffle for the current slot if it hasn't been drawn. Returns null when it was already drawn or nobody is
-        /// eligible. The winner is given the prize; the caller saves and announces. An entrant holding a Rigged Raffle wins.
+        /// entered. The winner's prize goes off straight away (<see cref="Activate"/>); one that can't be used right now, or
+        /// while the winner has a bet open (<paramref name="betOpenUserIds"/>), is kept for `.pu use`. The caller saves and
+        /// announces. An entrant holding a Rigged Raffle wins.
         /// </summary>
-        public (CoinAccount Winner, PowerUpDefinition Prize, int Entrants)? Draw(DateTime now, Func<double> random)
+        public DrawResult Draw(DateTime now, Func<double> random, IEnumerable<ulong> betOpenUserIds = null)
         {
             var data = _coinService.GetAll();
             long slot = SlotOf(now);
+            if (data.LastRaffleSlot > slot) data.LastRaffleSlot = 0; //saved by shorter slots, whose numbers run ahead of these
             if (slot <= data.LastRaffleSlot) return null;
             data.LastRaffleSlot = slot;
 
-            var entrants = Eligible(data.Accounts, now);
+            DateTime drawTime = SlotStartUtc(now);
+            var entrants = data.Accounts.Where(a => IsEnteredIn(a, drawTime)).ToList();
             if (entrants.Count == 0) return null;
 
             double winnerRoll = random();
@@ -76,7 +90,54 @@ namespace DiscordBot.Services
                 ?? entrants[Math.Min(entrants.Count - 1, (int)(winnerRoll * entrants.Count))];
             var prize = PowerUpCatalog.Pick(random(), ContextFor(winner, entrants));
             winner.Grant(prize.Id, now);
-            return (winner, prize, entrants.Count);
+
+            var result = new DrawResult { Winner = winner, Prize = prize, Entrants = entrants.Count };
+            if (betOpenUserIds != null && betOpenUserIds.Contains(winner.UserId))
+                result.Kept = "you have a bet open";
+            else
+                (result.Effect, result.Kept) = Activate(winner, now, random);
+            return result;
+        }
+
+        public class DrawResult
+        {
+            public CoinAccount Winner { get; set; }
+            public PowerUpDefinition Prize { get; set; }
+            public int Entrants { get; set; }
+            /// <summary>What the prize did when it went off, or null if it was kept.</summary>
+            public string Effect { get; set; }
+            /// <summary>Why the prize couldn't go off and was kept for `.pu use`, or null.</summary>
+            public string Kept { get; set; }
+        }
+
+        /// <summary>
+        /// Uses the power-up just added to the end of the player's held list. If it can't be used right now it stays held and
+        /// the reason is returned. A Copycat's copy goes off straight away too.
+        /// </summary>
+        public (string Effect, string Kept) Activate(CoinAccount user, DateTime now, Func<double> random)
+        {
+            try
+            {
+                return (UseAndFollowCopy(user, user.HeldPowerUps.Count, now, random), null);
+            }
+            catch (BadInputException ex)
+            {
+                return (null, ex.Message);
+            }
+        }
+
+        /// <summary>As <see cref="ApplyUse"/>, and a Copycat's copy (added to the end of the held list) goes off straight away too.</summary>
+        private string UseAndFollowCopy(CoinAccount user, int number, DateTime now, Func<double> random)
+        {
+            user.Prune(now);
+            bool copycat = number >= 1 && number <= user.HeldPowerUps.Count && user.HeldPowerUps[number - 1].Id == PowerUpIds.Copycat;
+            string effect = ApplyUse(user, number, now, random);
+            if (copycat && user.HeldPowerUps.Count > 0)
+            {
+                var (copyEffect, copyKept) = Activate(user, now, random);
+                effect += copyKept == null ? $"\n{copyEffect}" : $"\nThe copy couldn't go off yet, so it's kept: {copyKept}";
+            }
+            return effect;
         }
 
         /// <summary>Where the winner stands on the leaderboard, for the rubber-banded draw.</summary>
@@ -98,26 +159,32 @@ namespace DiscordBot.Services
         }
 
         /// <summary>Called every minute. Draws the raffle once per slot and announces the winner in one line in the last active channel.</summary>
-        public async Task RunIfDue(DiscordSocketClient client)
+        public async Task RunIfDue(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)
         {
             long slotBefore = _coinService.GetAll().LastRaffleSlot;
-            var result = Draw(DateTime.UtcNow, _random.NextDouble);
+            var result = Draw(DateTime.UtcNow, _random.NextDouble, betOpenUserIds);
             if (_coinService.GetAll().LastRaffleSlot == slotBefore) return; //nothing due
-            await _coinService.Update(); //records the slot even if nobody entered
+            await _coinService.Update(); //records the slot even if nobody entered, and what the prize did
 
             if (result == null) return;
-            var (winner, prize, entrants) = result.Value;
             ulong channelId = _coinService.GetAll().LastActiveChannelId;
             if (!(client.GetChannel(channelId) is IMessageChannel channel)) return;
 
-            //named, not pinged: there's a draw every half hour
-            await channel.SendMessageAsync(Announcement(winner, prize, entrants), allowedMentions: AllowedMentions.None);
+            //named, not pinged: there's a draw every hour
+            string text = Announcement(result);
+            if (text.Length > 1900) text = text.Substring(0, 1900) + "…";
+            await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
         }
 
-        public static string Announcement(CoinAccount winner, PowerUpDefinition prize, int entrants)
+        public static string Announcement(DrawResult result)
         {
+            var prize = result.Prize;
             string tag = prize.Category == PowerUpCategory.CatchUp ? "🧾 catch-up, " : prize.Category == PowerUpCategory.Attack ? "⚔️ attack, " : "";
-            return $"🎟️ Raffle: <@{winner.UserId}> won **{prize.Name}** ({tag}{PowerUpCatalog.RarityOf(prize)}, {entrants} entered). `.pu` to use it.";
+            string line = $"🎟️ Raffle: <@{result.Winner.UserId}> won **{prize.Name}** ({tag}{PowerUpCatalog.RarityOf(prize)}, {result.Entrants} entered)";
+            if (result.Kept == null)
+                return $"{line} and it went off: {result.Effect}";
+            string reason = result.Kept.Replace(" Keep it for later.", "").Trim();
+            return $"{line}. It couldn't go off yet, so it's kept: {reason} `.pu use` it when you can.";
         }
 
         private List<CoinAccount> Ranked()
@@ -134,7 +201,7 @@ namespace DiscordBot.Services
         /// </summary>
         public async Task<string> Use(CoinAccount user, int number, DateTime now, Func<double> random)
         {
-            string message = ApplyUse(user, number, now, random);
+            string message = UseAndFollowCopy(user, number, now, random);
             await _coinService.Update();
             return message;
         }
@@ -144,7 +211,7 @@ namespace DiscordBot.Services
         {
             user.Prune(now);
             if (user.HeldPowerUps.Count == 0)
-                throw new BadInputException("You don't have any power-ups. They come from the raffle every 30 minutes.");
+                throw new BadInputException("You don't have any power-ups. They come from the raffle every hour.");
             if (number < 1 || number > user.HeldPowerUps.Count)
                 throw new BadInputException($"Pick a number from 1 to {user.HeldPowerUps.Count}.");
             var frozen = user.Running(PowerUpIds.Frozen, now).OrderByDescending(f => f.ExpiresAtTicks).FirstOrDefault();
@@ -497,8 +564,15 @@ namespace DiscordBot.Services
                     var (leader, _) = LeaderForCatchUp(user, "Squatters");
                     if (leader.Properties.Count == 0)
                         throw new BadInputException($"{leader.Name} doesn't own any property to squat in. Keep it for later.");
-                    leader.AddDebuff(PowerUpIds.Squatted, now, user.UserId);
-                    return $"🏚️ **Squatters!** You moved into {leader.Name}'s property. All their rent comes to you for the next 12 hours.";
+                    double index = _coinService.GetAll().PropertyIndex;
+                    var taken = leader.Running(PowerUpIds.Squatted, now).Select(s => PropertyService.SquattedPropertyId(leader, s)).ToHashSet();
+                    var home = leader.Properties.Where(p => !taken.Contains(p.Id))
+                        .OrderByDescending(p => PropertyCatalog.GrossRentPerHour(p.Kind, index)).FirstOrDefault();
+                    if (home == null)
+                        throw new BadInputException($"Every one of {leader.Name}'s properties already has squatters. Keep it for later.");
+                    leader.AddDebuff(PowerUpIds.Squatted, now, user.UserId, home.Id);
+                    double rent = PropertyCatalog.GrossRentPerHour(home.Kind, index) * (1 - PropertyCatalog.AgencyFeeRate);
+                    return $"🏚️ **Squatters!** You moved into {leader.Name}'s {PropertyCatalog.DisplayName(home.Kind).ToLower()}. Its rent (about {Money(rent)} an hour) comes to you for the next 12 hours.";
                 }
                 case PowerUpIds.Leech:
                 {
@@ -546,7 +620,7 @@ namespace DiscordBot.Services
                     if (data.LastUsedPowerUpUserId == user.UserId)
                         throw new BadInputException($"The last power-up used was your own {copied.Name}. Wait for someone else to use one. Keep it for later.");
                     user.Grant(copied.Id, now);
-                    return $"🐒 **Copycat!** You copied **{copied.Name}**. It's in your `.pu` list.";
+                    return $"🐒 **Copycat!** You copied **{copied.Name}**.";
                 }
                 case PowerUpIds.Scratchie:
                 {

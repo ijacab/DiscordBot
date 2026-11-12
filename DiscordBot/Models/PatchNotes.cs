@@ -22,6 +22,9 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-12", "The raffle draws every hour among everyone who used money in the hour before, and power-ups go off the moment they're won."),
+            new PatchNote("2026-11-12", "Squatters take one property (1st place's best rental), not all their rent."),
+            new PatchNote("2026-11-12", "`.autosell on` sells your stocks and then property automatically to pay off debt."),
             new PatchNote("2026-11-12", "The raffle draws every 30 minutes, and lower on the leaderboard you draw more attacks. Every power-up is about twice as strong."),
             new PatchNote("2026-11-12", "Catch-up power-ups that nothing blocks: Tax the Rich, Audit, Bailout, Squatters and Leech. The rich pay in debt if they're short on cash."),
             new PatchNote("2026-11-12", "New power-ups: Mirror, Golden Parachute, Toll Booth, Time Machine, Echo, Copycat, Scratchie, Rigged Raffle, Heist, Musical Chairs, Sticky Fingers and Freeze Ray."),

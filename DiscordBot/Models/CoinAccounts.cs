@@ -54,7 +54,7 @@ namespace DiscordBot.Models
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
             public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
 
-            /// <summary>When (UTC ticks) the player last did something with money. Players active in the last 24h enter the raffle.</summary>
+            /// <summary>When (UTC ticks) the player last did something with money. Within the hour before a draw enters the raffle.</summary>
             public long LastActiveUtcTicks { get; set; }
             /// <summary>Power-ups won in the raffle and not used yet.</summary>
             public List<HeldPowerUp> HeldPowerUps { get; set; } = new List<HeldPowerUp>();
@@ -68,6 +68,8 @@ namespace DiscordBot.Models
 
             /// <summary>Money owed, from power-ups that take more than the player's cash. Counts against net worth and grows with interest.</summary>
             public double Debt { get; set; }
+            /// <summary>When on (`.autosell on`), stocks and then property are sold every minute to pay off any debt (<see cref="Services.DebtService"/>).</summary>
+            public bool AutoSellForDebt { get; set; }
             /// <summary>Interest on debt per day, compounded hourly. High on purpose: pay it off.</summary>
             public const double DailyDebtInterest = 0.01;
 

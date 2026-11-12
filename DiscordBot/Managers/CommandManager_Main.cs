@@ -23,6 +23,7 @@ namespace DiscordBot.Managers
         private readonly StockService _stockService;
         private readonly RaffleService _raffleService;
         private readonly PropertyService _propertyService;
+        private readonly DebtService _debtService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
@@ -51,7 +52,7 @@ namespace DiscordBot.Managers
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
@@ -63,6 +64,7 @@ namespace DiscordBot.Managers
             _stockService = stockService;
             _raffleService = raffleService;
             _propertyService = propertyService;
+            _debtService = debtService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
             _blackjackManager = blackjackManager;
@@ -114,7 +116,8 @@ namespace DiscordBot.Managers
                 new Command("sellproperty", SellProperty) { Description = "Sells a property you own at market value, less 3% for agent commission and marketing.", Syntax = "`.sellproperty 1`" },
                 new Command("letout", RentingIsAutomatic) { Hidden = true },
                 new Command("unlet", RentingIsAutomatic) { Hidden = true },
-                new Command("powerup", PowerUp) { Description = "Shows the power-ups you've won in the raffle (one is drawn every 30 minutes among everyone who used money in the last 24h; lower on the leaderboard you draw more attacks and catch-up items) and the ones running. Use one by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
+                new Command("powerup", PowerUp) { Description = "Shows your power-ups. One is drawn every hour among everyone who used money in the hour before, and it goes off the moment it's won (lower on the leaderboard you draw more attacks and catch-up items). One that couldn't go off yet is kept: use it by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
+                new Command("autosell", AutoSell) { Description = "When on, your stocks and then property are sold automatically to pay off any debt. Shorts and options are left alone.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
@@ -292,15 +295,20 @@ namespace DiscordBot.Managers
                     await newsChannel.SendMessageAsync(headline);
             }
 
-            //any spare cash goes straight to debt
+            //any spare cash goes straight to debt, then players with auto-sell on sell assets for what's left
             await _coinService.RepayDebtsFromCash(_betManager.InitiatedBetUserIds);
+            foreach (var line in await _debtService.AutoSellForDebts(_betManager.InitiatedBetUserIds))
+            {
+                if (client.GetChannel(_coinService.GetAll().LastActiveChannelId) is Discord.IMessageChannel debtChannel)
+                    await debtChannel.SendMessageAsync(line);
+            }
 
             //after interest and stock ticks, so the hourly sample reflects both
             await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt);
 
             try
             {
-                await _raffleService.RunIfDue(client);
+                await _raffleService.RunIfDue(client, _betManager.InitiatedBetUserIds);
             }
             catch (Exception ex)
             {

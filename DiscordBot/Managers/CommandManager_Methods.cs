@@ -512,6 +512,25 @@ namespace DiscordBot.Managers
                 $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
+        /// <summary>`.autosell on|off`: sell stocks and then property automatically to pay off debt.</summary>
+        private async Task AutoSell(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            if (args.Count == 1 && (args[0].Equals("on", StringComparison.OrdinalIgnoreCase) || args[0].Equals("off", StringComparison.OrdinalIgnoreCase)))
+            {
+                account.AutoSellForDebt = args[0].Equals("on", StringComparison.OrdinalIgnoreCase);
+                await _coinService.Update();
+            }
+            else if (args.Count != 0)
+                throw new BadSyntaxException();
+
+            string debt = account.Debt > 0 ? $"You owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "You have no debt.";
+            string state = account.AutoSellForDebt
+                ? "💳 Auto-sell is **on**: while you owe money, your stocks and then property are sold within a minute to pay it off. `.autosell off` to stop."
+                : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make. `.autosell on` to sell assets automatically to pay it off.";
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} {state} {debt}");
+        }
+
         /// <summary>Old .letout / .unlet: every property is rented out automatically now.</summary>
         private async Task RentingIsAutomatic(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
@@ -782,7 +801,7 @@ namespace DiscordBot.Managers
             if (account.Properties.Count > 0)
                 output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
             if (account.Debt > 0)
-                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first)\n";
+                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
             if (holdings.Count > 0)
             {
@@ -913,12 +932,12 @@ namespace DiscordBot.Managers
             string untilDraw = FormatRemaining(RaffleService.NextRaffleUtc(now) - now);
             output += RaffleService.IsEnteredInNextDraw(account, now)
                 ? $"🎟️ **You're entered** in the raffle in {untilDraw}.\n"
-                : $"🎟️ **You're not entered** in the raffle in {untilDraw}. Do something with money (bets, trades, donations) to be entered.\n";
+                : $"🎟️ **You're not entered** in the raffle in {untilDraw}. Do something with money (bets, trades, donations) in the hour before a draw to be entered.\n";
             if (account.HeldPowerUps.Count == 0)
                 output += "You have no power-ups.\n";
             else
             {
-                output += "**Your power-ups** (use one with `.pu use <number>`):\n";
+                output += "**Kept power-ups** (these couldn't go off when won; use one with `.pu use <number>`):\n";
                 for (int i = 0; i < account.HeldPowerUps.Count; i++)
                 {
                     var held = account.HeldPowerUps[i];

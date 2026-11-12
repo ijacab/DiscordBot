@@ -53,6 +53,7 @@ namespace DiscordBot
             services.AddSingleton<StockService>();
             services.AddSingleton<RaffleService>();
             services.AddSingleton<PropertyService>();
+            services.AddSingleton<DebtService>();
             services.AddSingleton<CommandManager>();
             services.AddSingleton<MessageHandler>();
             services.AddTransient<StrawmanChecker>();

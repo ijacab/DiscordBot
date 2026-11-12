@@ -110,6 +110,8 @@ namespace DiscordBot.Models
         public int ChargesLeft { get; set; }
         /// <summary>For a Squatted or Leeched debuff, the player the money goes to.</summary>
         public ulong BeneficiaryUserId { get; set; }
+        /// <summary>For a Squatted debuff, the one property (<see cref="PropertyHolding.Id"/>) whose rent the squatter takes. Null on old saves, which squat the first property.</summary>
+        public string PropertyId { get; set; }
         public const int Unlimited = -1;
     }
 
@@ -254,7 +256,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Bailout, Name = "Bailout", Weight = Common, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "1st place pays off your debt (up to 20% of their net worth) and hands you 5% of their net worth on top. Can't be dodged; what they can't pay goes on their debt." },
             new PowerUpDefinition { Id = PowerUpIds.Squatters, Name = "Squatters", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
-                Description = "Move into 1st place's property: all their rent comes to you for 12 hours. Can't be dodged." },
+                Description = "Move into 1st place's best rental: that property's rent comes to you for 12 hours. Can't be dodged." },
             new PowerUpDefinition { Id = PowerUpIds.Leech, Name = "Leech", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "Latch onto 1st place for 6 hours: 15% of every bet they win comes to you. Can't be dodged." },
         };
@@ -267,7 +269,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Frozen, Name = "Frozen", Kind = PowerUpKind.Timed, Duration = FreezeDuration, Category = PowerUpCategory.Debuff,
                 Description = "You can't use power-ups." },
             new PowerUpDefinition { Id = PowerUpIds.Squatted, Name = "Squatters", Kind = PowerUpKind.Timed, Duration = SquatDuration, Category = PowerUpCategory.Debuff,
-                Description = "Your rent goes to the squatter." },
+                Description = "One of your properties has squatters; its rent goes to them." },
             new PowerUpDefinition { Id = PowerUpIds.Leeched, Name = "Leech", Kind = PowerUpKind.Timed, Duration = LeechDuration, Category = PowerUpCategory.Debuff,
                 Description = "15% of every bet you win goes to the leech." },
         };
@@ -419,15 +421,15 @@ namespace DiscordBot.Models
         /// Puts a debuff on a victim. Another of the same kind extends it; Squatted and Leeched are kept apart per
         /// beneficiary, so two leeches each take their own share.
         /// </summary>
-        public static void AddDebuff(this CoinAccount victim, string id, DateTime now, ulong beneficiaryUserId = 0)
+        public static void AddDebuff(this CoinAccount victim, string id, DateTime now, ulong beneficiaryUserId = 0, string propertyId = null)
         {
             var debuff = PowerUpCatalog.Find(id);
             victim.Prune(now);
-            var existing = victim.ActivePowerUps.FirstOrDefault(a => a.Id == id && a.BeneficiaryUserId == beneficiaryUserId);
+            var existing = victim.ActivePowerUps.FirstOrDefault(a => a.Id == id && a.BeneficiaryUserId == beneficiaryUserId && a.PropertyId == propertyId);
             if (existing != null)
                 existing.ExpiresAtTicks += debuff.Duration.Ticks;
             else
-                victim.ActivePowerUps.Add(new ActivePowerUp { Id = id, ExpiresAtTicks = (now + debuff.Duration).Ticks, ChargesLeft = ActivePowerUp.Unlimited, BeneficiaryUserId = beneficiaryUserId });
+                victim.ActivePowerUps.Add(new ActivePowerUp { Id = id, ExpiresAtTicks = (now + debuff.Duration).Ticks, ChargesLeft = ActivePowerUp.Unlimited, BeneficiaryUserId = beneficiaryUserId, PropertyId = propertyId });
         }
 
         /// <summary>The running entries of one kind on an account, such as every leech on it.</summary>

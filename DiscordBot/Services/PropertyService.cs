@@ -142,18 +142,25 @@ namespace DiscordBot.Services
         /// <summary>Rent for one hour on every property, less the agency's cut, goes to each landlord's cash. Every property is rented out.</summary>
         public static void PayRentOneHour(CoinAccounts data) => PayRentOneHour(data, DateTime.UtcNow);
 
-        /// <summary>As <see cref="PayRentOneHour(CoinAccounts)"/>. A landlord with Squatters in pays their rent to the squatter instead.</summary>
+        /// <summary>As <see cref="PayRentOneHour(CoinAccounts)"/>. A property with squatters in pays its rent to the squatter instead.</summary>
         public static void PayRentOneHour(CoinAccounts data, DateTime now)
         {
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0).ToList())
             {
-                double gross = account.Properties.Sum(p => PropertyCatalog.GrossRentPerHour(p.Kind, data.PropertyIndex));
-                double net = gross * (1 - PropertyCatalog.AgencyFeeRate);
-                var squat = account.Running(PowerUpIds.Squatted, now).OrderBy(s => s.ExpiresAtTicks).FirstOrDefault();
-                var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
-                (squatter ?? account).NetWorth += net;
+                var squats = account.Running(PowerUpIds.Squatted, now).OrderBy(s => s.ExpiresAtTicks).ToList();
+                foreach (var property in account.Properties)
+                {
+                    double net = PropertyCatalog.GrossRentPerHour(property.Kind, data.PropertyIndex) * (1 - PropertyCatalog.AgencyFeeRate);
+                    var squat = squats.FirstOrDefault(s => SquattedPropertyId(account, s) == property.Id);
+                    var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
+                    (squatter ?? account).NetWorth += net;
+                }
             }
         }
+
+        /// <summary>The property a squat is in. Squats saved before they named one are in the first property.</summary>
+        public static string SquattedPropertyId(CoinAccount landlord, ActivePowerUp squat) =>
+            squat.PropertyId ?? landlord.Properties.FirstOrDefault()?.Id;
 
         /// <summary>One day of holding costs (rates and maintenance) comes out of cash.</summary>
         public static void PayHoldingOneDay(CoinAccounts data)

@@ -123,7 +123,7 @@ namespace Tests
         public void Announcement_IsOneLineAndTagsCatchUp()
         {
             var w = Board((1, 1_000));
-            string line = RaffleService.Announcement(w[1], PowerUpCatalog.Find(PowerUpIds.TaxTheRich), 4);
+            string line = RaffleService.Announcement(new RaffleService.DrawResult { Winner = w[1], Prize = PowerUpCatalog.Find(PowerUpIds.TaxTheRich), Entrants = 4, Effect = "🧾 **Tax the Rich!** The top paid." });
             Assert.DoesNotContain("\n", line);
             Assert.Contains("catch-up", line);
             Assert.Contains("Tax the Rich", line);
@@ -237,6 +237,99 @@ namespace Tests
 
             PropertyService.PayRentOneHour(w.Data, Now.AddHours(13)); //the squat is over
             Assert.Equal(1000 + rent, w[1].NetWorth, 2);
+        }
+
+        private static double NetRent(PropertyKind kind) => PropertyCatalog.GrossRentPerHour(kind, 1.0) * (1 - PropertyCatalog.AgencyFeeRate);
+
+        [Fact]
+        public void Squatters_TakeOnlyTheBestRentalAndTheOwnerKeepsTheRest()
+        {
+            var w = Board((1, 1000), (2, 500), (3, 300), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+
+            string message = Use(w, 4, PowerUpIds.Squatters);
+            PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
+
+            Assert.Contains("house", message);
+            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Equal(1000 + NetRent(PropertyKind.Apartment), w[1].NetWorth, 2);
+        }
+
+        [Fact]
+        public void Squatters_ASecondSquatterTakesAnotherPropertyAndAThirdIsRefused()
+        {
+            var w = Board((1, 1000), (2, 500), (3, 300), (4, 0), (5, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+
+            Use(w, 4, PowerUpIds.Squatters);
+            Use(w, 5, PowerUpIds.Squatters);
+            PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
+
+            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Equal(NetRent(PropertyKind.Apartment), w[5].NetWorth, 2);
+            Assert.Equal(1000, w[1].NetWorth, 2);
+            Assert.Throws<BadInputException>(() => Use(w, 4, PowerUpIds.Squatters));
+        }
+
+        [Fact]
+        public void Squatters_SavedWithoutAPropertyOnlyTakeTheFirstOne()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[1].AddDebuff(PowerUpIds.Squatted, Now, 4); //an old save: no property named
+
+            PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
+
+            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Equal(1000 + NetRent(PropertyKind.House), w[1].NetWorth, 2);
+        }
+
+        // ---------- power-ups go off when they're won ----------
+
+        [Fact]
+        public void Activate_InstantAttackMovesMoneyStraightAway()
+        {
+            var w = Board((1, 10_000), (2, 0));
+            w[2].Grant(PowerUpIds.BlueShell, Now);
+
+            var (effect, kept) = w.Raffle.Activate(w[2], Now, () => 0.5);
+
+            Assert.Null(kept);
+            Assert.Contains("Blue Shell", effect);
+            Assert.True(w[2].NetWorth > 0);
+            Assert.Empty(w[2].HeldPowerUps);
+        }
+
+        [Fact]
+        public void Activate_KeepsAPowerUpThatCantGoOffYet()
+        {
+            var w = Board((1, 1000), (2, 500), (3, 300), (4, 0));
+            w[4].Grant(PowerUpIds.Squatters, Now); //1st owns no property
+
+            var (effect, kept) = w.Raffle.Activate(w[4], Now, () => 0.5);
+
+            Assert.Null(effect);
+            Assert.NotNull(kept);
+            Assert.Single(w[4].HeldPowerUps);
+            Assert.Equal(PowerUpIds.Squatters, w[4].HeldPowerUps[0].Id);
+        }
+
+        [Fact]
+        public void Activate_CopycatsCopyGoesOffToo()
+        {
+            var w = Board((1, 1000), (2, 1000));
+            Use(w, 1, PowerUpIds.HotStreak);
+            w[2].Grant(PowerUpIds.Copycat, Now);
+
+            var (effect, kept) = w.Raffle.Activate(w[2], Now, () => 0.5);
+
+            Assert.Null(kept);
+            Assert.Contains("Copycat", effect);
+            Assert.True(w[2].IsActive(PowerUpIds.HotStreak, Now));
+            Assert.Empty(w[2].HeldPowerUps);
         }
 
         [Fact]
@@ -415,7 +508,7 @@ namespace Tests
 
             var result = w.Raffle.Draw(Now, () => 0); //an honest draw would pick player 1
 
-            Assert.Equal(3UL, result.Value.Winner.UserId);
+            Assert.Equal(3UL, result.Winner.UserId);
             Assert.False(w[3].IsActive(PowerUpIds.RiggedRaffle, Now));
         }
     }

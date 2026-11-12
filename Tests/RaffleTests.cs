@@ -21,7 +21,7 @@ namespace Tests
             UserId = id,
             Name = "user" + id,
             NetWorth = cash,
-            LastActiveUtcTicks = active ? (Now - TimeSpan.FromHours(1)).Ticks : 0
+            LastActiveUtcTicks = active ? (Now - TimeSpan.FromMinutes(10)).Ticks : 0
         };
 
         private static RaffleService Service(params CoinAccount[] accounts)
@@ -53,30 +53,87 @@ namespace Tests
         }
 
         [Fact]
-        public void Slots_AreThirtyMinutesLong()
+        public void Slots_AreAnHourLong()
         {
             var start = new DateTime(2026, 11, 8, 0, 0, 0, DateTimeKind.Utc);
             long slot = RaffleService.SlotOf(start);
-            Assert.Equal(slot + 1, RaffleService.SlotOf(start.AddMinutes(30)));
+            Assert.Equal(slot, RaffleService.SlotOf(start.AddMinutes(59)));
+            Assert.Equal(slot + 1, RaffleService.SlotOf(start.AddMinutes(60)));
             Assert.Equal(slot, RaffleService.SlotOf(RaffleService.NextRaffleUtc(start).AddSeconds(-1)));
-            Assert.Equal(TimeSpan.FromMinutes(30), RaffleService.NextRaffleUtc(start.AddMinutes(30)) - RaffleService.NextRaffleUtc(start));
+            Assert.Equal(TimeSpan.FromHours(1), RaffleService.NextRaffleUtc(start.AddMinutes(60)) - RaffleService.NextRaffleUtc(start));
             Assert.True(RaffleService.NextRaffleUtc(Now) > Now);
         }
 
         [Fact]
-        public void Draw_OnlyEntersPlayersActiveInTheLastDay()
+        public void Draw_OnlyEntersPlayersActiveInTheHourBefore()
         {
             var stale = Account(1, active: false);
-            var old = Account(2); old.LastActiveUtcTicks = (Now - TimeSpan.FromHours(25)).Ticks;
+            var old = Account(2); old.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(61)).Ticks;
             var fresh = Account(3);
             var service = Service(stale, old, fresh);
 
             var result = service.Draw(Now, () => 0);
 
             Assert.NotNull(result);
-            Assert.Equal(3UL, result.Value.Winner.UserId);
-            Assert.Equal(1, result.Value.Entrants);
-            Assert.Single(fresh.HeldPowerUps);
+            Assert.Equal(3UL, result.Winner.UserId);
+            Assert.Equal(1, result.Entrants);
+        }
+
+        [Fact]
+        public void Draw_IsMeasuredFromTheDrawTimeNotWhenTheLoopRuns()
+        {
+            //acted 59 minutes before the 12:00 draw, which the minute loop only got to at 12:02
+            var player = Account(1); player.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(59)).Ticks;
+            Assert.NotNull(Service(player).Draw(Now.AddMinutes(2), () => 0));
+
+            //acted at 12:01, after the 12:00 draw ran: entered in the 13:00 one
+            var late = Account(2); late.LastActiveUtcTicks = Now.AddMinutes(1).Ticks;
+            Assert.True(RaffleService.IsEnteredInNextDraw(late, Now.AddMinutes(1)));
+            var service = Service(late);
+            service.Draw(Now, () => 0);
+            Assert.NotNull(service.Draw(Now.AddHours(1).AddMinutes(1), () => 0));
+        }
+
+        [Fact]
+        public void Draw_StillHappensAfterShorterSlotsWereSaved()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            coins.GetAll().Accounts.Clear();
+            coins.GetAll().Accounts.Add(Account(1));
+            coins.GetAll().LastRaffleSlot = RaffleService.SlotOf(Now) * 2 + 1; //a 30 minute slot number from the old schedule
+            var service = new RaffleService(coins, new AppSettings { PrestigeDisabled = true }, a => a.NetWorth);
+
+            Assert.NotNull(service.Draw(Now, () => 0));
+            Assert.Equal(RaffleService.SlotOf(Now), coins.GetAll().LastRaffleSlot);
+            Assert.Null(service.Draw(Now.AddMinutes(10), () => 0));
+        }
+
+        [Fact]
+        public void Draw_PowerUpGoesOffStraightAway()
+        {
+            var player = Account(1);
+            var service = Service(player);
+
+            var result = service.Draw(Now, () => 0);
+
+            Assert.Null(result.Kept);
+            Assert.False(string.IsNullOrEmpty(result.Effect));
+            Assert.Empty(player.HeldPowerUps);
+            Assert.True(player.IsActive(result.Prize.Id, Now) || result.Prize.Kind == PowerUpKind.Instant);
+            Assert.Contains("went off", RaffleService.Announcement(result));
+        }
+
+        [Fact]
+        public void Draw_WinnerWithABetOpenKeepsThePowerUp()
+        {
+            var player = Account(1);
+            var service = Service(player);
+
+            var result = service.Draw(Now, () => 0, new[] { 1UL });
+
+            Assert.NotNull(result.Kept);
+            Assert.Single(player.HeldPowerUps);
+            Assert.Contains("kept", RaffleService.Announcement(result));
         }
 
         [Fact]
@@ -94,8 +151,9 @@ namespace Tests
 
             Assert.NotNull(service.Draw(Now, () => 0));
             Assert.Null(service.Draw(Now.AddMinutes(10), () => 0));
-            Assert.NotNull(service.Draw(Now.AddMinutes(30), () => 0));
-            Assert.Equal(2, player.HeldPowerUps.Count);
+            Assert.Null(service.Draw(Now.AddMinutes(59), () => 0));
+            player.LastActiveUtcTicks = Now.AddMinutes(30).Ticks;
+            Assert.NotNull(service.Draw(Now.AddMinutes(60), () => 0));
         }
 
         [Fact]

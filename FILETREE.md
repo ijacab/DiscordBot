@@ -42,8 +42,9 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, RoundOutcome, SpectatorPool (side bets)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
-    RaffleService.cs           30-minute rubber-banded raffle that gives power-ups, and using them (`.pu`)
+    RaffleService.cs           hourly rubber-banded raffle; the power-up won goes off straight away (kept for `.pu use` if it can't)
     PropertyService.cs         houses and apartments: buy/sell with cash, letting out, daily market step and rent
+    DebtService.cs             `.autosell`: sells stocks, then property, every minute to pay off debt
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
@@ -82,7 +83,7 @@ Common/                        shared net10.0 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, TextPaginatorTests, DiscordConfigTests
+Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look
