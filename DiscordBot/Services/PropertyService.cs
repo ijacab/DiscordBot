@@ -150,7 +150,7 @@ namespace DiscordBot.Services
                 var squats = account.Running(PowerUpIds.Squatted, now).OrderBy(s => s.ExpiresAtTicks).ToList();
                 foreach (var property in account.Properties)
                 {
-                    double net = PropertyCatalog.GrossRentPerHour(property.Kind, data.PropertyIndex) * (1 - PropertyCatalog.AgencyFeeRate);
+                    double net = PropertyCatalog.NetRentPerHour(property.Kind, data.PropertyIndex);
                     var squat = squats.FirstOrDefault(s => SquattedPropertyId(account, s) == property.Id);
                     var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
                     (squatter ?? account).NetWorth += net;

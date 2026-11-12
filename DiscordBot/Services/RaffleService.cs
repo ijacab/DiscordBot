@@ -571,7 +571,7 @@ namespace DiscordBot.Services
                     if (home == null)
                         throw new BadInputException($"Every one of {leader.Name}'s properties already has squatters. Keep it for later.");
                     leader.AddDebuff(PowerUpIds.Squatted, now, user.UserId, home.Id);
-                    double rent = PropertyCatalog.GrossRentPerHour(home.Kind, index) * (1 - PropertyCatalog.AgencyFeeRate);
+                    double rent = PropertyCatalog.NetRentPerHour(home.Kind, index);
                     return $"🏚️ **Squatters!** You moved into {leader.Name}'s {PropertyCatalog.DisplayName(home.Kind).ToLower()}. Its rent (about {Money(rent)} an hour) comes to you for the next 12 hours.";
                 }
                 case PowerUpIds.Leech:

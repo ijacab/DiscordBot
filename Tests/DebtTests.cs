@@ -64,12 +64,27 @@ namespace Tests
         }
 
         [Fact]
-        public void Debt_GrowsAboutOnePercentADayWhenLeftAlone()
+        public void Debt_GrowsOnePercentAnHour()
         {
+            Assert.Equal(1_010, CoinAccount.GrowDebtOneHour(1_000), 2);
+
             double debt = 1_000;
             for (int hour = 0; hour < 24; hour++)
                 debt = CoinAccount.GrowDebtOneHour(debt);
-            Assert.InRange(debt, 1_009.5, 1_010.5);
+            Assert.InRange(debt, 1_269, 1_270.5); //about 27% a day left alone
+        }
+
+        [Fact]
+        public void NetRentPerHour_IsWhatTheLandlordIsPaid()
+        {
+            var data = new CoinAccounts { PropertyIndex = 1.0 };
+            var landlord = new CoinAccount { UserId = 1 };
+            landlord.Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            data.Accounts.Add(landlord);
+
+            PropertyService.PayRentOneHour(data, new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc));
+
+            Assert.Equal(PropertyCatalog.NetRentPerHour(PropertyKind.House, 1.0), landlord.NetWorth, 2);
         }
 
         [Fact]

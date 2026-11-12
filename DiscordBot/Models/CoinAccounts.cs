@@ -70,12 +70,12 @@ namespace DiscordBot.Models
             public double Debt { get; set; }
             /// <summary>When on (`.autosell on`), stocks and then property are sold every minute to pay off any debt (<see cref="Services.DebtService"/>).</summary>
             public bool AutoSellForDebt { get; set; }
-            /// <summary>Interest on debt per day, compounded hourly. High on purpose: pay it off.</summary>
-            public const double DailyDebtInterest = 0.01;
+            /// <summary>Interest on debt every hour (about 27% a day compounded). High on purpose: pay it off.</summary>
+            public const double HourlyDebtInterest = 0.01;
 
             /// <summary>Debt after one hour of interest.</summary>
             public static double GrowDebtOneHour(double debt) =>
-                debt <= 0 ? 0 : Math.Round(debt * Math.Pow(1 + DailyDebtInterest, 1.0 / 24), 2);
+                debt <= 0 ? 0 : Math.Round(debt * (1 + HourlyDebtInterest), 2);
 
             /// <summary>Pays off as much debt as the spare cash covers. Returns how much was paid.</summary>
             public double RepayFromCash()

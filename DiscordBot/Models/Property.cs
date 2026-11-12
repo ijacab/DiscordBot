@@ -85,6 +85,9 @@ namespace DiscordBot.Models
         /// <summary>Gross rent for one hour while let, after the vacancy allowance and before the agency fee.</summary>
         public static double GrossRentPerHour(PropertyKind kind, double index) => RentPerHour(kind, index) * (1 - VacancyRate);
 
+        /// <summary>What the landlord is paid for one hour: gross rent less the agency's cut.</summary>
+        public static double NetRentPerHour(PropertyKind kind, double index) => GrossRentPerHour(kind, index) * (1 - AgencyFeeRate);
+
         /// <summary>Holding cost for one day on a property at this index.</summary>
         public static double DailyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerYear / 365.0;
     }

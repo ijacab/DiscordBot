@@ -22,6 +22,8 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-12", "Debt now grows 1% every hour. Pay it off or turn on `.autosell`."),
+            new PatchNote("2026-11-12", "`.portfolio` shows the rent you earn per hour."),
             new PatchNote("2026-11-12", "`.portfolio` groups your houses and apartments into one line each, with the average you paid."),
             new PatchNote("2026-11-12", "The raffle draws every hour among everyone who used money in the hour before, and power-ups go off the moment they're won."),
             new PatchNote("2026-11-12", "Squatters take one property (1st place's best rental), not all their rent."),

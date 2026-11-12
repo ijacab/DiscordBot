@@ -475,7 +475,7 @@ namespace DiscordBot.Managers
             for (int i = 0; i < account.Properties.Count; i++)
             {
                 var property = account.Properties[i];
-                double netRentPerHour = PropertyCatalog.GrossRentPerHour(property.Kind, index) * (1 - PropertyCatalog.AgencyFeeRate);
+                double netRentPerHour = PropertyCatalog.NetRentPerHour(property.Kind, index);
                 output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
                     $"rented out, about {netRentPerHour:N2} an hour after the agency\n";
             }
@@ -527,7 +527,7 @@ namespace DiscordBot.Managers
             string debt = account.Debt > 0 ? $"You owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "You have no debt.";
             string state = account.AutoSellForDebt
                 ? "💳 Auto-sell is **on**: while you owe money, your stocks and then property are sold within a minute to pay it off. `.autosell off` to stop."
-                : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make. `.autosell on` to sell assets automatically to pay it off.";
+                : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make, and it grows 1% every hour. `.autosell on` to sell assets automatically to pay it off.";
             await message.Channel.SendMessageAsync($"{message.Author.Mention} {state} {debt}");
         }
 
@@ -803,15 +803,24 @@ namespace DiscordBot.Managers
                 string name = PropertyCatalog.DisplayName(group.Key);
                 double worthEach = PropertyCatalog.SaleValue(group.Key, index);
                 double averagePaid = group.Average(p => p.PurchaseCost);
+                string rentEach = FormatHelper.GetCommaNumber(PropertyCatalog.NetRentPerHour(group.Key, index));
                 string icon = group.Key == PropertyKind.House ? "🏠" : "🏢";
                 output += count == 1
-                    ? $"{icon} {name} (bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} after selling costs · rented out\n"
-                    : $"{icon} {count} {name.ToLower()}s (avg bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} each, ${FormatHelper.GetCommaNumber(worthEach * count)} in all, after selling costs · rented out\n";
+                    ? $"{icon} {name} (bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} after selling costs · rent ${rentEach} an hour\n"
+                    : $"{icon} {count} {name.ToLower()}s (avg bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} each, ${FormatHelper.GetCommaNumber(worthEach * count)} in all, after selling costs · rent ${rentEach} an hour each\n";
             }
             if (account.Properties.Count > 0)
+            {
                 output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
+                //rent from properties with squatters in goes to the squatter instead
+                var squatted = account.Running(PowerUpIds.Squatted, DateTime.UtcNow).Select(s => PropertyService.SquattedPropertyId(account, s)).ToHashSet();
+                double rentTotal = account.Properties.Where(p => !squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
+                double squattersTake = account.Properties.Where(p => squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
+                output += $"🏘️ Rent ${FormatHelper.GetCommaNumber(rentTotal)} an hour after the agency (about ${FormatHelper.GetCommaNumber(rentTotal * 24)} a day)" +
+                    (squattersTake > 0 ? $" · squatters take ${FormatHelper.GetCommaNumber(squattersTake)} an hour" : "") + "\n";
+            }
             if (account.Debt > 0)
-                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% a day; paid off from any spare cash, and sales pay it off first; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
+                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% every hour; paid off from any spare cash, and sales pay it off first; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
             if (holdings.Count > 0)
             {
