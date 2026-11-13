@@ -77,7 +77,7 @@ namespace DiscordBot.Services
                         foreach (var (userId, amount) in _market.Retire(stock))
                         {
                             var account = data.Accounts.FirstOrDefault(a => a.UserId == userId);
-                            if (account != null) account.NetWorth += account.PayDebtFrom(amount);
+                            if (account != null) account.NetWorth += data.PayDebtFrom(account, amount);
                         }
                     }
                     _market.SchemaVersion = StockMarket.CurrentSchemaVersion;
@@ -161,7 +161,7 @@ namespace DiscordBot.Services
                 double tax = account.IsActive(PowerUpIds.TaxHaven, DateTime.UtcNow) ? 0 : Stock.TaxOn(gross);
                 _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
-                account.NetWorth += account.PayDebtFrom(gross - tax); //sale money pays any debt first
+                account.NetWorth += _coinService.GetAll().PayDebtFrom(account, gross - tax); //sale money pays any debt first, into the jackpot
                 _market.AddShares(account.UserId, stock.Symbol, -shares);
                 Save();
                 return PersistAccount(account, (stock, shares, gross, tax));

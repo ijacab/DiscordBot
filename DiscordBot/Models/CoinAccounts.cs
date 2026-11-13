@@ -13,9 +13,33 @@ namespace DiscordBot.Models
         public string DateDailyIncrementPaidFor { get; set; }
         public List<string> TimesInterestPaidForList { get; set; } = new List<string>();//looks like e.g. "20210202", "20210203"
         public string LastNetWorthSampleHour { get; set; } //yyyyMMddHH (UTC) of the most recent net worth history sample
-        /// <summary>Every tax collected (sell tax, donation tax). An all-in bet has a small chance to win the whole pool.</summary>
+        /// <summary>Every tax collected (sell tax, donation tax) and every debt repayment. An all-in bet has a small chance to win the whole pool.</summary>
         public double JackpotPool { get; set; }
-        /// <summary>The 30 minute raffle slot that was last drawn, so each slot is drawn once.</summary>
+
+        /// <summary>Sends incoming money to the account's debt first; what pays the debt goes into the jackpot. Returns what's left for cash.</summary>
+        public double PayDebtFrom(CoinAccount account, double amount)
+        {
+            double before = account.Debt;
+            double left = account.PayDebtFrom(amount);
+            AddDebtRepaymentToJackpot(before - account.Debt);
+            return left;
+        }
+
+        /// <summary>Pays off as much of the account's debt as its spare cash covers, into the jackpot. Returns how much was paid.</summary>
+        public double RepayFromCash(CoinAccount account)
+        {
+            double paid = account.RepayFromCash();
+            AddDebtRepaymentToJackpot(paid);
+            return paid;
+        }
+
+        /// <summary>Debt paid off goes into the jackpot.</summary>
+        public void AddDebtRepaymentToJackpot(double paid)
+        {
+            if (paid > 0) JackpotPool = Math.Round(JackpotPool + paid, 2);
+        }
+
+        /// <summary>The hourly raffle slot that was last drawn, so each slot is drawn once.</summary>
         public long LastRaffleSlot { get; set; }
         /// <summary>The last power-up anyone used, and who used it, for Copycat.</summary>
         public string LastUsedPowerUpId { get; set; }

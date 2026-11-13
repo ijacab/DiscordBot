@@ -119,7 +119,7 @@ namespace DiscordBot.Managers
                 new Command("powerup", PowerUp) { Description = "Shows your power-ups. One is drawn every hour among everyone who used money in the hour before, and it goes off the moment it's won (lower on the leaderboard you draw more attacks and catch-up items). One that couldn't go off yet is kept: use it by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("autosell", AutoSell) { Description = "When on, your stocks and then property are sold automatically to pay off any debt (debt grows 1% every hour). Shorts and options are left alone.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
-                new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax and donation tax go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
+                new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax, donation tax and debt repayments go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },

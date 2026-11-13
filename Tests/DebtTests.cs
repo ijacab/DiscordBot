@@ -56,6 +56,24 @@ namespace Tests
         }
 
         [Fact]
+        public void Repayments_GoIntoTheJackpot()
+        {
+            var data = new CoinAccounts { JackpotPool = 1_000 };
+            var sale = new CoinAccount { Debt = 100 };
+            Assert.Equal(150, data.PayDebtFrom(sale, 250));
+            Assert.Equal(1_100, data.JackpotPool, 2);
+
+            var cash = new CoinAccount { Debt = 500, NetWorth = 200 };
+            Assert.Equal(200, data.RepayFromCash(cash));
+            Assert.Equal(1_300, data.JackpotPool, 2);
+
+            var clear = new CoinAccount { NetWorth = 50 };
+            Assert.Equal(50, data.PayDebtFrom(clear, 50));
+            Assert.Equal(0, data.RepayFromCash(clear));
+            Assert.Equal(1_300, data.JackpotPool, 2);
+        }
+
+        [Fact]
         public void PayDebtFrom_WithNoDebt_KeepsEverything()
         {
             var account = new CoinAccount();

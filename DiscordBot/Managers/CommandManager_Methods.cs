@@ -820,7 +820,7 @@ namespace DiscordBot.Managers
                     (squattersTake > 0 ? $" · squatters take ${FormatHelper.GetCommaNumber(squattersTake)} an hour" : "") + "\n";
             }
             if (account.Debt > 0)
-                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% every hour; paid off from any spare cash, and sales pay it off first; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
+                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% every hour; paid off from any spare cash, and sales pay it off first; repayments go into the jackpot; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
             if (holdings.Count > 0)
             {
@@ -1008,7 +1008,7 @@ namespace DiscordBot.Managers
 
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. Every sell tax and donation tax goes in. " +
+            return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. Every sell tax, donation tax and debt repayment goes in. " +
                 $"Bet `max` on a game with all your money in cash (no stocks) and you have a {BetManager.JackpotWinChance:P0} chance to win it all.");
         }
 

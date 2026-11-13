@@ -556,6 +556,7 @@ namespace DiscordBot.Services
                     var (_, toDebt) = Seize(leader, user, paid + bonus);
                     user.NetWorth -= paid;
                     user.Debt = Math.Round(user.Debt - paid, 2);
+                    _coinService.GetAll().AddDebtRepaymentToJackpot(paid);
                     return $"🧾 **Bailout!** {leader.Name} paid off {Money(paid)} of your debt and handed you {Money(bonus)}." +
                         (toDebt > 0 ? $" They were short, so {Money(toDebt)} went on their debt." : "");
                 }

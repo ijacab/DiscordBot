@@ -207,6 +207,7 @@ namespace Tests
             Assert.Equal(750, w[1].NetWorth, 2);
             Assert.Equal(100, w[4].Debt, 2);
             Assert.Equal(50, w[4].NetWorth, 2);
+            Assert.Equal(200, w.Data.JackpotPool, 2); //the debt paid off goes into the jackpot
         }
 
         [Fact]

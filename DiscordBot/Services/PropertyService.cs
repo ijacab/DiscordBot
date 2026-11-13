@@ -52,7 +52,7 @@ namespace DiscordBot.Services
             double proceeds = PropertyCatalog.SaleValue(holding.Kind, index);
 
             account.Properties.Remove(holding);
-            account.NetWorth += account.PayDebtFrom(proceeds); //sale money pays any debt first
+            account.NetWorth += _coinService.GetAll().PayDebtFrom(account, proceeds); //sale money pays any debt first, into the jackpot
             await _coinService.Update();
             return (holding, proceeds);
         }
