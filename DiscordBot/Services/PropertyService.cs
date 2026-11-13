@@ -8,7 +8,7 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Houses and apartments. Bought and sold with cash only, valued on a shared market index, and always rented out for an
+    /// Houses. Bought and sold with cash only, valued on a shared market index, and always rented out for an
     /// hourly income after the agency's cut. Holding costs apply every day.
     /// </summary>
     public class PropertyService
@@ -60,7 +60,7 @@ namespace DiscordBot.Services
         public PropertyHolding Get(CoinAccount account, int number)
         {
             if (account.Properties.Count == 0)
-                throw new BadInputException("You don't own any property. Buy one with `.buyproperty house` or `.buyproperty apartment`.");
+                throw new BadInputException("You don't own any property. Buy a house with `.buyproperty`.");
             if (number < 1 || number > account.Properties.Count)
                 throw new BadInputException($"Pick a number from 1 to {account.Properties.Count}.");
             return account.Properties[number - 1];
@@ -74,6 +74,14 @@ namespace DiscordBot.Services
             var data = _coinService.GetAll();
             long today = PropertyMarket.DayNumber(now);
             bool changed = false;
+
+            //apartments were removed; any still held from old saves are bought back
+            var boughtBack = BuyBackApartments(data);
+            if (boughtBack.Count > 0)
+            {
+                _news.Add("🏢 Apartments are gone, only houses now. Apartments were bought back at market price: " + string.Join(", ", boughtBack) + ".");
+                changed = true;
+            }
 
             if (data.LastPropertyDay != today)
             {
@@ -161,6 +169,26 @@ namespace DiscordBot.Services
         /// <summary>The property a squat is in. Squats saved before they named one are in the first property.</summary>
         public static string SquattedPropertyId(CoinAccount landlord, ActivePowerUp squat) =>
             squat.PropertyId ?? landlord.Properties.FirstOrDefault()?.Id;
+
+        /// <summary>
+        /// Removes every apartment (no longer sold) and pays its owner the full market price, with no selling costs. The money
+        /// pays debt first, into the jackpot. Returns one "name $amount" entry per owner paid.
+        /// </summary>
+        public static System.Collections.Generic.List<string> BuyBackApartments(CoinAccounts data)
+        {
+            var paid = new System.Collections.Generic.List<string>();
+            foreach (var account in data.Accounts)
+            {
+                var apartments = account.Properties.Where(p => p.Kind == PropertyKind.Apartment).ToList();
+                if (apartments.Count == 0) continue;
+
+                double amount = apartments.Sum(p => PropertyCatalog.Price(p.Kind, data.PropertyIndex));
+                account.Properties.RemoveAll(p => p.Kind == PropertyKind.Apartment);
+                account.NetWorth += data.PayDebtFrom(account, amount);
+                paid.Add($"{account.Name} ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}");
+            }
+            return paid;
+        }
 
         /// <summary>One day of holding costs (rates and maintenance) comes out of cash.</summary>
         public static void PayHoldingOneDay(CoinAccounts data)

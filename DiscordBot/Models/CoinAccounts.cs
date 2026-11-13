@@ -87,15 +87,15 @@ namespace DiscordBot.Models
             /// <summary>What the player lost on their last losing bet, and when (UTC ticks), for Time Machine.</summary>
             public double LastLossAmount { get; set; }
             public long LastLossUtcTicks { get; set; }
-            /// <summary>Houses and apartments the player owns. Bought with cash only.</summary>
+            /// <summary>Houses the player owns. Bought with cash only. Old saves may still hold apartments until they're bought back.</summary>
             public List<PropertyHolding> Properties { get; set; } = new List<PropertyHolding>();
 
             /// <summary>Money owed, from power-ups that take more than the player's cash. Counts against net worth and grows with interest.</summary>
             public double Debt { get; set; }
             /// <summary>When on (`.autosell on`), stocks and then property are sold every minute to pay off any debt (<see cref="Services.DebtService"/>).</summary>
             public bool AutoSellForDebt { get; set; }
-            /// <summary>Interest on debt every hour (about 27% a day compounded). High on purpose: pay it off.</summary>
-            public const double HourlyDebtInterest = 0.01;
+            /// <summary>Interest on debt every hour (it nearly doubles every 7 hours). High on purpose: pay it off.</summary>
+            public const double HourlyDebtInterest = 0.10;
 
             /// <summary>Debt after one hour of interest.</summary>
             public static double GrowDebtOneHour(double debt) =>

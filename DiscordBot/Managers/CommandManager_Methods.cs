@@ -462,16 +462,14 @@ namespace DiscordBot.Managers
             double index = data.PropertyIndex;
 
             string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices move about 0.5% a day at most, and the market runs in booms and busts.\n\n";
-            foreach (var kind in new[] { PropertyKind.House, PropertyKind.Apartment })
-            {
-                output += $"🏠 **{PropertyCatalog.DisplayName(kind)}**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(kind, index))} " +
-                    $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(kind, index))} to buy with stamp duty), " +
-                    $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(kind, index))} to sell, rent {PropertyCatalog.RentPerHour(kind, index):N2} an hour\n";
-            }
+            var house = PropertyKind.House;
+            output += $"🏠 **House**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(house, index))} " +
+                $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(house, index))} to buy with stamp duty), " +
+                $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(house, index))} to sell, rent {PropertyCatalog.RentPerHour(house, index):N2} an hour\n";
 
             output += "\n**Your property**\n";
             if (account.Properties.Count == 0)
-                output += "None yet. Buy one with `.buyproperty house` or `.buyproperty apartment`.\n";
+                output += "None yet. Buy a house with `.buyproperty`.\n";
             for (int i = 0; i < account.Properties.Count; i++)
             {
                 var property = account.Properties[i];
@@ -488,7 +486,12 @@ namespace DiscordBot.Managers
 
         private async Task BuyProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count != 1 || !TryParsePropertyKind(args[0], out PropertyKind kind)) throw new BadSyntaxException();
+            //houses are the only kind now; "house" is still accepted
+            if (args.Count > 1) throw new BadSyntaxException();
+            if (args.Count == 1 && args[0].StartsWith("ap", StringComparison.OrdinalIgnoreCase))
+                throw new BadInputException("Apartments are gone: there are only houses now. Buy one with `.buyproperty`.");
+            if (args.Count == 1 && !args[0].Equals("house", StringComparison.OrdinalIgnoreCase)) throw new BadSyntaxException();
+            var kind = PropertyKind.House;
             EnsureNotBettingForProperty(message);
 
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
@@ -527,7 +530,7 @@ namespace DiscordBot.Managers
             string debt = account.Debt > 0 ? $"You owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "You have no debt.";
             string state = account.AutoSellForDebt
                 ? "💳 Auto-sell is **on**: while you owe money, your stocks and then property are sold within a minute to pay it off. `.autosell off` to stop."
-                : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make, and it grows 1% every hour. `.autosell on` to sell assets automatically to pay it off.";
+                : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make, and it grows 10% every hour. `.autosell on` to sell assets automatically to pay it off.";
             await message.Channel.SendMessageAsync($"{message.Author.Mention} {state} {debt}");
         }
 
@@ -535,16 +538,6 @@ namespace DiscordBot.Managers
         private async Task RentingIsAutomatic(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             await message.Channel.SendMessageAsync("Every property is rented out automatically now, so there's nothing to switch. See `.property` for your rent.");
-        }
-
-        private static bool TryParsePropertyKind(string text, out PropertyKind kind)
-        {
-            switch (text.ToLowerInvariant())
-            {
-                case "house": kind = PropertyKind.House; return true;
-                case "apartment": case "apt": kind = PropertyKind.Apartment; return true;
-                default: kind = default; return false;
-            }
         }
 
         private void EnsureNotBettingForProperty(SocketMessage message)
@@ -848,7 +841,7 @@ namespace DiscordBot.Managers
                     (squattersTake > 0 ? $" · squatters take ${FormatHelper.GetCommaNumber(squattersTake)} an hour" : "") + "\n";
             }
             if (account.Debt > 0)
-                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 1% every hour; paid off from any spare cash, and sales pay it off first; repayments go into the jackpot; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
+                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 10% every hour; paid off from any spare cash, and sales pay it off first; repayments go into the jackpot; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
             output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
             if (holdings.Count > 0)
             {

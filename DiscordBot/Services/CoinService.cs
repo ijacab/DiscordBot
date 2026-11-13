@@ -54,7 +54,7 @@ namespace DiscordBot.Services
             _coinAccounts.LastActiveChannelId = channelId;
         }
 
-        /// <summary>What the player's houses and apartments would sell for right now, after selling costs.</summary>
+        /// <summary>What the player's houses would sell for right now, after selling costs.</summary>
         public double PropertyValue(CoinAccount account) =>
             account.Properties.Sum(p => PropertyCatalog.SaleValue(p.Kind, _coinAccounts.PropertyIndex));
 

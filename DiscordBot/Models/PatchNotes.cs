@@ -22,6 +22,8 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-13", "Debt now grows 10% every hour. Pay it off fast, or turn on `.autosell`."),
+            new PatchNote("2026-11-13", "Only houses now: apartments are gone, and any you owned were bought back at full market price. `.buyproperty` buys a house."),
             new PatchNote("2026-11-13", "`.networth` takes a time window like `.stocks`: `.nw 48h`, `.nw @person 7d`, `.nw all 24h`."),
             new PatchNote("2026-11-13", "Debt you pay off goes into the jackpot."),
             new PatchNote("2026-11-12", "Debt now grows 1% every hour. Pay it off or turn on `.autosell`."),

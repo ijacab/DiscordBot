@@ -43,7 +43,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           hourly rubber-banded raffle; the power-up won goes off straight away (kept for `.pu use` if it can't)
-    PropertyService.cs         houses and apartments: buy/sell with cash, letting out, daily market step and rent
+    PropertyService.cs         houses: buy/sell with cash, rent, daily market step; buys back old apartments
     DebtService.cs             `.autosell`: sells stocks, then property, every minute to pay off debt
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
@@ -68,7 +68,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts
-    Property.cs                house/apartment prices, costs, rent and the shared market index
+    Property.cs                house prices, costs, rent and the shared market index (apartments: old saves only)
     ConvoService/LLMOptions.cs
     DuckDuckGoService/         ImageResult, ImageSearch
   Installers/OllamaInstaller.cs

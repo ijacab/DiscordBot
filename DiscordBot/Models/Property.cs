@@ -7,6 +7,7 @@ namespace DiscordBot.Models
     public enum PropertyKind
     {
         House,
+        /// <summary>No longer sold. Kept so old saves load; <see cref="Services.PropertyService.BuyBackApartments"/> pays them out.</summary>
         Apartment
     }
 

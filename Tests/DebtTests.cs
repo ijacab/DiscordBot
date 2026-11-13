@@ -82,14 +82,34 @@ namespace Tests
         }
 
         [Fact]
-        public void Debt_GrowsOnePercentAnHour()
+        public void Debt_GrowsTenPercentAnHour()
         {
-            Assert.Equal(1_010, CoinAccount.GrowDebtOneHour(1_000), 2);
+            Assert.Equal(1_100, CoinAccount.GrowDebtOneHour(1_000), 2);
 
             double debt = 1_000;
-            for (int hour = 0; hour < 24; hour++)
+            for (int hour = 0; hour < 7; hour++)
                 debt = CoinAccount.GrowDebtOneHour(debt);
-            Assert.InRange(debt, 1_269, 1_270.5); //about 27% a day left alone
+            Assert.InRange(debt, 1_948, 1_949); //nearly doubles in 7 hours left alone
+        }
+
+        [Fact]
+        public void BuyBackApartments_PaysFullPriceDebtFirstAndKeepsHouses()
+        {
+            var data = new CoinAccounts { PropertyIndex = 1.0, JackpotPool = 0 };
+            var owner = new CoinAccount { UserId = 1, Name = "owner", NetWorth = 0, Debt = 20_000 };
+            owner.Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            owner.Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            data.Accounts.Add(owner);
+
+            var paid = PropertyService.BuyBackApartments(data);
+
+            double price = PropertyCatalog.Price(PropertyKind.Apartment, 1.0);
+            Assert.Single(paid);
+            Assert.Equal(PropertyKind.House, owner.Properties.Single().Kind);
+            Assert.Equal(0, owner.Debt);
+            Assert.Equal(price - 20_000, owner.NetWorth, 2);
+            Assert.Equal(20_000, data.JackpotPool, 2);
+            Assert.Empty(PropertyService.BuyBackApartments(data)); //nothing left to buy back
         }
 
         [Fact]
