@@ -646,12 +646,36 @@ namespace DiscordBot.Managers
         //circles matching StockChart.SeriesColors, in the same order
         private static readonly string[] _seriesDots = { "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚪", "🟤" };
 
+        private static readonly TimeSpan _netWorthSample = TimeSpan.FromHours(1);
+
+        /// <summary>
+        /// The newest points covering <paramref name="window"/> (all of them when null), as the stock graphs do. Sets
+        /// <paramref name="note"/> when there isn't that much history yet.
+        /// </summary>
+        public static List<double> TakeWindow(List<double> points, TimeSpan? window, TimeSpan interval, out string note)
+        {
+            note = "";
+            if (!window.HasValue) return points;
+            int wanted = (int)Math.Max(2, window.Value.Ticks / interval.Ticks + 1);
+            if (wanted < points.Count) return points.Skip(points.Count - wanted).ToList();
+            if (wanted > points.Count) note = $" (only {StockChart.FormatSpan(points.Count, interval)} of history so far)";
+            return points;
+        }
+
         private async Task NetWorthGraph(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            //an optional time window like 48h or 7d goes last, as on .stocks
+            TimeSpan? window = null;
+            if (args.Count > 0 && DurationParser.TryParse(args[args.Count - 1], out TimeSpan parsed))
+            {
+                window = parsed;
+                args = args.Take(args.Count - 1).ToList();
+            }
+
             if (args.Count > 1) throw new BadSyntaxException();
             if (args.Count == 1 && args[0].Equals("all", StringComparison.OrdinalIgnoreCase))
             {
-                await NetWorthGraphAll(message);
+                await NetWorthGraphAll(message, window);
                 return;
             }
 
@@ -678,13 +702,14 @@ namespace DiscordBot.Managers
 
             //history is sampled hourly, so end the line at the current value
             double current = account.NetWorth + _stockService.GetPortfolioValue(account.UserId) + _coinService.PropertyValue(account) - account.Debt;
-            var points = account.NetWorthHistory.Append(current).ToList();
-            TimeSpan interval = TimeSpan.FromHours(1);
+            TimeSpan interval = _netWorthSample;
+            var points = TakeWindow(account.NetWorthHistory.Append(current).ToList(), window, interval, out string windowNote);
 
             double first = points[0];
             double change = first == 0 ? 0 : (current - first) / first * 100;
             string output = $"Net worth (cash + stocks + property): ${FormatHelper.GetCommaNumber(current)}\n" +
-                $"{change:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(points.Count, interval)} | low ${FormatHelper.GetCommaNumber(points.Min())} | high ${FormatHelper.GetCommaNumber(points.Max())}";
+                $"{change:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(points.Count, interval)}{windowNote} | low ${FormatHelper.GetCommaNumber(points.Min())} | high ${FormatHelper.GetCommaNumber(points.Max())}\n" +
+                "*Sampled once an hour, newest on the right. Add a time like `48h` or `7d` to change the window.*";
 
             using var chart = StockChart.RenderPng(points, interval);
             var embed = DiscordHelper.GetEmbedBuilder($"{account.Name} net worth", output)
@@ -694,7 +719,7 @@ namespace DiscordBot.Managers
         }
 
         /// <summary>Every account's net worth on one chart, each in its own colour, with a legend ranked by current worth.</summary>
-        private async Task NetWorthGraphAll(SocketMessage message)
+        private async Task NetWorthGraphAll(SocketMessage message, TimeSpan? window)
         {
             var ranked = _coinService.GetAll().Accounts
                 .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt))
@@ -707,7 +732,7 @@ namespace DiscordBot.Managers
             }
 
             //each line ends at the current value, like the single account graph
-            var series = ranked.Select(x => x.Account.NetWorthHistory.Append(x.Current).ToList()).ToList();
+            var series = ranked.Select(x => TakeWindow(x.Account.NetWorthHistory.Append(x.Current).ToList(), window, _netWorthSample, out _)).ToList();
 
             var lines = new List<string>();
             for (int i = 0; i < ranked.Count; i++)
@@ -719,12 +744,15 @@ namespace DiscordBot.Managers
                 lines.Add($"{dot} **{account.Name}** ${FormatHelper.GetCommaNumber(current)} ({change:+0.00;-0.00;0.00}%)");
             }
 
-            string output = $"Net worth (cash + stocks), newest on the right. % is change over each person's own history.\n" +
+            string span = window.HasValue
+                ? $"the last {StockChart.FormatSpan(series.Max(s => s.Count), _netWorthSample)} (or each person's own history if shorter)"
+                : "each person's own history";
+            string output = $"Net worth (cash + stocks + property), newest on the right. % is change over {span}. Add a time like `48h` to change the window.\n" +
                 string.Join("\n", lines);
             if (ranked.Count > _seriesDots.Length)
                 output += $"\n*Colours repeat after {_seriesDots.Length} people.*";
 
-            using var chart = StockChart.RenderMultiPng(series, TimeSpan.FromHours(1));
+            using var chart = StockChart.RenderMultiPng(series, _netWorthSample);
             var embed = DiscordHelper.GetEmbedBuilder("Everyone's net worth", output)
                 .WithImageUrl("attachment://networth.png")
                 .Build();
