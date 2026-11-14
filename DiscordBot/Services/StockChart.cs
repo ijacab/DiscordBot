@@ -93,19 +93,27 @@ namespace DiscordBot.Services
             int highIndex = IndexOfExtreme(prices, highest: true);
             int lowIndex = IndexOfExtreme(prices, highest: false);
 
-            int highX = XOf(highIndex), highY = YOf(prices[highIndex]);
-            FillCircle(image, highX, highY, 3, _markerColor);
-            string highLabel = PriceWithChange(prices[highIndex], current);
-            int highTop = highY - 12 - LabelHeight;
-            if (highTop < 2) highTop = highY + 10; //no room above, so put it below the point
-            DrawLabel(image, highLabel, highX - TextWidth(highLabel) / 2, highTop, plotLeft);
+            //a high or low that is the newest point is already shown by the "now" label, so it isn't labelled twice
+            int newest = prices.Count - 1;
+            if (highIndex != newest)
+            {
+                int highX = XOf(highIndex), highY = YOf(prices[highIndex]);
+                FillCircle(image, highX, highY, 3, _markerColor);
+                string highLabel = PriceWithChange(prices[highIndex], current);
+                int highTop = highY - 12 - LabelHeight;
+                if (highTop < 2) highTop = highY + 10; //no room above, so put it below the point
+                DrawLabel(image, highLabel, highX - TextWidth(highLabel) / 2, highTop, plotLeft);
+            }
 
-            int lowX = XOf(lowIndex), lowY = YOf(prices[lowIndex]);
-            FillCircle(image, lowX, lowY, 3, _markerColor);
-            string lowLabel = PriceWithChange(prices[lowIndex], current);
-            int lowTop = lowY + 10;
-            if (lowTop + LabelHeight + LabelPadding > _plotBottom + 10) lowTop = lowY - 12 - LabelHeight; //would run into the time labels, so put it above the point
-            DrawLabel(image, lowLabel, lowX - TextWidth(lowLabel) / 2, lowTop, plotLeft);
+            if (lowIndex != newest)
+            {
+                int lowX = XOf(lowIndex), lowY = YOf(prices[lowIndex]);
+                FillCircle(image, lowX, lowY, 3, _markerColor);
+                string lowLabel = PriceWithChange(prices[lowIndex], current);
+                int lowTop = lowY + 10;
+                if (lowTop + LabelHeight + LabelPadding > _plotBottom + 10) lowTop = lowY - 12 - LabelHeight; //would run into the time labels, so put it above the point
+                DrawLabel(image, lowLabel, lowX - TextWidth(lowLabel) / 2, lowTop, plotLeft);
+            }
 
             //current value, drawn last so it sits on top of the line
             int lastX = XOf(prices.Count - 1);

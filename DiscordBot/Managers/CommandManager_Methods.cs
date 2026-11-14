@@ -389,46 +389,50 @@ namespace DiscordBot.Managers
             }
         }
 
-        private static readonly TimeSpan _stockTick = TimeSpan.FromMinutes(5);
-
         /// <summary>
         /// Graph of one stock. <paramref name="window"/> limits it to the most recent stretch of history; a window longer than
         /// the history kept shows all of it. The line colour is always the all-time change, not the window's.
         /// </summary>
         private static async Task StockGraph(SocketMessage message, Stock stock, TimeSpan? window = null)
         {
-            IReadOnlyList<double> history = stock.History;
-            if (history.Count < 2)
+            var card = StockTickerCard.Build(stock, window);
+            if (card.Png == null)
             {
                 await message.SendRichEmbedMessage(stock.Name, "Not enough price history yet. Check back after a few ticks.");
                 return;
             }
 
-            string windowNote = "";
-            if (window.HasValue)
-            {
-                int points = (int)Math.Max(2, window.Value.Ticks / _stockTick.Ticks + 1);
-                if (points < history.Count)
-                    history = history.Skip(history.Count - points).ToList();
-                else if (points > history.Count)
-                    windowNote = $" (only {StockChart.FormatSpan(history.Count, _stockTick)} of history so far)";
-            }
-
-            double first = history[0];
-            double last = history[history.Count - 1];
-            double windowChange = first <= 0 ? 0 : (last - first) / first * 100;
-
-            string title = stock.TypeEmoji == null ? stock.Name : $"{stock.TypeEmoji} {stock.Name}";
-            string output = $"{title} ({stock.KindLabel}): ${stock.Price:N2}\n" +
-                $"{windowChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(history.Count, _stockTick)}{windowNote} | low ${history.Min():N2} | high ${history.Max():N2}\n" +
-                $"All time {stock.AllTimeChange:+0.00;-0.00;0.00}% (launched at ${stock.BasePrice:N2}), line is {(stock.AllTimeChange >= 0 ? "green" : "red")} for that.\n" +
-                "*Each point is one 5 minute price tick, newest on the right. Add a time like `48h` to change the window.*";
-
-            using var chart = StockChart.RenderPng(history, _stockTick, StockChart.ColourForChange(stock.AllTimeChange));
-            var embed = DiscordHelper.GetEmbedBuilder($"{stock.Symbol} price history", output)
+            using var chart = new MemoryStream(card.Png);
+            var embed = DiscordHelper.GetEmbedBuilder(card.Title, card.Text)
                 .WithImageUrl("attachment://stock.png")
                 .Build();
             await message.Channel.SendFileAsync(chart, "stock.png", embed: embed);
+        }
+
+        private async Task StocksThread(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count > 1 || args.Count == 1 && !args[0].Equals("stop", StringComparison.OrdinalIgnoreCase))
+                throw new BadSyntaxException();
+            if (message.Channel is IThreadChannel || message.Channel is not ITextChannel channel)
+                throw new BadInputException("Run `.stocksthread` in a normal server text channel, not a thread or DM.");
+
+            if (args.Count == 1)
+            {
+                bool stopped = await _stockThreadService.StopAsync(client, channel.Guild);
+                await message.Channel.SendMessageAsync(stopped ? "Live stock tickers stopped." : "There's no live stock thread in this server.");
+                return;
+            }
+
+            IThreadChannel thread;
+            try
+            {
+                thread = await _stockThreadService.StartAsync(client, channel);
+            }
+            catch (Discord.Net.HttpException ex) when (ex.HttpCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                throw new BadInputException("I need the Create Public Threads and Send Messages in Threads permissions here.");
+            }
+            await message.Channel.SendMessageAsync($"Live tickers are in <#{thread.Id}>. They update every 5 minutes.");
         }
 
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)

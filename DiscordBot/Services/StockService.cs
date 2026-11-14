@@ -3,6 +3,7 @@ using DiscordBot.Exceptions;
 using DiscordBot.Models;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
@@ -48,6 +49,21 @@ namespace DiscordBot.Services
                 Save();
             }
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Copies of every stock in <c>.stocks</c> order, with the tick they show, taken under the lock so drawing charts
+        /// never races a tick or a trade.
+        /// </summary>
+        public (List<Stock> Stocks, long Slot) SnapshotForCharts()
+        {
+            lock (_lock)
+            {
+                var copies = StockTickerCard.Ordered(_market.Stocks)
+                    .Select(s => JsonConvert.DeserializeObject<Stock>(JsonConvert.SerializeObject(s)))
+                    .ToList();
+                return (copies, _market.LastTickSlot);
+            }
         }
 
         public double GetPortfolioValue(ulong userId)

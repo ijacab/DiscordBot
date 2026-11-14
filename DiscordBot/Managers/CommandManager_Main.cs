@@ -24,6 +24,7 @@ namespace DiscordBot.Managers
         private readonly RaffleService _raffleService;
         private readonly PropertyService _propertyService;
         private readonly DebtService _debtService;
+        private readonly StockThreadService _stockThreadService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
@@ -52,7 +53,7 @@ namespace DiscordBot.Managers
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
-            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, DuckDuckGoService duckDuckGoService, FaceService faceService,
+            MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
@@ -65,6 +66,7 @@ namespace DiscordBot.Managers
             _raffleService = raffleService;
             _propertyService = propertyService;
             _debtService = debtService;
+            _stockThreadService = stockThreadService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
             _blackjackManager = blackjackManager;
@@ -99,6 +101,7 @@ namespace DiscordBot.Managers
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
                 new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
                 new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock over a time window. Prices change every 5 minutes. Higher risk tiers (3-6) swing more, 6 is crypto. Graphs are green above the launch price and red below.", Syntax = "`.stocks`, `.stocks SYMBOL` or `.stocks SYMBOL 48h`" },
+                new Command("stocksthread", StocksThread) { Description = "Opens a thread here with live stock tickers: each stock over all time, then each over the last hour. Updates every 5 minutes. One per server; running it again moves it.", Syntax = "`.stocksthread` or `.stocksthread stop`" },
                 new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SYMBOL 10` or `.buy SYMBOL max`" },
                 new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SYMBOL 10`, `.sell SYMBOL all` or `.sell SYMBOL max`" },
                 new Command("short", ShortStock) { Description = "Sells borrowed shares, locking the sale value as margin. You profit if the price falls. At 2x the entry price you lose the margin.", Syntax = "`.short SYMBOL 10` or `.short SYMBOL max`" },
@@ -287,6 +290,9 @@ namespace DiscordBot.Managers
             Task stockTask = _stockService.TickIfDue();
             Task propertyTask = _propertyService.TickIfDue();
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
+
+            //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
+            _ = _stockThreadService.RefreshIfDue(client);
 
             //market headlines when a crash starts, bottoms out, recovers or ends
             foreach (var headline in _propertyService.TakeNews())

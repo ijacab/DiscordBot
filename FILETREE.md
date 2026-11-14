@@ -47,6 +47,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     DebtService.cs             `.autosell`: sells stocks, then property, every minute to pay off debt
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
+    StockTickerCard.cs         one stock's graph + stats over a window (`.stocks SYMBOL`, live tickers)
+    StockThreadService.cs      `.stocksthread`: live ticker thread per server, refreshed each stock tick (stockthreads.json)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
     DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player (HP, floor pips, potions)
@@ -65,6 +67,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
+    StockThread.cs             saved `.stocksthread` state: thread, header and ticker message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts
