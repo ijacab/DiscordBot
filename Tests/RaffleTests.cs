@@ -65,10 +65,10 @@ namespace Tests
         }
 
         [Fact]
-        public void Draw_OnlyEntersPlayersActiveInTheHourBefore()
+        public void Draw_OnlyEntersPlayersActiveInTheSixHoursBefore()
         {
             var stale = Account(1, active: false);
-            var old = Account(2); old.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(61)).Ticks;
+            var old = Account(2); old.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(6 * 60 + 1)).Ticks;
             var fresh = Account(3);
             var service = Service(stale, old, fresh);
 
@@ -80,10 +80,23 @@ namespace Tests
         }
 
         [Fact]
+        public void OneAction_EntersTheNextSixDraws()
+        {
+            //acted at 11:30: entered in the 12:00 to 17:00 draws, not the 18:00 one
+            var player = Account(1); player.LastActiveUtcTicks = Now.AddMinutes(-30).Ticks;
+            for (int hour = 0; hour < 6; hour++)
+                Assert.True(RaffleService.IsEnteredIn(player, Now.AddHours(hour)));
+            Assert.False(RaffleService.IsEnteredIn(player, Now.AddHours(6)));
+            Assert.Equal(6, RaffleService.EnteredDrawCount(player, Now.AddMinutes(-30)));
+            Assert.Equal(1, RaffleService.EnteredDrawCount(player, Now.AddHours(4).AddMinutes(10)));
+            Assert.Equal(0, RaffleService.EnteredDrawCount(new CoinAccount(), Now));
+        }
+
+        [Fact]
         public void Draw_IsMeasuredFromTheDrawTimeNotWhenTheLoopRuns()
         {
-            //acted 59 minutes before the 12:00 draw, which the minute loop only got to at 12:02
-            var player = Account(1); player.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(59)).Ticks;
+            //acted 5h59m before the 12:00 draw, which the minute loop only got to at 12:02
+            var player = Account(1); player.LastActiveUtcTicks = (Now - TimeSpan.FromMinutes(5 * 60 + 59)).Ticks;
             Assert.NotNull(Service(player).Draw(Now.AddMinutes(2), () => 0));
 
             //acted at 12:01, after the 12:00 draw ran: entered in the 13:00 one

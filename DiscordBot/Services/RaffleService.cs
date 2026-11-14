@@ -11,7 +11,7 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// A raffle every hour. Anyone who did something with money in the hour before the draw is entered, and the winner's
+    /// A raffle every hour. Anyone who did something with money in the 6 hours before the draw is entered, and the winner's
     /// power-up goes off the moment it's won (one that can't be used right then is kept for `.pu use`). The draw rubber-bands like kart racing items: the top of the leaderboard only draws boosts,
     /// and the further down you are the more likely attacks and catch-up items are (more so when 1st place runs away).
     /// Also handles using held power-ups.
@@ -20,7 +20,7 @@ namespace DiscordBot.Services
     {
         public const int SlotMinutes = 60;
         /// <summary>A money action within this long before a draw enters you in it.</summary>
-        public static readonly TimeSpan EntryWindow = TimeSpan.FromHours(1);
+        public static readonly TimeSpan EntryWindow = TimeSpan.FromHours(6);
         /// <summary>Players count as active for attack and sharing pools (Pickpocket, Robin Hood, Tax the Rich...) for this long.</summary>
         public static readonly TimeSpan ActiveWindow = TimeSpan.FromHours(24);
         private static readonly Random _random = new Random();
@@ -52,11 +52,25 @@ namespace DiscordBot.Services
             DateTimeOffset.FromUnixTimeSeconds(SlotOf(utc) * SlotMinutes * 60L).UtcDateTime;
 
         /// <summary>
-        /// Entered in the draw due at <paramref name="drawTime"/>: a money action in the hour before it. Measured from the
+        /// Entered in the draw due at <paramref name="drawTime"/>: a money action in the 6 hours before it. Measured from the
         /// draw's due time, not the minute the loop gets to it, so acting just after a draw still enters you in the next.
         /// </summary>
         public static bool IsEnteredIn(CoinAccount account, DateTime drawTime) =>
             account.LastActiveUtcTicks > 0 && drawTime.Ticks - account.LastActiveUtcTicks <= EntryWindow.Ticks;
+
+        /// <summary>When the last money action stops entering the player in draws.</summary>
+        public static DateTime EntryEndsUtc(CoinAccount account) =>
+            new DateTime(account.LastActiveUtcTicks + EntryWindow.Ticks, DateTimeKind.Utc);
+
+        /// <summary>How many draws from the next one on the player is entered in without doing anything else.</summary>
+        public static int EnteredDrawCount(CoinAccount account, DateTime now)
+        {
+            if (account.LastActiveUtcTicks <= 0) return 0;
+            int count = 0;
+            for (DateTime draw = NextRaffleUtc(now); IsEnteredIn(account, draw); draw = draw.AddMinutes(SlotMinutes))
+                count++;
+            return count;
+        }
 
         public static bool IsActive(CoinAccount account, DateTime now) =>
             account.LastActiveUtcTicks > 0 && now.Ticks - account.LastActiveUtcTicks < ActiveWindow.Ticks;

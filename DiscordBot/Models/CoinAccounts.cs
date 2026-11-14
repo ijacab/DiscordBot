@@ -78,7 +78,7 @@ namespace DiscordBot.Models
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
             public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
 
-            /// <summary>When (UTC ticks) the player last did something with money. Within the hour before a draw enters the raffle.</summary>
+            /// <summary>When (UTC ticks) the player last did something with money. Within 6 hours before a draw enters the raffle (RaffleService.EntryWindow).</summary>
             public long LastActiveUtcTicks { get; set; }
             /// <summary>Power-ups won in the raffle and not used yet.</summary>
             public List<HeldPowerUp> HeldPowerUps { get; set; } = new List<HeldPowerUp>();

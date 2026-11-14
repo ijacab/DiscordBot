@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-14", "One money action now enters you in every power-up draw for the next 6 hours, not just the next one."),
             new PatchNote("2026-11-14", "`.stocksthread` is bot admins only now, and the existing ticker threads were deleted."),
             new PatchNote("2026-11-14", "`.stocksthread` recent tickers now cover the last 3 hours instead of 1."),
             new PatchNote("2026-11-14", "`.stocksthread` opens a thread with live tickers for every stock: each over all time, then each over the last hour, updated every 5 minutes. `.stocksthread stop` ends it."),

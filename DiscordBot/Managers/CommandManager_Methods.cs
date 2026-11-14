@@ -974,9 +974,11 @@ namespace DiscordBot.Managers
 
             string output = "";
             string untilDraw = FormatRemaining(RaffleService.NextRaffleUtc(now) - now);
-            output += RaffleService.IsEnteredInNextDraw(account, now)
-                ? $"🎟️ **You're entered** in the raffle in {untilDraw}.\n"
-                : $"🎟️ **You're not entered** in the raffle in {untilDraw}. Do something with money (bets, trades, donations) in the hour before a draw to be entered.\n";
+            int draws = RaffleService.EnteredDrawCount(account, now);
+            output += draws > 0
+                ? $"🎟️ **You're entered** in the raffle in {untilDraw}" + (draws > 1 ? $" and the {draws - 1} after it" : "") +
+                    $" (until {FormatRemaining(RaffleService.EntryEndsUtc(account) - now)} from now). Any money action enters you for the next 6 hours.\n"
+                : $"🎟️ **You're not entered** in the raffle in {untilDraw}. Do something with money (bets, trades, donations) to be entered in every draw for the next 6 hours.\n";
             if (account.HeldPowerUps.Count == 0)
                 output += "You have no power-ups.\n";
             else
