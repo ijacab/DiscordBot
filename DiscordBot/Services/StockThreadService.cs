@@ -16,14 +16,15 @@ namespace DiscordBot.Services
 {
     /// <summary>
     /// <c>.stocksthread</c>: a thread of live stock tickers, one message per stock over all time, then one per stock over the
-    /// last hour, edited in place after every 5 minute stock tick. One thread per server. The thread and message ids are
+    /// last 3 hours, edited in place after every 5 minute stock tick. One thread per server. The thread and message ids are
     /// saved in stockthreads.json, so updates carry on after a restart or deploy.
     /// </summary>
     public class StockThreadService
     {
         private const string _fileName = "stockthreads.json";
         public const string ThreadName = "📈 Live stocks";
-        public static readonly TimeSpan LastHour = TimeSpan.FromHours(1);
+        /// <summary>The window of the second set of tickers.</summary>
+        public static readonly TimeSpan RecentWindow = TimeSpan.FromHours(3);
 
         private readonly LocalFileService _fileService;
         private readonly StockService _stockService;
@@ -246,19 +247,19 @@ namespace DiscordBot.Services
         private static (Embed Embed, FileAttachment? File) Render(Stock stock, bool lastHour, long slot)
         {
             var card = lastHour
-                ? StockTickerCard.Build(stock, LastHour, colourByWindow: true, footer: "*Live: the last hour, one point per 5 minute tick.*")
+                ? StockTickerCard.Build(stock, RecentWindow, colourByWindow: true, footer: "*Live: the last 3 hours, one point per 5 minute tick.*")
                 : StockTickerCard.Build(stock, null, footer: "*Live: all the history kept, one point per 5 minute tick.*");
-            string title = $"{stock.Symbol} · {(lastHour ? "last hour" : "all time")}";
+            string title = $"{stock.Symbol} · {(lastHour ? "last 3 hours" : "all time")}";
             var builder = DiscordHelper.GetEmbedBuilder(title, card.Text);
             if (card.Png == null) return (builder.Build(), null);
 
-            string fileName = $"{stock.Symbol.ToLowerInvariant()}-{(lastHour ? "1h" : "all")}-{slot}.png";
+            string fileName = $"{stock.Symbol.ToLowerInvariant()}-{(lastHour ? "3h" : "all")}-{slot}.png";
             builder.WithImageUrl($"attachment://{fileName}");
             return (builder.Build(), new FileAttachment(new MemoryStream(card.Png), fileName));
         }
 
         private static string HeaderText() =>
-            $"**Live stock tickers**, updated every 5 minutes. Each stock over all time, then each over the last hour. Last update <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>.";
+            $"**Live stock tickers**, updated every 5 minutes. Each stock over all time, then each over the last 3 hours. Last update <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>.";
 
         /// <summary>Posts a last message in an old ticker thread and archives it. Failures are ignored: it may already be gone.</summary>
         private async Task CloseQuietly(DiscordSocketClient client, ulong threadId, string note)

@@ -19,17 +19,17 @@ namespace Tests
         }
 
         [Fact]
-        public void LastHourCard_DrawsTheLastThirteenTicks()
+        public void RecentCard_DrawsTheLastThreeHoursOfTicks()
         {
-            var history = Enumerable.Range(1, 30).Select(i => (double)i).ToList();
-            var card = StockTickerCard.Build(WithHistory("ABC", history, 1), StockThreadService.LastHour, colourByWindow: true);
+            var history = Enumerable.Range(1, 60).Select(i => (double)i).ToList();
+            var card = StockTickerCard.Build(WithHistory("ABC", history, 1), StockThreadService.RecentWindow, colourByWindow: true);
 
             Assert.NotNull(card.Png);
-            Assert.Equal(13, card.Points.Count);
-            Assert.Equal(18, card.Points[0]);
-            Assert.Equal(30, card.Points.Last());
-            double change = (30.0 - 18) / 18 * 100;
-            Assert.Contains($"{change:+0.00;-0.00;0.00}% over the last 1h 0m", card.Text);
+            Assert.Equal(37, card.Points.Count); //36 five-minute ticks plus the starting point
+            Assert.Equal(24, card.Points[0]);
+            Assert.Equal(60, card.Points.Last());
+            double change = (60.0 - 24) / 24 * 100;
+            Assert.Contains($"{change:+0.00;-0.00;0.00}% over the last 3h 0m", card.Text);
         }
 
         [Fact]
@@ -44,18 +44,19 @@ namespace Tests
         [Fact]
         public void OnePoint_HasNoChart()
         {
-            var card = StockTickerCard.Build(WithHistory("ABC", new[] { 5.0 }, 5), StockThreadService.LastHour, colourByWindow: true);
+            var card = StockTickerCard.Build(WithHistory("ABC", new[] { 5.0 }, 5), StockThreadService.RecentWindow, colourByWindow: true);
             Assert.Null(card.Png);
             Assert.Contains("Not enough price history yet", card.Text);
         }
 
         [Fact]
-        public void LastHourLine_FollowsTheHourNotAllTime()
+        public void RecentLine_FollowsTheWindowNotAllTime()
         {
-            //launched at 100, down at 50 now, but up over the last hour
-            var history = Enumerable.Repeat(90.0, 20).Concat(Enumerable.Range(0, 13).Select(i => 40.0 + i * 10.0 / 12)).ToList();
+            //launched at 100, down at 50 now, but up over the last 3 hours
+            var history = Enumerable.Repeat(90.0, 20).Concat(Enumerable.Range(0, 37).Select(i => 40.0 + i * 10.0 / 36)).ToList();
             var stock = WithHistory("ABC", history, 100);
-            var hour = StockTickerCard.Window(stock.History, StockThreadService.LastHour);
+            var hour = StockTickerCard.Window(stock.History, StockThreadService.RecentWindow);
+            Assert.Equal(37, hour.Count);
 
             Assert.True(stock.AllTimeChange < 0);
             Assert.Equal(StockChart.ColourForChange(1), StockTickerCard.LineColourFor(stock, hour, colourByWindow: true));

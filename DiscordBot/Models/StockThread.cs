@@ -17,7 +17,7 @@ namespace DiscordBot.Models
         public ulong ThreadId { get; set; }
         /// <summary>The first message, holding the last-update time.</summary>
         public ulong HeaderMessageId { get; set; }
-        /// <summary>The ticker messages in thread order: every stock's all-time ticker, then every stock's last-hour ticker.</summary>
+        /// <summary>The ticker messages in thread order: every stock's all-time ticker, then every stock's last-3-hours ticker.</summary>
         public List<TickerMessage> Tickers { get; set; } = new List<TickerMessage>();
         /// <summary>The stock tick the tickers last showed (<see cref="StockMarket.LastTickSlot"/>).</summary>
         public long LastSlot { get; set; }
@@ -44,7 +44,7 @@ namespace DiscordBot.Models
     public class TickerMessage
     {
         public string Symbol { get; set; }
-        /// <summary>True for the last-hour ticker, false for the all-time one.</summary>
+        /// <summary>True for the recent ticker (the last 3 hours, <see cref="Services.StockThreadService.RecentWindow"/>), false for the all-time one. Named from when it was 1 hour; kept so saved threads load.</summary>
         public bool LastHour { get; set; }
         public ulong MessageId { get; set; }
     }
