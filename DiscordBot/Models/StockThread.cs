@@ -7,6 +7,12 @@ namespace DiscordBot.Models
     public class StockThreads
     {
         public List<LiveStockThread> Threads { get; set; } = new List<LiveStockThread>();
+
+        /// <summary>Bumped when every old ticker thread should be deleted once; see <see cref="CurrentCleanupVersion"/>.</summary>
+        public int CleanupVersion { get; set; }
+
+        /// <summary>1: delete every ticker thread made before the command became admin-only.</summary>
+        public const int CurrentCleanupVersion = 1;
     }
 
     public class LiveStockThread

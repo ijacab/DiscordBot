@@ -107,6 +107,18 @@ namespace Tests
         }
 
         [Fact]
+        public void OldSaves_StillNeedTheThreadCleanUp()
+        {
+            //stockthreads.json written before the clean-up existed has no CleanupVersion
+            var old = JsonConvert.DeserializeObject<StockThreads>("{\"Threads\":[{\"GuildId\":1,\"ThreadId\":2}]}");
+            Assert.True(old.CleanupVersion < StockThreads.CurrentCleanupVersion);
+
+            var done = new StockThreads { CleanupVersion = StockThreads.CurrentCleanupVersion };
+            var back = JsonConvert.DeserializeObject<StockThreads>(JsonConvert.SerializeObject(done));
+            Assert.Equal(StockThreads.CurrentCleanupVersion, back.CleanupVersion);
+        }
+
+        [Fact]
         public void State_RoundTripsThroughJson()
         {
             var state = new StockThreads();

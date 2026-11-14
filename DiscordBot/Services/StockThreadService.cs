@@ -48,6 +48,8 @@ namespace DiscordBot.Services
             await _gate.WaitAsync();
             try
             {
+                //old threads go first, so the clean-up never deletes the one about to be made
+                await CleanUpIfDue(client);
                 IThreadChannel thread = await channel.CreateThreadAsync(ThreadName, ThreadType.PublicThread, ThreadArchiveDuration.OneWeek);
                 var (stocks, slot) = _stockService.SnapshotForCharts();
                 var entry = new LiveStockThread { GuildId = channel.GuildId, ParentChannelId = channel.Id, ThreadId = thread.Id, LastSlot = slot };
@@ -58,7 +60,7 @@ namespace DiscordBot.Services
                 if (old != null)
                 {
                     _state.Threads.Remove(old);
-                    await CloseQuietly(client, old.ThreadId, $"This ticker moved to <#{thread.Id}>.");
+                    await DeleteQuietly(client, old.ThreadId);
                 }
                 _state.Threads.Add(entry);
                 Save();
@@ -70,7 +72,7 @@ namespace DiscordBot.Services
             }
         }
 
-        /// <summary>Stops the server's ticker thread. False if there wasn't one.</summary>
+        /// <summary>Stops the server's ticker thread and deletes it. False if there wasn't one.</summary>
         public async Task<bool> StopAsync(DiscordSocketClient client, IGuild guild)
         {
             await _gate.WaitAsync();
@@ -80,7 +82,7 @@ namespace DiscordBot.Services
                 if (entry == null) return false;
                 _state.Threads.Remove(entry);
                 Save();
-                await CloseQuietly(client, entry.ThreadId, "Live updates stopped. Use `.stocksthread` to start a new one.");
+                await DeleteQuietly(client, entry.ThreadId);
                 return true;
             }
             finally
@@ -98,6 +100,7 @@ namespace DiscordBot.Services
             if (!await _gate.WaitAsync(0)) return;
             try
             {
+                if (!await CleanUpIfDue(client)) return;
                 if (_state.Threads.Count == 0) return;
                 var (stocks, slot) = _stockService.SnapshotForCharts();
                 bool changed = false;
@@ -261,21 +264,97 @@ namespace DiscordBot.Services
         private static string HeaderText() =>
             $"**Live stock tickers**, updated every 5 minutes. Each stock over all time, then each over the last 3 hours. Last update <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>.";
 
-        /// <summary>Posts a last message in an old ticker thread and archives it. Failures are ignored: it may already be gone.</summary>
-        private async Task CloseQuietly(DiscordSocketClient client, ulong threadId, string note)
+        /// <summary>
+        /// Runs the one-off deletion of every old ticker thread if it hasn't run yet (<see cref="StockThreads.CleanupVersion"/>).
+        /// Returns false if it is still due because the bot isn't connected to its servers yet. Call with the gate held.
+        /// </summary>
+        private async Task<bool> CleanUpIfDue(DiscordSocketClient client)
         {
+            if (_state.CleanupVersion >= StockThreads.CurrentCleanupVersion) return true;
+            if (client.ConnectionState != ConnectionState.Connected || client.Guilds.Count == 0) return false;
+            await DeleteAllTickerThreads(client);
+            _state.Threads.Clear();
+            _state.CleanupVersion = StockThreads.CurrentCleanupVersion;
+            Save();
+            return true;
+        }
+
+        /// <summary>
+        /// Deletes every ticker thread the bot made in every server: the ones it tracks, plus any open or archived thread
+        /// it owns named <see cref="ThreadName"/>.
+        /// </summary>
+        private async Task DeleteAllTickerThreads(DiscordSocketClient client)
+        {
+            ulong botId = client.CurrentUser.Id;
+            var ids = new HashSet<ulong>(_state.Threads.Select(t => t.ThreadId));
+            foreach (SocketGuild guild in client.Guilds)
+            {
+                foreach (var thread in guild.ThreadChannels)
+                    if (IsOurs(thread, botId)) ids.Add(thread.Id);
+
+                foreach (var channel in guild.TextChannels.Where(c => c is not SocketThreadChannel))
+                {
+                    try
+                    {
+                        foreach (var thread in await channel.GetPublicArchivedThreadsAsync(100, null, null))
+                            if (IsOurs(thread, botId)) ids.Add(thread.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        //no Read Message History there, so the bot can't list its archived threads in that channel
+                        _logger.LogInformation($"Couldn't list archived threads in {channel.Name}: {ex.Message}");
+                    }
+                }
+            }
+
+            foreach (ulong id in ids)
+                await DeleteQuietly(client, id);
+            _logger.LogInformation($"Deleted {ids.Count} live stock thread(s).");
+        }
+
+        private static bool IsOurs(IThreadChannel thread, ulong botId) => thread.OwnerId == botId && thread.Name == ThreadName;
+
+        /// <summary>
+        /// Deletes a ticker thread. Without Manage Threads the bot can't delete a thread, so it deletes its own messages in
+        /// it and archives it instead. Failures are logged and ignored: it may already be gone.
+        /// </summary>
+        private async Task DeleteQuietly(DiscordSocketClient client, ulong threadId)
+        {
+            IThreadChannel thread;
             try
             {
-                if (await client.GetChannelAsync(threadId) is IThreadChannel thread)
-                {
-                    if (thread.IsArchived) await thread.ModifyAsync(p => p.Archived = false);
-                    await thread.SendMessageAsync(note);
-                    await thread.ModifyAsync(p => p.Archived = true);
-                }
+                thread = await client.GetChannelAsync(threadId) as IThreadChannel;
+            }
+            catch (Exception)
+            {
+                return; //already gone
+            }
+            if (thread == null) return;
+
+            try
+            {
+                await thread.DeleteAsync();
+                return;
             }
             catch (Exception ex)
             {
-                _logger.LogInformation($"Couldn't close the old live stock thread {threadId}: {ex.Message}");
+                _logger.LogInformation($"Couldn't delete the live stock thread {threadId} ({ex.Message}), so emptying it instead.");
+            }
+
+            try
+            {
+                if (thread.IsArchived) await thread.ModifyAsync(p => p.Archived = false);
+                var messages = await thread.GetMessagesAsync(100).FlattenAsync();
+                foreach (var message in messages.Where(m => m.Author.Id == client.CurrentUser.Id))
+                {
+                    try { await message.DeleteAsync(); }
+                    catch (Exception) { /* already gone */ }
+                }
+                await thread.ModifyAsync(p => p.Archived = true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation($"Couldn't empty the live stock thread {threadId}: {ex.Message}");
             }
         }
 
