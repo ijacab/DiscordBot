@@ -24,7 +24,22 @@ namespace DiscordBot.Games.Managers
         {
         }
 
-        protected override MessageComponent ResultButtons => LobbyButtons("Play again…");
+        /// <summary>Play again deals a new game at once with the clicker's last bet; New bet… opens the amount form instead.</summary>
+        protected override MessageComponent ResultButtons => new ComponentBuilder()
+            .WithButton("Play again", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "again"), ButtonStyle.Success)
+            .WithButton("New bet…", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "join"), ButtonStyle.Secondary)
+            .Build();
+
+        /// <summary>
+        /// The bet for Play again: the player's last bet, raised to the minimum a game takes (10% of their cash) and held to what they
+        /// have. Null when they haven't finished a game since the bot started, or have no cash.
+        /// </summary>
+        public double? PlayAgainBet(ulong userId, double cash)
+        {
+            if (!TryGetLastBet(userId, out double last) || Math.Floor(cash) < 1)
+                return null;
+            return Math.Min(Math.Max(last, Math.Ceiling(cash * 0.10)), Math.Floor(cash));
+        }
 
         /// <summary>
         /// Each game's table: one message per channel the players joined from, edited in place from the lobby to the results

@@ -331,8 +331,9 @@ namespace DiscordBot.Managers
                 return;
             }
 
-            //the chart goes first, so it still arrives before the text if that gets split into more than one message
-            await SendMarketChart(message, market.Stocks);
+            //the chart goes first, so it still arrives before the text if that gets split into more than one message.
+            //gold and bonds barely move, so their flat lines are left off (their prices are in the list and `.stocks GOLD` still graphs them)
+            await SendMarketChart(message, market.Stocks.Where(s => s.Role == StockRole.Normal));
 
             string output = "";
             foreach (var tier in market.Stocks.Where(s => s.Role == StockRole.Normal).GroupBy(s => s.RiskTier).OrderBy(g => g.Key))
@@ -364,7 +365,7 @@ namespace DiscordBot.Managers
         /// <summary>
         /// Every stock's % change since its first kept tick, as one panel per stock in a single image (two per row), so
         /// prices of very different sizes are comparable. Each panel is labelled with its ticker.
-        /// Stocks with fewer than two ticks have nothing to draw and are left out.
+        /// Stocks with fewer than two ticks have nothing to draw and are left out, and so are the safe havens (gold and bonds).
         /// </summary>
         private static async Task SendMarketChart(SocketMessage message, IEnumerable<Stock> stocks)
         {

@@ -306,6 +306,22 @@ namespace DiscordBot.Managers
                 case "join":
                     await component.RespondWithModalAsync(AmountModal(Id(game, "joinamt"), $"Join {gameName}", "Your bet"));
                     return;
+                case "again":
+                {
+                    //Play again: a new game at once with your last bet. With no last bet to go on, ask for one
+                    CoinAccount account = await _coinService.Get(userId, component.User.Username);
+                    double? bet = blackjack ? _blackjackManager.PlayAgainBet(userId, account.NetWorth) : null;
+                    if (bet == null)
+                    {
+                        await component.RespondWithModalAsync(AmountModal(Id(game, "joinamt"), $"Join {gameName}", "Your bet"));
+                        return;
+                    }
+                    await component.DeferAsync();
+                    await _blackjackManager.CreateOrJoin(userId, bet.Value, context);
+                    await _blackjackManager.Start(userId, context);
+                    MarkActiveFromInteraction(component);
+                    return;
+                }
                 case "start":
                     await component.DeferAsync();
                     try

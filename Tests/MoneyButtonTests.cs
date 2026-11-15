@@ -137,6 +137,46 @@ namespace Tests
         }
 
         [Fact]
+        public async Task Blackjack_PlayAgainUsesTheLastBetRaisedToTheMinimumAndHeldToYourCash()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var bets = new BetManager(coins, new StockService(new LocalFileService(), coins), new AppSettings { PrestigeDisabled = true });
+            var blackjack = new BlackjackManager(new DiscordSocketClient(), bets, coins);
+            const ulong id = 920_301;
+            var account = new CoinAccount { UserId = id, Name = "again", NetWorth = 10_000 };
+            coins.GetAll().Accounts.Add(account);
+
+            var channel = new Mock<IMessageChannel>();
+            channel.SetupGet(c => c.Id).Returns(43);
+            var table = new Mock<IUserMessage>();
+            channel.Setup(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<Embed>(), It.IsAny<RequestOptions>(), It.IsAny<AllowedMentions>(),
+                    It.IsAny<MessageReference>(), It.IsAny<MessageComponent>(), It.IsAny<ISticker[]>(), It.IsAny<Embed[]>(), It.IsAny<MessageFlags>(), It.IsAny<PollProperties>()))
+                .ReturnsAsync(table.Object);
+            var context = new GameContext { UserId = id, Username = "again", Channel = channel.Object, GuildId = 7 };
+
+            Assert.Null(blackjack.PlayAgainBet(id, 10_000)); //no finished game yet
+
+            try
+            {
+                await blackjack.CreateOrJoin(id, 1_000, context);
+                await blackjack.Start(id, context);
+                if (blackjack.TryGetPlayer(id, out var player) && !player.IsFinishedPlaying)
+                    await blackjack.Stay(id, context);
+
+                Assert.True(blackjack.TryGetLastBet(id, out double last));
+                Assert.Equal(1_000, last);
+                Assert.Equal(1_000, blackjack.PlayAgainBet(id, 5_000)); //the same bet
+                Assert.Equal(3_000, blackjack.PlayAgainBet(id, 30_000)); //raised to 10% of a bigger bank
+                Assert.Equal(400, blackjack.PlayAgainBet(id, 400.9)); //held to what you have
+                Assert.Null(blackjack.PlayAgainBet(id, 0.5));
+            }
+            finally
+            {
+                bets.InitiatedBetUserIds.Remove(id);
+            }
+        }
+
+        [Fact]
         public void Blackjack_HasHitAndStayButtons()
         {
             var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });

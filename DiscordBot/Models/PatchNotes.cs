@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-15", "Blackjack's Play again button now deals a new game straight away with your last bet (no form). `.stocks` no longer graphs gold and bonds."),
             new PatchNote("2026-11-15", "New game: `.slots`, a slot machine with Spin / Bet / Max / Cash out buttons and animated reels. Three 💎 win the jackpot (x100 to x2000 your bet)."),
             new PatchNote("2026-11-15", "75% of every lost bet (and dungeon buy-ins) now goes into the jackpot, but each player only gets 2 jackpot rolls an hour. Face Off is excluded."),
             new PatchNote("2026-11-15", "Blackjack is one table message now, updated as you play: the lobby, the hands with Hit/Stay, then the results. Typed `.bj` commands are tidied away."),

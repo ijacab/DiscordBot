@@ -73,6 +73,11 @@ namespace DiscordBot.Games.Managers
         {
         }
 
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, double> _lastBets = new System.Collections.Concurrent.ConcurrentDictionary<ulong, double>();
+
+        /// <summary>The bet this player had in their last finished game (kept in memory), for Play again.</summary>
+        public bool TryGetLastBet(ulong userId, out double bet) => _lastBets.TryGetValue(userId, out bet);
+
         /// <summary>Component id prefix for this game's buttons: the base command, like "bj".</summary>
         public string ButtonPrefix => BaseCommand;
 
@@ -362,6 +367,8 @@ namespace DiscordBot.Games.Managers
                 Games.Remove(game);
 
                 var players = game.Players.Where(p => !p.IsDealer).ToList();
+                foreach (var p in players)
+                    _lastBets[p.UserId] = p.BetAmount;
                 await _betManager.ResolveBet(players, LossesFeedJackpot);
                 var results = new List<PlayerResult>();
                 foreach (var player in players)
