@@ -22,7 +22,7 @@ namespace DiscordBot.Games.Managers
         public double SessionNet { get; set; }
         public SlotSymbol[][] LastWindow { get; set; }
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
-        /// <summary>Held for the whole of a spin and its animation, so a double click can't start two.</summary>
+        /// <summary>Held for the whole of a spin, so a double click can't start two.</summary>
         public SemaphoreSlim Gate { get; } = new SemaphoreSlim(1, 1);
     }
 
@@ -34,15 +34,13 @@ namespace DiscordBot.Games.Managers
         public double TotalPaid { get; init; }
         public double Bonus { get; init; }
         public double Cash { get; init; }
-        /// <summary>Cash with the bet taken and nothing paid yet: what the machine shows while the reels spin.</summary>
-        public double CashWhileSpinning { get; init; }
         public string[] Notes { get; init; }
     }
 
     /// <summary>
     /// The slot machine's sessions and money. A spin takes the bet, spins and settles through <see cref="BetManager"/> before
-    /// anything is drawn, so a failed edit or a restart half-way through the animation can't lose money or leave a bet open.
-    /// The reels are then animated by editing one message. Losses go into the jackpot like any other bet, and three diamonds
+    /// anything is drawn, so a failed edit or a restart half-way through can't lose money or leave a bet open.
+    /// The result is then shown by editing one message, instantly. Losses go into the jackpot like any other bet, and three diamonds
     /// take the pool.
     /// </summary>
     public class SlotMachineManager
@@ -57,9 +55,6 @@ namespace DiscordBot.Games.Managers
         private readonly Random _random = new Random();
         private readonly Dictionary<ulong, SlotSession> _sessions = new Dictionary<ulong, SlotSession>(); //by machine message id
         private readonly object _sync = new object();
-
-        /// <summary>The pause between frames. Tests set it to nothing.</summary>
-        public TimeSpan FrameDelay { get; set; } = TimeSpan.FromMilliseconds(650);
 
         public SlotMachineManager(CoinService coinService, BetManager betManager, ILogger<SlotMachineManager> logger)
         {
@@ -135,7 +130,6 @@ namespace DiscordBot.Games.Managers
             double bet = ClampBet(session.Bet, account.NetWorth);
             session.Bet = bet;
             await _betManager.InitiateBet(account, bet);
-            double cashAfterBet = account.NetWorth;
 
             SlotResult result;
             double baseWinnings;
@@ -180,13 +174,12 @@ namespace DiscordBot.Games.Managers
                 TotalPaid = resolved.TotalWinnings,
                 Bonus = resolved.BonusWinnings,
                 Cash = account.NetWorth,
-                CashWhileSpinning = cashAfterBet,
                 Notes = notes.Where(n => n != null).ToArray(),
             };
         }
 
         /// <summary>
-        /// One spin on the machine message: settles first, then animates (all reels spinning, reel 1 locks, reel 2 locks, result).
+        /// One spin on the machine message: settles it, then shows the result with a single edit.
         /// Returns false if this machine is already spinning.
         /// </summary>
         public async Task<bool> Play(IUserMessage message, SlotSession session)
@@ -196,7 +189,7 @@ namespace DiscordBot.Games.Managers
             try
             {
                 SlotSpin spin = await Spin(session);
-                await Animate(message, session, spin);
+                await Show(message, session, spin);
                 return true;
             }
             finally
@@ -205,41 +198,9 @@ namespace DiscordBot.Games.Managers
             }
         }
 
-        private async Task Animate(IUserMessage message, SlotSession session, SlotSpin spin)
+        /// <summary>Shows the result in one edit of the machine message.</summary>
+        private async Task Show(IUserMessage message, SlotSession session, SlotSpin spin)
         {
-            try
-            {
-                for (int locked = 0; locked < SlotResult.Reels; locked++)
-                {
-                    var window = Enumerable.Range(0, SlotResult.Reels)
-                        .Select(reel => reel < locked ? spin.Result.Window[reel] : RandomReel(reel))
-                        .ToArray();
-                    var frame = new SlotScreen
-                    {
-                        Window = window,
-                        Status = SlotView.SpinningStatus(locked),
-                        Colour = Discord.Color.DarkGrey,
-                        Name = session.Name,
-                        Bet = spin.Bet,
-                        Cash = spin.CashWhileSpinning,
-                        Spins = session.Spins - 1,
-                        SessionNet = session.SessionNet - (spin.TotalPaid - spin.Bet),
-                    };
-                    await message.ModifyAsync(m =>
-                    {
-                        m.Embed = SlotView.Build(frame);
-                        m.Components = new ComponentBuilder().Build();
-                    });
-                    if (FrameDelay > TimeSpan.Zero)
-                        await Task.Delay(FrameDelay);
-                }
-            }
-            catch (Exception ex)
-            {
-                //the money is settled either way; the final frame below says how it went
-                _logger.LogWarning(ex, "Slot animation frame failed: {Message}", ex.Message);
-            }
-
             var (status, colour) = SlotView.Outcome(spin.Result, spin.Bet, spin.TotalPaid, spin.Bonus);
             var final = new SlotScreen
             {
@@ -275,12 +236,6 @@ namespace DiscordBot.Games.Managers
                     _sessions[posted.Id] = session;
                 }
             }
-        }
-
-        private SlotSymbol[] RandomReel(int reel)
-        {
-            int stop = _random.Next(SlotMachine.StripLength);
-            return Enumerable.Range(0, SlotResult.Rows).Select(row => SlotMachine.SymbolAt(reel, stop + row - SlotResult.PaylineRow)).ToArray();
         }
     }
 }

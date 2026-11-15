@@ -33,7 +33,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
-      SlotMachineManager.cs        slot sessions, spin settlement and reel animation
+      SlotMachineManager.cs        slot sessions, spin settlement and result display
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/

@@ -7,7 +7,7 @@ using System.Text;
 
 namespace DiscordBot.Games
 {
-    /// <summary>What the machine message shows at one moment. The manager builds one per animation frame.</summary>
+    /// <summary>What the machine message shows at one moment. The manager builds one per spin.</summary>
     public sealed class SlotScreen
     {
         /// <summary>[reel][row] as in <see cref="SlotResult.Window"/>, or null for a machine that hasn't spun yet.</summary>
@@ -71,9 +71,6 @@ namespace DiscordBot.Games
                 + $"🍒🍒 x{SlotMachine.TwoCherriesMultiple:0} · 🍒 on the left reel x{SlotMachine.LeftCherryMultiple:0}\n"
                 + $"💎💎💎 **JACKPOT**: takes the pool, from x{SlotMachine.JackpotFloorMultiple:0} up to x{SlotMachine.JackpotCapMultiple:0} your bet";
         }
-
-        public static string SpinningStatus(int stoppedReels) =>
-            stoppedReels == 0 ? "🎰 Spinning…" : stoppedReels == 1 ? "🎰 Reel 1 locks…" : "🎰 Reel 2 locks…";
 
         /// <summary>The result line and colour for a finished spin.</summary>
         public static (string Status, Color Colour) Outcome(SlotResult result, double bet, double totalPaid, double bonus)

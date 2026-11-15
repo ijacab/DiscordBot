@@ -125,7 +125,7 @@ namespace Tests
             var account = new CoinAccount { UserId = 5, Name = "spinner", NetWorth = cash };
             coins.GetAll().Accounts.Add(account);
             var bets = new BetManager(coins, new StockService(new LocalFileService(), coins), settings);
-            var slots = new SlotMachineManager(coins, bets, NullLogger<SlotMachineManager>.Instance) { FrameDelay = TimeSpan.Zero };
+            var slots = new SlotMachineManager(coins, bets, NullLogger<SlotMachineManager>.Instance);
             return (slots, coins, bets, account, slots.Open(5, "spinner", bet));
         }
 
@@ -193,14 +193,14 @@ namespace Tests
         }
 
         [Fact]
-        public async Task Play_EditsTheMessageForEveryFrame_AndRefusesASecondSpinAtOnce()
+        public async Task Play_ShowsTheResultWithOneEdit_AndRefusesASecondSpinAtOnce()
         {
             var (slots, _, _, _, session) = Setup(bet: 10);
             var message = new Mock<IUserMessage>();
             message.Setup(m => m.ModifyAsync(It.IsAny<Action<MessageProperties>>(), It.IsAny<RequestOptions>())).Returns(Task.CompletedTask);
 
             Assert.True(await slots.Play(message.Object, session));
-            message.Verify(m => m.ModifyAsync(It.IsAny<Action<MessageProperties>>(), It.IsAny<RequestOptions>()), Times.Exactly(SlotResult.Reels + 1));
+            message.Verify(m => m.ModifyAsync(It.IsAny<Action<MessageProperties>>(), It.IsAny<RequestOptions>()), Times.Once);
 
             await session.Gate.WaitAsync();
             Assert.False(await slots.Play(message.Object, session)); //still spinning
