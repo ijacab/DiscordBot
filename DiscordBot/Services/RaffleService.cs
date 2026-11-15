@@ -187,7 +187,9 @@ namespace DiscordBot.Services
             //named, not pinged: there's a draw every hour
             string text = Announcement(result);
             if (text.Length > 1900) text = text.Substring(0, 1900) + "…";
-            await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
+            //anyone can open their own power-ups privately from here
+            var mine = new ComponentBuilder().WithButton("My power-ups", ComponentId.Build(MoneyComponents.PowerUp, "mine"), ButtonStyle.Secondary).Build();
+            await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: mine);
         }
 
         public static string Announcement(DrawResult result)

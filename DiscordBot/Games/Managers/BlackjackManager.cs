@@ -1,4 +1,5 @@
 ﻿using Common.Helpers;
+using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
@@ -20,6 +21,13 @@ namespace DiscordBot.Games.Managers
             : base(client, betManager, coinService)
         {
         }
+
+        protected override MessageComponent ResultButtons => LobbyButtons("Play again…");
+
+        public override MessageComponent PlayButtons => new ComponentBuilder()
+            .WithButton("Hit", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "hit"), ButtonStyle.Primary)
+            .WithButton("Stay", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "stay"), ButtonStyle.Secondary)
+            .Build();
 
         protected override void PostStartActions(Blackjack game, IEnumerable<BlackjackPlayer> players)
         {
@@ -60,7 +68,9 @@ namespace DiscordBot.Games.Managers
             return $"\n**Dealer**: {dealer.GetFormattedCards()}\n";
         }
 
-        public async Task Hit(ulong playerId, SocketMessage message)
+        public Task Hit(ulong playerId, GameContext context) => Locked(() => HitLocked(playerId, context));
+
+        private async Task HitLocked(ulong playerId, GameContext context)
         {
             if (!TryGetPlayer(playerId, out var player))
                 throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
@@ -70,9 +80,9 @@ namespace DiscordBot.Games.Managers
 
             Hit(playerId);
 
-            if (!await EndGameIfAllPlayersFinished(playerId, message))
+            if (!await EndGameIfAllPlayersFinished(playerId))
             {
-                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(player));
+                await context.SendEmbed("Player standings", GameBlackjackGetFormattedPlayerStanding(player), PlayButtons);
             }
         }
 
@@ -86,7 +96,9 @@ namespace DiscordBot.Games.Managers
             game.Hit(player);
         }
 
-        public async Task Stay(ulong playerId, SocketMessage message)
+        public Task Stay(ulong playerId, GameContext context) => Locked(() => StayLocked(playerId, context));
+
+        private async Task StayLocked(ulong playerId, GameContext context)
         {
             if (!TryGetPlayer(playerId, out var player))
                 throw new BadInputException($"You have not joined any games FUCK FACE, you can't stay. Type `.bj betAmount` to join/create a game.");
@@ -96,9 +108,9 @@ namespace DiscordBot.Games.Managers
 
             Stay(playerId);
 
-            if (!await EndGameIfAllPlayersFinished(playerId, message))
+            if (!await EndGameIfAllPlayersFinished(playerId))
             {
-                await message.SendRichEmbedMessage("Player standings", GameBlackjackGetFormattedPlayerStanding(player));
+                await context.SendEmbed("Player standings", GameBlackjackGetFormattedPlayerStanding(player), PlayButtons);
             }
         }
 

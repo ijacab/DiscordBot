@@ -57,6 +57,14 @@ namespace DiscordBot.Services
             return (holding, proceeds);
         }
 
+        /// <summary>Sells the property with this <see cref="PropertyHolding.Id"/>, so a list that has changed since it was shown can't sell the wrong one.</summary>
+        public Task<(PropertyHolding Holding, double Proceeds)> SellById(CoinAccount account, string holdingId)
+        {
+            int index = account.Properties.FindIndex(p => p.Id == holdingId);
+            if (index < 0) throw new BadInputException("You don't own that property any more.");
+            return Sell(account, index + 1);
+        }
+
         public PropertyHolding Get(CoinAccount account, int number)
         {
             if (account.Properties.Count == 0)

@@ -1,4 +1,5 @@
 ﻿using Common.Helpers;
+using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
@@ -7,6 +8,7 @@ using DiscordBot.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using static DiscordBot.Models.CoinAccounts;
 
@@ -24,6 +26,12 @@ namespace DiscordBot.Games.Managers
         public List<TGame> Games = new List<TGame>();
         protected int SecondsToForceStartAfter = 30;
         protected int SecondsToForceEndAfter = 90;
+
+        /// <summary>
+        /// One change to the games at a time. Typed commands run on the gateway task and button clicks run off it, so without
+        /// this a click and a command could change the same game at once.
+        /// </summary>
+        private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
         protected readonly BetManager _betManager;
         protected readonly DiscordSocketClient _client;
@@ -65,8 +73,40 @@ namespace DiscordBot.Games.Managers
         {
         }
 
+        /// <summary>Component id prefix for this game's buttons: the base command, like "bj".</summary>
+        public string ButtonPrefix => BaseCommand;
+
+        /// <summary>Join… and Start, under a lobby message, and Play again… under the results.</summary>
+        public MessageComponent LobbyButtons(string joinLabel = "Join…") => new ComponentBuilder()
+            .WithButton(joinLabel, DiscordBot.Models.ComponentId.Build(ButtonPrefix, "join"), ButtonStyle.Success)
+            .WithButton("Start", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "start"), ButtonStyle.Primary)
+            .Build();
+
+        /// <summary>Buttons for a turn, like Hit and Stay. None by default.</summary>
+        public virtual MessageComponent PlayButtons => null;
+
+        /// <summary>Buttons under the results. None by default (Face Off has its own dashboard).</summary>
+        protected virtual MessageComponent ResultButtons => null;
+
+        /// <summary>Runs one change to the games while holding the lock.</summary>
+        protected async Task Locked(Func<Task> change)
+        {
+            await _gate.WaitAsync();
+            try
+            {
+                await change();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         /// <returns>True if new game created, false if joining existing game.</returns>
-        public async Task CreateOrJoin(ulong playerId, double inputMoney, SocketMessage message)
+        public Task CreateOrJoin(ulong playerId, double inputMoney, GameContext context) =>
+            Locked(() => CreateOrJoinLocked(playerId, inputMoney, context));
+
+        private async Task CreateOrJoinLocked(ulong playerId, double inputMoney, GameContext context)
         {
             //try to get the player
             if (TryGetPlayer(playerId, out _))
@@ -82,18 +122,18 @@ namespace DiscordBot.Games.Managers
             }
 
 
-            CoinAccount coinAcc = await _coinService.Get(playerId, message.Author.Username);
+            if (context.GuildId == 0)
+                throw new BadInputException($"{GameName} is played in a server channel.");
+            CoinAccount coinAcc = await _coinService.Get(playerId, context.Username);
             await _betManager.InitiateBet(coinAcc, inputMoney, 10);
 
-            var channel = message.Channel as SocketGuildChannel;
-            var guildId = channel.Guild.Id;
             var player = new TPlayer()
             {
                 UserId = playerId,
-                ChannelId = message.Channel.Id,
-                ServerId = guildId,
+                ChannelId = context.Channel.Id,
+                ServerId = context.GuildId,
                 BetAmount = inputMoney,
-                Username = message.Author.Username,
+                Username = context.Username,
                 CoinAccount = coinAcc
             };
 
@@ -111,17 +151,19 @@ namespace DiscordBot.Games.Managers
                 //    if (!newGame.Started)
                 //        Start(playerId);
                 //});
-                await message.SendRichEmbedMessage($"{GameName} game created", $"If anyone else wants to join they need to type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nType `.{BaseCommand} start` to start the game.");
+                await context.SendEmbed($"{GameName} game created", $"If anyone else wants to join they need to press Join… or type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nPress Start or type `.{BaseCommand} start` to start the game.", LobbyButtons());
             }
             else
             {
                 openGame.Join(player);
-                await message.SendRichEmbedMessage($"{GameName} game joined", $"If anyone else wants to join they need to type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nType `.{BaseCommand} start` to start the game.");
+                await context.SendEmbed($"{GameName} game joined", $"If anyone else wants to join they need to press Join… or type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nPress Start or type `.{BaseCommand} start` to start the game.", LobbyButtons());
             }
 
         }
 
-        public async Task Start(ulong playerId, SocketMessage message)
+        public Task Start(ulong playerId, GameContext context) => Locked(() => StartLocked(playerId, context));
+
+        private async Task StartLocked(ulong playerId, GameContext context)
         {
             if (!TryGetPlayer(playerId, out var player))
             {
@@ -133,14 +175,14 @@ namespace DiscordBot.Games.Managers
                 Guid gameId = Start(playerId);
 
                 //timer on ending the game
-                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceEndAfter)).ContinueWith(async t =>
+                _ = Task.Delay(TimeSpan.FromSeconds(SecondsToForceEndAfter)).ContinueWith(t => Locked(async () =>
                 {
                     if (TryGetExisitingGame(gameId, out var game))
                     {
                         game.Players.ForEach(p => p.IsFinishedPlaying = true);
                         await EndGame(game);
                     }
-                });
+                }));
 
                 var game = GetExisitingGame(playerId);
                 var players = game.Players.Where(p => !p.IsDealer);
@@ -153,7 +195,7 @@ namespace DiscordBot.Games.Managers
                 await AnimateGame(game, players);
                 await PostStartAsync(game, players);
 
-                if (await EndGameIfAllPlayersFinished(playerId, message))
+                if (await EndGameIfAllPlayersFinished(playerId))
                     return;
 
                 string startMsg = GetStartMessage(player);
@@ -162,12 +204,13 @@ namespace DiscordBot.Games.Managers
                     await distinctServerChannelMappings.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
 
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
-                await distinctServerChannelMappings.SendMessageToEachChannel(GameName, $"Type {playCommands} to play.", _client);
+                string howToPlay = PlayButtons == null ? $"Type {playCommands} to play." : $"Press the buttons or type {playCommands} to play.";
+                await distinctServerChannelMappings.SendMessageToEachChannel(GameName, howToPlay, _client, PlayButtons);
             }
             else
             {
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
-                await message.SendRichEmbedMessage("Error", $"The game you are in is already started. Type {playCommands} to play.");
+                await context.SendEmbed("Error", $"The game you are in is already started. Type {playCommands} to play.", PlayButtons);
             }
         }
 
@@ -250,7 +293,7 @@ namespace DiscordBot.Games.Managers
 
 
         /// <returns>True if game ended, false if not.</returns>
-        protected async Task<bool> EndGameIfAllPlayersFinished(ulong playerId, SocketMessage message)
+        protected async Task<bool> EndGameIfAllPlayersFinished(ulong playerId)
         {
             var game = GetExisitingGame(playerId);
 
@@ -306,7 +349,7 @@ namespace DiscordBot.Games.Managers
                 var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
                 var distinctServerChannelMappings = serverChannelMappings.Distinct();
 
-                await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client);
+                await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client, ResultButtons);
             }
             catch (Exception)
             {

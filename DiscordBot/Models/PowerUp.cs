@@ -123,10 +123,12 @@ namespace DiscordBot.Models
         public const int MaxHeld = 10;
 
         public const double HotStreakBonus = 0.5;
+        /// <summary>Winning bets a Hot Streak boosts.</summary>
+        public const int HotStreakWins = 5;
         /// <summary>A Golden Ticket win pays this many times the normal win.</summary>
         public const double GoldenTicketMultiplier = 3;
         public const double SafetyNetRefund = 0.75;
-        public const int SafetyNetCharges = 5;
+        public const int SafetyNetCharges = 1;
         public const double JackpotFeverChance = 0.30;
         public const int LoadedDiceRollNeeded = 6;
         public const double CompoundInterestMultiplier = 6;
@@ -183,12 +185,12 @@ namespace DiscordBot.Models
         public static readonly IReadOnlyList<PowerUpDefinition> All = new List<PowerUpDefinition>
         {
             //boosts
-            new PowerUpDefinition { Id = PowerUpIds.HotStreak, Name = "Hot Streak", Weight = Common, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(3),
-                Description = "For 3 hours, every winning bet pays 50% extra." },
+            new PowerUpDefinition { Id = PowerUpIds.HotStreak, Name = "Hot Streak", Weight = Common, Kind = PowerUpKind.Charges, Charges = HotStreakWins, Duration = HoldTime,
+                Description = "Your next 5 winning bets pay 50% extra." },
             new PowerUpDefinition { Id = PowerUpIds.GoldenTicket, Name = "Golden Ticket", Weight = Rare, Kind = PowerUpKind.Charges, Charges = 1, Duration = HoldTime,
                 Description = "Your next winning bet pays triple." },
             new PowerUpDefinition { Id = PowerUpIds.SafetyNet, Name = "Safety Net", Weight = Common, Kind = PowerUpKind.Charges, Charges = SafetyNetCharges, Duration = HoldTime,
-                Description = "Your next 5 losing bets refund 75% of what you lost." },
+                Description = "Your next losing bet refunds 75% of what you lost." },
             new PowerUpDefinition { Id = PowerUpIds.JackpotFever, Name = "Jackpot Fever", Weight = Uncommon, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(6),
                 Description = "For 6 hours an all-in cash bet has a 30% chance (up from 3%) to win the jackpot." },
             new PowerUpDefinition { Id = PowerUpIds.TaxHaven, Name = "Tax Haven", Weight = Common, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(12),
@@ -357,6 +359,17 @@ namespace DiscordBot.Models
 
         public static bool IsShielded(this CoinAccount account, DateTime now) => account.IsActive(PowerUpIds.Shield, now);
 
+        /// <summary>
+        /// The 1-based number of a kept power-up for a Use button made when it was at <paramref name="number"/>: that number if it
+        /// still holds <paramref name="id"/>, otherwise the first kept one with that id (the list moved), or 0 if there's none.
+        /// </summary>
+        public static int FindHeld(this CoinAccount account, int number, string id)
+        {
+            if (number >= 1 && number <= account.HeldPowerUps.Count && account.HeldPowerUps[number - 1].Id == id)
+                return number;
+            return account.HeldPowerUps.FindIndex(h => h.Id == id) + 1;
+        }
+
         /// <summary>Spends one use of a charge power-up. False when it isn't running.</summary>
         public static bool TryConsumeCharge(this CoinAccount account, string id, DateTime now)
         {
@@ -405,7 +418,7 @@ namespace DiscordBot.Models
             double bonus = 0;
             if (netGain > 0)
             {
-                if (account.IsActive(PowerUpIds.HotStreak, now))
+                if (account.TryConsumeCharge(PowerUpIds.HotStreak, now))
                     bonus += netGain * PowerUpCatalog.HotStreakBonus;
                 if (account.TryConsumeCharge(PowerUpIds.GoldenTicket, now))
                     bonus += netGain * (PowerUpCatalog.GoldenTicketMultiplier - 1);
@@ -413,6 +426,8 @@ namespace DiscordBot.Models
             else if (netGain < 0 && account.TryConsumeCharge(PowerUpIds.SafetyNet, now))
             {
                 bonus += -netGain * PowerUpCatalog.SafetyNetRefund;
+                //it covers one loss: older saves from when it covered 5 lose any charges left
+                account.ActivePowerUps.RemoveAll(a => a.Id == PowerUpIds.SafetyNet);
             }
             return bonus;
         }

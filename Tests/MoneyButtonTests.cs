@@ -1,0 +1,146 @@
+﻿using Common.Services;
+using Discord;
+using Discord.WebSocket;
+using DiscordBot;
+using DiscordBot.Exceptions;
+using DiscordBot.Games.Managers;
+using DiscordBot.Games.Models;
+using DiscordBot.Managers;
+using DiscordBot.Models;
+using DiscordBot.Services;
+using Moq;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Xunit;
+using static DiscordBot.Models.CoinAccounts;
+
+namespace Tests
+{
+    /// <summary>The buttons on money commands: their ids, who may press them, and the game managers driven without a message.</summary>
+    public class MoneyButtonTests
+    {
+        private const string LongestOwner = "18446744073709551615"; //ulong.MaxValue, 20 digits
+
+        [Fact]
+        public void ComponentIds_FitAndRoundTrip()
+        {
+            string longestPowerUp = PowerUpCatalog.All.Select(p => p.Id).OrderByDescending(id => id.Length).First();
+            string[] ids =
+            {
+                ComponentId.Build(MoneyComponents.Stock, "buy", "LONGSYMBOL"),
+                ComponentId.Build(MoneyComponents.Stock, "sellamt", "LONGSYMBOL"),
+                ComponentId.Build(MoneyComponents.Stock, "sellpick", LongestOwner),
+                ComponentId.Build(MoneyComponents.PowerUp, "use", LongestOwner, "10", longestPowerUp),
+                ComponentId.Build(MoneyComponents.Property, "sell", LongestOwner),
+                ComponentId.Build(MoneyComponents.Debt, "autosell", LongestOwner, "off"),
+                ComponentId.Build("bj", "joinamt"),
+            };
+            foreach (string id in ids)
+            {
+                Assert.True(id.Length <= ComponentId.MaxLength);
+                Assert.True(ComponentId.TryParse(id, out _, out _, out _));
+            }
+
+            Assert.True(ComponentId.TryParse(ids[3], out string game, out string action, out string[] args));
+            Assert.Equal((MoneyComponents.PowerUp, "use"), (game, action));
+            Assert.Equal(new[] { LongestOwner, "10", longestPowerUp }, args);
+        }
+
+        [Fact]
+        public void OwnerOnlyButtons_OnlyWorkForTheirOwner()
+        {
+            Assert.True(ButtonOwner.Allows(5, 5));
+            Assert.False(ButtonOwner.Allows(5, 6));
+
+            Assert.True(ButtonOwner.TryRead(new[] { LongestOwner }, 0, out ulong owner));
+            Assert.Equal(ulong.MaxValue, owner);
+            Assert.False(ButtonOwner.TryRead(Array.Empty<string>(), 0, out _));
+            Assert.False(ButtonOwner.TryRead(new[] { "nope" }, 0, out _));
+        }
+
+        [Fact]
+        public void FindHeld_FollowsAPowerUpWhenTheListMoves()
+        {
+            var account = new CoinAccount();
+            foreach (var id in new[] { PowerUpIds.Shield, PowerUpIds.HotStreak, PowerUpIds.SafetyNet })
+                account.HeldPowerUps.Add(new HeldPowerUp { Id = id, ExpiresAtTicks = DateTime.MaxValue.Ticks });
+
+            Assert.Equal(2, account.FindHeld(2, PowerUpIds.HotStreak)); //still where it was
+            account.HeldPowerUps.RemoveAt(0); //the first one was used
+            Assert.Equal(1, account.FindHeld(2, PowerUpIds.HotStreak)); //moved up one
+            Assert.Equal(0, account.FindHeld(1, PowerUpIds.Shield)); //gone
+            Assert.Equal(0, account.FindHeld(9, PowerUpIds.GoldenTicket));
+        }
+
+        [Fact]
+        public async Task SellById_RefusesAHouseThatIsntTheirs()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var property = new PropertyService(coins);
+            var account = new CoinAccount { UserId = 910_001, Name = "owner" };
+            var house = new PropertyHolding { Kind = PropertyKind.House, PurchaseCost = 1 };
+            account.Properties.Add(house);
+
+            await Assert.ThrowsAsync<BadInputException>(() => property.SellById(account, "someone-elses"));
+            Assert.Single(account.Properties);
+        }
+
+        [Fact]
+        public async Task Blackjack_JoinsFromAButtonContextAndOffersButtons()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var stocks = new StockService(new LocalFileService(), coins);
+            var bets = new BetManager(coins, stocks, new AppSettings { PrestigeDisabled = true });
+            var blackjack = new BlackjackManager(new DiscordSocketClient(), bets, coins);
+            foreach (ulong id in new ulong[] { 920_001, 920_002 })
+                coins.GetAll().Accounts.Add(new CoinAccount { UserId = id, Name = $"p{id}", NetWorth = 10_000 });
+
+            var channel = new Mock<IMessageChannel>();
+            channel.SetupGet(c => c.Id).Returns(42);
+            GameContext Context(ulong id) => new GameContext { UserId = id, Username = $"p{id}", Channel = channel.Object, GuildId = 7 };
+
+            try
+            {
+                await blackjack.CreateOrJoin(920_001, 1_000, Context(920_001));
+                await blackjack.CreateOrJoin(920_002, 1_000, Context(920_002));
+
+                Assert.True(blackjack.TryGetPlayer(920_002, out var player));
+                Assert.Equal(42UL, player.ChannelId);
+                Assert.Equal(7UL, player.ServerId);
+                Assert.Single(blackjack.Games);
+
+                //each lobby message came with Join… and Start
+                var sends = channel.Invocations.Where(i => i.Method.Name == nameof(IMessageChannel.SendMessageAsync)).ToList();
+                Assert.Equal(2, sends.Count);
+                foreach (var send in sends)
+                {
+                    var components = send.Arguments.OfType<MessageComponent>().Single();
+                    var ids = components.Components.OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().Select(b => b.CustomId).ToList();
+                    Assert.Equal(new[] { "bj:join", "bj:start" }, ids);
+                }
+
+                //a second join and a hit before the start are refused
+                await Assert.ThrowsAsync<BadInputException>(() => blackjack.CreateOrJoin(920_001, 1_000, Context(920_001)));
+                await Assert.ThrowsAsync<BadInputException>(() => blackjack.Hit(920_001, Context(920_001)));
+
+                //a server channel is needed
+                await Assert.ThrowsAsync<BadInputException>(() => blackjack.CreateOrJoin(920_003, 1_000, new GameContext { UserId = 920_003, Username = "dm", Channel = channel.Object, GuildId = 0 }));
+            }
+            finally
+            {
+                bets.InitiatedBetUserIds.Remove(920_001);
+                bets.InitiatedBetUserIds.Remove(920_002);
+            }
+        }
+
+        [Fact]
+        public void Blackjack_HasHitAndStayButtons()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var blackjack = new BlackjackManager(new DiscordSocketClient(), new BetManager(coins, new StockService(new LocalFileService(), coins), new AppSettings()), coins);
+            var ids = blackjack.PlayButtons.Components.OfType<ActionRowComponent>().SelectMany(r => r.Components).OfType<ButtonComponent>().Select(b => b.CustomId);
+            Assert.Equal(new[] { "bj:hit", "bj:stay" }, ids);
+        }
+    }
+}

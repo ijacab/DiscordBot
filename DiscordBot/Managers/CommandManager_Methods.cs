@@ -160,8 +160,17 @@ namespace DiscordBot.Managers
         }
 
         // Discord caps an embed at 6000 characters, so long lists go out as several embeds (one message each)
-        private static async Task SendPagedEmbeds(IMessageChannel channel, string title, IEnumerable<string> lines)
+        private static async Task SendPagedEmbeds(IMessageChannel channel, string title, IEnumerable<string> lines, MessageComponent components = null)
         {
+            var pages = PagedEmbeds(title, lines);
+            for (int i = 0; i < pages.Count; i++)
+                await channel.SendMessageAsync(embed: pages[i], components: i == pages.Count - 1 ? components : null);
+        }
+
+        /// <summary>The embeds for a long list, one per message (see <see cref="TextPaginator.Paginate"/>).</summary>
+        private static List<Embed> PagedEmbeds(string title, IEnumerable<string> lines)
+        {
+            var embeds = new List<Embed>();
             var pages = TextPaginator.Paginate(lines);
             for (int i = 0; i < pages.Count; i++)
             {
@@ -171,8 +180,9 @@ namespace DiscordBot.Managers
                     string fieldName = (i == 0 && f == 0) ? title : "⠀";
                     embed.AddField(fieldName, pages[i][f]);
                 }
-                await channel.SendMessageAsync(embed: embed.Build());
+                embeds.Add(embed.Build());
             }
+            return embeds;
         }
 
         private async Task Roll(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -344,7 +354,8 @@ namespace DiscordBot.Managers
             }
             output += "*Prices change every 5 minutes. Tiers 3 to 6 run from moderate to crypto and insane. Use `.stocks SYMBOL 48h` for a graph, `.buy`/`.sell`, `.short`/`.cover`, `.call`/`.put`.*";
 
-            await message.SendRichEmbedMessage("Stock Market", output);
+            await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Stock Market", output).Build(),
+                components: StockPickMenu(StockTickerCard.Ordered(market.Stocks)));
         }
 
         private static string StockRow(Stock stock, string lead) =>
@@ -406,7 +417,7 @@ namespace DiscordBot.Managers
             var embed = DiscordHelper.GetEmbedBuilder(card.Title, card.Text)
                 .WithImageUrl("attachment://stock.png")
                 .Build();
-            await message.Channel.SendFileAsync(chart, "stock.png", embed: embed);
+            await message.Channel.SendFileAsync(chart, "stock.png", embed: embed, components: StockTradeButtons(stock.Symbol));
         }
 
         private async Task StocksThread(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -438,25 +449,40 @@ namespace DiscordBot.Managers
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count != 2) throw new BadSyntaxException();
-            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
-                throw new BadInputException("Finish your bet before trading stocks.");
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var (stock, shares, cost) = _stockService.Buy(account, args[0], args[1]);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {shares} share(s) of {stock.Symbol} at an average ${cost / shares:N2} for ${FormatHelper.GetCommaNumber(cost)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            var (text, symbol) = await BuyStockText(message.Author.Id, message.Author.Username, message.Author.Mention, args[0], args[1]);
+            await message.Channel.SendMessageAsync(text, components: StockTradeButtons(symbol));
         }
 
         private async Task SellStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count != 2) throw new BadSyntaxException();
-            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
-                throw new BadInputException("Finish your bet before trading stocks.");
+            var (text, symbol) = await SellStockText(message.Author.Id, message.Author.Username, message.Author.Mention, args[0], args[1]);
+            await message.Channel.SendMessageAsync(text, components: StockTradeButtons(symbol));
+        }
 
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var (stock, shares, gross, tax) = _stockService.Sell(account, args[0], args[1]);
+        /// <summary>Buys for a player and returns the public line, for `.buy` and the Buy buttons.</summary>
+        private async Task<(string Text, string Symbol)> BuyStockText(ulong userId, string username, string mention, string symbol, string amount)
+        {
+            EnsureNotBetting(userId, "trading stocks");
+            CoinAccount account = await _coinService.Get(userId, username);
+            var (stock, shares, cost) = _stockService.Buy(account, symbol, amount);
+            return ($"{mention} bought {shares} share(s) of {stock.Symbol} at an average ${cost / shares:N2} for ${FormatHelper.GetCommaNumber(cost)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
+        }
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+        /// <summary>Sells for a player and returns the public line, for `.sell` and the Sell buttons.</summary>
+        private async Task<(string Text, string Symbol)> SellStockText(ulong userId, string username, string mention, string symbol, string amount)
+        {
+            EnsureNotBetting(userId, "trading stocks");
+            CoinAccount account = await _coinService.Get(userId, username);
+            var (stock, shares, gross, tax) = _stockService.Sell(account, symbol, amount);
+            return ($"{mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
+        }
+
+        /// <summary>Refuses while the player has a bet open, so a bet's stake can't be spent twice.</summary>
+        private void EnsureNotBetting(ulong userId, string doing)
+        {
+            if (_betManager.InitiatedBetUserIds.Contains(userId))
+                throw new BadInputException($"Finish your bet before {doing}.");
         }
 
         private async Task Property(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -485,7 +511,7 @@ namespace DiscordBot.Managers
             output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily. " +
                 "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
                 "Every property is rented out automatically. `.sellproperty N` sells.";
-            await message.SendRichEmbedMessage("Property", output);
+            await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Property", output).Build(), components: PropertyBuyButton());
         }
 
         private async Task BuyProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -495,29 +521,34 @@ namespace DiscordBot.Managers
             if (args.Count == 1 && args[0].StartsWith("ap", StringComparison.OrdinalIgnoreCase))
                 throw new BadInputException("Apartments are gone: there are only houses now. Buy one with `.buyproperty`.");
             if (args.Count == 1 && !args[0].Equals("house", StringComparison.OrdinalIgnoreCase)) throw new BadSyntaxException();
-            var kind = PropertyKind.House;
-            EnsureNotBettingForProperty(message);
+            await message.Channel.SendMessageAsync(await BuyPropertyText(message.Author.Id, message.Author.Username, message.Author.Mention), components: PropertyBuyButton());
+        }
 
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+        /// <summary>Buys a house for a player and returns the public line, for `.buyproperty` and the Buy a house button.</summary>
+        private async Task<string> BuyPropertyText(ulong userId, string username, string mention)
+        {
+            var kind = PropertyKind.House;
+            EnsureNotBetting(userId, "buying or selling property");
+            CoinAccount account = await _coinService.Get(userId, username);
             double price = PropertyCatalog.Price(kind, _coinService.GetAll().PropertyIndex);
             var (_, cost) = await _propertyService.Buy(account, kind);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought a {PropertyCatalog.DisplayName(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
+            return $"{mention} bought a {PropertyCatalog.DisplayName(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
                 $"${FormatHelper.GetCommaNumber(cost - price)} stamp duty and conveyancing included in ${FormatHelper.GetCommaNumber(cost)} total. " +
-                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. It's rented out straight away, and rent comes in every hour.");
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. It's rented out straight away, and rent comes in every hour.";
         }
 
         private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
-            EnsureNotBettingForProperty(message);
-
+            EnsureNotBetting(message.Author.Id, "buying or selling property");
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (holding, proceeds) = await _propertyService.Sell(account, number);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} sold your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} for ${FormatHelper.GetCommaNumber(proceeds)} after agent commission and marketing. " +
-                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync(SoldPropertyText(message.Author.Mention, account, holding, proceeds));
         }
+
+        private static string SoldPropertyText(string mention, CoinAccount account, PropertyHolding holding, double proceeds) =>
+            $"{mention} sold your {PropertyCatalog.DisplayName(holding.Kind).ToLower()} for ${FormatHelper.GetCommaNumber(proceeds)} after agent commission and marketing. " +
+            $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.";
 
         /// <summary>`.autosell on|off`: sell stocks and then property automatically to pay off debt.</summary>
         private async Task AutoSell(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -531,23 +562,22 @@ namespace DiscordBot.Managers
             else if (args.Count != 0)
                 throw new BadSyntaxException();
 
+            await message.Channel.SendMessageAsync(AutoSellText(message.Author.Mention, account), components: AutoSellButton(account));
+        }
+
+        private static string AutoSellText(string mention, CoinAccount account)
+        {
             string debt = account.Debt > 0 ? $"You owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "You have no debt.";
             string state = account.AutoSellForDebt
                 ? "💳 Auto-sell is **on**: while you owe money, your stocks and then property are sold within a minute to pay it off. `.autosell off` to stop."
                 : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make, and it grows 10% every hour. `.autosell on` to sell assets automatically to pay it off.";
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} {state} {debt}");
+            return $"{mention} {state} {debt}";
         }
 
         /// <summary>Old .letout / .unlet: every property is rented out automatically now.</summary>
         private async Task RentingIsAutomatic(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             await message.Channel.SendMessageAsync("Every property is rented out automatically now, so there's nothing to switch. See `.property` for your rent.");
-        }
-
-        private void EnsureNotBettingForProperty(SocketMessage message)
-        {
-            if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
-                throw new BadInputException("Finish your bet before buying or selling property.");
         }
 
         private void EnsureNotBetting(SocketMessage message)
@@ -854,7 +884,9 @@ namespace DiscordBot.Managers
                     : "📊 Stock gain/loss n/a, no known buy prices";
             }
 
-            await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", output.Split('\n'));
+            //sell menus and the auto-sell switch only for your own portfolio, and they only work for you
+            var components = account.UserId == message.Author.Id ? PortfolioComponents(account, holdings) : null;
+            await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", output.Split('\n'), components);
         }
 
         private static string SignedMoney(double amount) =>
@@ -945,16 +977,7 @@ namespace DiscordBot.Managers
 
             if (args.Count >= 1 && args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
             {
-                var lines = new List<string>();
-                foreach (var (category, heading) in new[] { (PowerUpCategory.Boost, "✨ **Boosts** (anyone can draw these)"),
-                    (PowerUpCategory.Attack, "⚔️ **Attacks** (not drawn by the top of the leaderboard; Shield, Mirror and Golden Parachute work against them)"),
-                    (PowerUpCategory.CatchUp, "🧾 **Catch-up** (only for players below the top, much more common when 1st runs away; nothing blocks them)") })
-                {
-                    lines.Add(heading);
-                    lines.AddRange(PowerUpCatalog.All.Where(p => p.Category == category)
-                        .Select(p => $"**{p.Name}** ({PowerUpCatalog.RarityOf(p)}): {p.Description}"));
-                }
-                await SendPagedEmbeds(message.Channel, "Power-ups the raffle can give", lines);
+                await SendPagedEmbeds(message.Channel, PowerUpCatalogTitle, PowerUpCatalogLines());
                 return;
             }
 
@@ -962,16 +985,45 @@ namespace DiscordBot.Managers
             {
                 if (args.Count != 2 || !int.TryParse(args[1], out int number))
                     throw new BadSyntaxException();
-                if (_betManager.InitiatedBetUserIds.Contains(message.Author.Id))
-                    throw new BadInputException("Finish your bet before using a power-up.");
-
-                string result = await _raffleService.Use(account, number, now, new Random().NextDouble);
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} {result}");
+                await message.Channel.SendMessageAsync(await UsePowerUpText(account, message.Author.Mention, number, now));
                 return;
             }
 
             if (args.Count != 0) throw new BadSyntaxException();
 
+            //ten held power-ups with their descriptions can pass Discord's 2000 characters, so long lists go in parts
+            var parts = SplitForMessages(PowerUpView(account, now));
+            for (int i = 0; i < parts.Count; i++)
+                await message.Channel.SendMessageAsync(parts[i], components: i == parts.Count - 1 ? PowerUpButtons(account) : null);
+        }
+
+        private const string PowerUpCatalogTitle = "Power-ups the raffle can give";
+
+        private static List<string> PowerUpCatalogLines()
+        {
+            var lines = new List<string>();
+            foreach (var (category, heading) in new[] { (PowerUpCategory.Boost, "✨ **Boosts** (anyone can draw these)"),
+                (PowerUpCategory.Attack, "⚔️ **Attacks** (not drawn by the top of the leaderboard; Shield, Mirror and Golden Parachute work against them)"),
+                (PowerUpCategory.CatchUp, "🧾 **Catch-up** (only for players below the top, much more common when 1st runs away; nothing blocks them)") })
+            {
+                lines.Add(heading);
+                lines.AddRange(PowerUpCatalog.All.Where(p => p.Category == category)
+                    .Select(p => $"**{p.Name}** ({PowerUpCatalog.RarityOf(p)}): {p.Description}"));
+            }
+            return lines;
+        }
+
+        /// <summary>Uses the <paramref name="number"/>th kept power-up and returns the public line, for `.pu use N` and the Use buttons.</summary>
+        private async Task<string> UsePowerUpText(CoinAccount account, string mention, int number, DateTime now)
+        {
+            EnsureNotBetting(account.UserId, "using a power-up");
+            string result = await _raffleService.Use(account, number, now, new Random().NextDouble);
+            return $"{mention} {result}";
+        }
+
+        /// <summary>What `.pu` shows: raffle entry, kept power-ups, debuffs and what's running.</summary>
+        private static string PowerUpView(CoinAccount account, DateTime now)
+        {
             string output = "";
             string untilDraw = FormatRemaining(RaffleService.NextRaffleUtc(now) - now);
             int draws = RaffleService.EnteredDrawCount(account, now);
@@ -983,7 +1035,7 @@ namespace DiscordBot.Managers
                 output += "You have no power-ups.\n";
             else
             {
-                output += "**Kept power-ups** (these couldn't go off when won; use one with `.pu use <number>`):\n";
+                output += "**Kept power-ups** (these couldn't go off when won; press Use, or `.pu use <number>`):\n";
                 for (int i = 0; i < account.HeldPowerUps.Count; i++)
                 {
                     var held = account.HeldPowerUps[i];
@@ -1018,19 +1070,26 @@ namespace DiscordBot.Managers
             }
 
             output += $"Next raffle in {untilDraw}.";
-            //ten held power-ups with their descriptions can pass Discord's 2000 characters, so long lists go in parts
+            return output;
+        }
+
+        /// <summary>Splits text into messages under Discord's 2000 characters, on line breaks.</summary>
+        private List<string> SplitForMessages(string text)
+        {
+            var parts = new List<string>();
             var part = new System.Text.StringBuilder();
-            foreach (string line in output.Split('\n'))
+            foreach (string line in text.Split('\n'))
             {
                 if (part.Length + line.Length + 1 > _messageCharLimit - 50)
                 {
-                    await message.Channel.SendMessageAsync(part.ToString());
+                    parts.Add(part.ToString());
                     part.Clear();
                 }
                 part.Append(line).Append('\n');
             }
             if (part.Length > 0)
-                await message.Channel.SendMessageAsync(part.ToString());
+                parts.Add(part.ToString());
+            return parts;
         }
 
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)

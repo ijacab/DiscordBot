@@ -22,6 +22,8 @@ namespace DiscordBot.Games.Managers
         {
         }
 
+        protected override MessageComponent ResultButtons => LobbyButtons("Play again…");
+
         protected override void PostStartActions(DuckRace game, IEnumerable<DuckRacePlayer> players)
         {
             //players don't take any actions, so the race is decided as soon as it starts and the game ends right after

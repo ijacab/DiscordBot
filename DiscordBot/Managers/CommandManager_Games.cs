@@ -137,14 +137,14 @@ namespace DiscordBot.Managers
                 {
                     try
                     {
-                        await _blackjackManager.Start(playerId, message);
+                        await _blackjackManager.Start(playerId, GameContext.From(message));
                     }
                     catch (NotInGameException)
                     {
                         if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount)) //'.bj 1000'
                         {
-                            await _blackjackManager.CreateOrJoin(playerId, minBetAmount, message); //will throw an exception if player already in a game, don't need to check
-                            await _blackjackManager.Start(playerId, message);
+                            await _blackjackManager.CreateOrJoin(playerId, minBetAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
+                            await _blackjackManager.Start(playerId, GameContext.From(message));
                         }
                     }
 
@@ -152,19 +152,19 @@ namespace DiscordBot.Managers
                 }
                 else if (args[0].StartsWith("stay"))//'.bj stay'
                 {
-                    await _blackjackManager.Stay(playerId, message);
+                    await _blackjackManager.Stay(playerId, GameContext.From(message));
                     return;
                 }
                 else if (args[0].StartsWith("hit"))//'.bj hit'
                 {
-                    await _blackjackManager.Hit(playerId, message);
+                    await _blackjackManager.Hit(playerId, GameContext.From(message));
                     return;
                 }
             }
 
             if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
             {
-                await _blackjackManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
+                await _blackjackManager.CreateOrJoin(playerId, betAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
             }
         }
 
@@ -282,14 +282,14 @@ namespace DiscordBot.Managers
             {
                 try
                 {
-                    await _duckRaceManager.Start(playerId, message);
+                    await _duckRaceManager.Start(playerId, GameContext.From(message));
                 }
                 catch (NotInGameException)
                 {
                     if (TryExtractBetAmount(new List<string>(), coinAccount, out double minBetAmount)) //'.duck start' with no game yet
                     {
-                        await _duckRaceManager.CreateOrJoin(playerId, minBetAmount, message); //will throw an exception if player already in a game, don't need to check
-                        await _duckRaceManager.Start(playerId, message);
+                        await _duckRaceManager.CreateOrJoin(playerId, minBetAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
+                        await _duckRaceManager.Start(playerId, GameContext.From(message));
                     }
                 }
 
@@ -298,7 +298,7 @@ namespace DiscordBot.Managers
 
             if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.duck 1000'
             {
-                await _duckRaceManager.CreateOrJoin(playerId, betAmount, message); //will throw an exception if player already in a game, don't need to check
+                await _duckRaceManager.CreateOrJoin(playerId, betAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
             }
         }
 

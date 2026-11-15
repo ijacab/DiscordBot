@@ -44,8 +44,17 @@ namespace DiscordBot.Managers
                     case BattleArenaManager.ComponentGame:
                         await FaceOffComponent(component, action, args);
                         break;
+                    case MoneyComponents.Stock:
+                    case MoneyComponents.PowerUp:
+                    case MoneyComponents.Property:
+                    case MoneyComponents.Debt:
+                        await MoneyComponent(component, game, action, args);
+                        break;
                     default:
-                        await ReplyPrivately(component, "That button doesn't do anything any more.");
+                        if (IsLobbyGame(game))
+                            await LobbyGameComponent(component, game, action);
+                        else
+                            await ReplyPrivately(component, "That button doesn't do anything any more.");
                         break;
                 }
             }
@@ -73,8 +82,14 @@ namespace DiscordBot.Managers
                     case BattleArenaManager.ComponentGame:
                         await FaceOffModal(modal, action, args);
                         break;
+                    case MoneyComponents.Stock:
+                        await StockModal(modal, action, args);
+                        break;
                     default:
-                        await ReplyPrivately(modal, "That form doesn't do anything any more.");
+                        if (IsLobbyGame(game))
+                            await LobbyGameModal(modal, game, action);
+                        else
+                            await ReplyPrivately(modal, "That form doesn't do anything any more.");
                         break;
                 }
             }
@@ -282,12 +297,12 @@ namespace DiscordBot.Managers
                 MarkActiveFromInteraction(modal);
         }
 
-        private static Modal AmountModal(string customId, string title, string label)
+        private static Modal AmountModal(string customId, string title, string label, string placeholder = "1000, 10% or max")
         {
             return new ModalBuilder()
                 .WithTitle(title)
                 .WithCustomId(customId)
-                .AddTextInput(label, "amount", TextInputStyle.Short, placeholder: "1000, 10% or max", minLength: 1, maxLength: 20, required: true)
+                .AddTextInput(label, "amount", TextInputStyle.Short, placeholder: placeholder, minLength: 1, maxLength: 20, required: true)
                 .Build();
         }
 

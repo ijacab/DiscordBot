@@ -22,13 +22,14 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, lang, ban/unban, ...)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
+    CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
     Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/
-      BaseMultiplayerManager.cs   lobby/session base (largest game file)
+      BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/
@@ -38,6 +39,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls (10 rounds max)
       Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
+      GameContext.cs             who acts and where (from a typed command or a button click)
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
       BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, RoundOutcome, SpectatorPool (side bets)
   Services/
@@ -68,6 +70,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
+    MoneyComponents.cs         money button prefixes (stk/pu/prop/debt) and ButtonOwner (owner-only buttons)
     StockThread.cs             saved `.stocksthread` state: thread, header and ticker message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes

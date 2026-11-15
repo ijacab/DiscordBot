@@ -22,6 +22,8 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-15", "Buttons: Buy/Sell on `.stocks` and trades, Sell menus and auto-sell on `.portfolio`, Use on `.pu` and raffles, Buy a house on `.property`, Join/Start/Hit/Stay in blackjack and duck race."),
+            new PatchNote("2026-11-15", "Nerfs: Safety Net now covers your next losing bet only, and Hot Streak boosts your next 5 winning bets instead of lasting 3 hours."),
             new PatchNote("2026-11-15", "Fixed `.buy max` / `.short max` freezing the whole bot for players with billions. Holdings top out at about 2.1 billion shares per stock, and the bot now restarts itself if it ever hangs."),
             new PatchNote("2026-11-14", "One money action now enters you in every power-up draw for the next 6 hours, not just the next one."),
             new PatchNote("2026-11-14", "`.stocksthread` is bot admins only now, and the existing ticker threads were deleted."),

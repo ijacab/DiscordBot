@@ -13,14 +13,14 @@ namespace Common.Helpers
     public static class DiscordHelper
     {
         private const int _fieldCharLimit = 1023;
-        public static async Task SendMessageToEachChannel(this IEnumerable<Tuple<ulong, ulong>> distinctServerChannelMappings, string title, string messageText, DiscordSocketClient client)
+        public static async Task SendMessageToEachChannel(this IEnumerable<Tuple<ulong, ulong>> distinctServerChannelMappings, string title, string messageText, DiscordSocketClient client, MessageComponent components = null)
         {
             foreach (var serverChannelMapping in distinctServerChannelMappings)
             {
                 ulong serverId = serverChannelMapping.Item1;
                 ulong channelId = serverChannelMapping.Item2;
                 var messageChannel = client.GetGuild(serverId).GetTextChannel(channelId);
-                await messageChannel.SendRichEmbedMessage(title, messageText);
+                await messageChannel.SendMessageAsync(embed: GetEmbedBuilder(title, messageText).Build(), components: components);
             }
         }
 

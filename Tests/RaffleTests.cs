@@ -187,14 +187,14 @@ namespace Tests
         public void TimedBuff_RunsThenExpires_AndStacksTime()
         {
             var player = Account(1);
-            var hot = PowerUpCatalog.Find(PowerUpIds.HotStreak);
-            player.Start(hot, Now);
-            Assert.True(player.IsActive(PowerUpIds.HotStreak, Now.AddHours(2.9)));
-            Assert.False(player.IsActive(PowerUpIds.HotStreak, Now.AddHours(3.1)));
+            var compound = PowerUpCatalog.Find(PowerUpIds.CompoundInterest);
+            player.Start(compound, Now);
+            Assert.True(player.IsActive(PowerUpIds.CompoundInterest, Now.AddHours(2.9)));
+            Assert.False(player.IsActive(PowerUpIds.CompoundInterest, Now.AddHours(3.1)));
 
-            player.Start(hot, Now);
-            player.Start(hot, Now);
-            Assert.True(player.IsActive(PowerUpIds.HotStreak, Now.AddHours(5)));
+            player.Start(compound, Now);
+            player.Start(compound, Now);
+            Assert.True(player.IsActive(PowerUpIds.CompoundInterest, Now.AddHours(5)));
         }
 
         [Fact]
@@ -209,12 +209,25 @@ namespace Tests
         }
 
         [Fact]
-        public void BetBonus_HotStreakAddsHalfTheWin()
+        public void BetBonus_HotStreakAddsHalfOfTheNextFiveWins()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.HotStreak), Now);
-            Assert.Equal(500, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
-            Assert.Equal(0, player.BetBonus(baseWinnings: 0, betAmount: 1_000, Now));
+            Assert.Equal(0, player.BetBonus(baseWinnings: 0, betAmount: 1_000, Now)); //a loss doesn't use one
+            for (int i = 0; i < 5; i++)
+                Assert.Equal(500, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
+            Assert.Equal(0, player.BetBonus(baseWinnings: 2_000, betAmount: 1_000, Now));
+            Assert.False(player.IsActive(PowerUpIds.HotStreak, Now));
+        }
+
+        [Fact]
+        public void BetBonus_OldTimedHotStreakRunsUntilItExpires()
+        {
+            var player = Account(1);
+            player.ActivePowerUps.Add(new ActivePowerUp { Id = PowerUpIds.HotStreak, ExpiresAtTicks = Now.AddHours(2).Ticks, ChargesLeft = ActivePowerUp.Unlimited });
+            for (int i = 0; i < 8; i++)
+                Assert.Equal(500, player.BetBonus(2_000, 1_000, Now));
+            Assert.Equal(0, player.BetBonus(2_000, 1_000, Now.AddHours(3)));
         }
 
         [Fact]
@@ -231,13 +244,23 @@ namespace Tests
         }
 
         [Fact]
-        public void BetBonus_SafetyNetRefundsThreeQuartersOfFiveLosses()
+        public void BetBonus_SafetyNetRefundsThreeQuartersOfOneLoss()
         {
             var player = Account(1);
             player.Start(PowerUpCatalog.Find(PowerUpIds.SafetyNet), Now);
-            for (int i = 0; i < 5; i++)
-                Assert.Equal(750, player.BetBonus(0, 1_000, Now));
+            Assert.Equal(0, player.BetBonus(2_000, 1_000, Now)); //a win doesn't use it
+            Assert.Equal(750, player.BetBonus(0, 1_000, Now));
             Assert.Equal(0, player.BetBonus(0, 1_000, Now));
+        }
+
+        [Fact]
+        public void BetBonus_OldSafetyNetWithFiveChargesCoversOneLoss()
+        {
+            var player = Account(1);
+            player.ActivePowerUps.Add(new ActivePowerUp { Id = PowerUpIds.SafetyNet, ExpiresAtTicks = Now.AddHours(20).Ticks, ChargesLeft = 5 });
+            Assert.Equal(750, player.BetBonus(0, 1_000, Now));
+            Assert.Equal(0, player.BetBonus(0, 1_000, Now));
+            Assert.False(player.IsActive(PowerUpIds.SafetyNet, Now));
         }
 
         [Fact]

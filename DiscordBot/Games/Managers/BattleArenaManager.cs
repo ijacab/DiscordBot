@@ -440,7 +440,7 @@ namespace DiscordBot.Games.Managers
             _tables.TryRemove(game.GameGuid, out _);
             try
             {
-                await EndGameIfAllPlayersFinished(game.Players.First().UserId, null);
+                await EndGameIfAllPlayersFinished(game.Players.First().UserId);
             }
             catch (Exception ex)
             {
