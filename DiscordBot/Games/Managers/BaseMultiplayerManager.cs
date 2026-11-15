@@ -88,6 +88,62 @@ namespace DiscordBot.Games.Managers
         /// <summary>Buttons under the results. None by default (Face Off has its own dashboard).</summary>
         protected virtual MessageComponent ResultButtons => null;
 
+        /// <summary>How one player came out of a game, for the results.</summary>
+        public sealed class PlayerResult
+        {
+            public TPlayer Player { get; init; }
+            /// <summary>Cash after the bet was settled.</summary>
+            public double NetWorth { get; init; }
+            /// <summary>The first-gamble-of-the-day roll, or null.</summary>
+            public string DailyRoll { get; init; }
+            /// <summary>A jackpot win, or null.</summary>
+            public string JackpotWin { get; init; }
+        }
+
+        /// <summary>Someone created or joined the lobby. By default a new message each time.</summary>
+        protected virtual Task AnnounceLobby(TGame game, TPlayer player, GameContext context, bool created)
+        {
+            string how = $"If anyone else wants to join they need to press Join… or type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nPress Start or type `.{BaseCommand} start` to start the game.";
+            return context.SendEmbed($"{GameName} game {(created ? "created" : "joined")}", how, LobbyButtons());
+        }
+
+        /// <summary>The game started and is waiting on the players. By default the start message and how to play, in each channel.</summary>
+        protected virtual async Task AnnounceStart(TGame game, IEnumerable<TPlayer> players, TPlayer starter)
+        {
+            var channels = players.Select(p => new Tuple<ulong, ulong>(p.ServerId, p.ChannelId)).Distinct().ToList();
+            string startMsg = GetStartMessage(starter);
+            if (!string.IsNullOrWhiteSpace(startMsg))
+                await channels.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
+
+            string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
+            string howToPlay = PlayButtons == null ? $"Type {playCommands} to play." : $"Press the buttons or type {playCommands} to play.";
+            await channels.SendMessageToEachChannel(GameName, howToPlay, _client, PlayButtons);
+        }
+
+        /// <summary>The game is over and paid out. By default one results message in each channel.</summary>
+        protected virtual async Task AnnounceResults(TGame game, IReadOnlyList<PlayerResult> results)
+        {
+            string output = "";
+            if (game.GameNeedsDealer)
+                output += GetDealerEndMessage(game.Players.First(p => p.IsDealer));
+            foreach (var result in results)
+            {
+                var player = result.Player;
+                string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
+                string networthLine = $"${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
+                    $"\t{bonusLine}" +
+                    $"\n\t`Networth is now {FormatHelper.GetCommaNumber(result.NetWorth)}`";
+                if (result.DailyRoll != null)
+                    networthLine += $"\n\t{result.DailyRoll}";
+                if (result.JackpotWin != null)
+                    networthLine += $"\n\t{result.JackpotWin}";
+                output += GetEndMessage(player, networthLine);
+            }
+
+            var channels = results.Select(r => new Tuple<ulong, ulong>(r.Player.ServerId, r.Player.ChannelId)).Distinct();
+            await channels.SendMessageToEachChannel($"{GameName} game results:", output, _client, ResultButtons);
+        }
+
         /// <summary>Runs one change to the games while holding the lock.</summary>
         protected async Task Locked(Func<Task> change)
         {
@@ -144,19 +200,12 @@ namespace DiscordBot.Games.Managers
                 newGame.Join(player);
 
                 Games.Add(newGame);
-
-                //timer on starting the game
-                //_ = Task.Delay(TimeSpan.FromSeconds(_secondsToForceStartAfter)).ContinueWith(t =>
-                //{
-                //    if (!newGame.Started)
-                //        Start(playerId);
-                //});
-                await context.SendEmbed($"{GameName} game created", $"If anyone else wants to join they need to press Join… or type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nPress Start or type `.{BaseCommand} start` to start the game.", LobbyButtons());
+                await AnnounceLobby(newGame, player, context, created: true);
             }
             else
             {
                 openGame.Join(player);
-                await context.SendEmbed($"{GameName} game joined", $"If anyone else wants to join they need to press Join… or type `.{BaseCommand} betAmount` to join where 'betAmount' is the amount you want to bet. For example `.{BaseCommand} 1000`.\nPress Start or type `.{BaseCommand} start` to start the game.", LobbyButtons());
+                await AnnounceLobby(openGame, player, context, created: false);
             }
 
         }
@@ -187,9 +236,6 @@ namespace DiscordBot.Games.Managers
                 var game = GetExisitingGame(playerId);
                 var players = game.Players.Where(p => !p.IsDealer);
 
-                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
                 //normally nothing, but can be overridden in child classes
                 PostStartActions(game, players);
                 await AnimateGame(game, players);
@@ -198,14 +244,7 @@ namespace DiscordBot.Games.Managers
                 if (await EndGameIfAllPlayersFinished(playerId))
                     return;
 
-                string startMsg = GetStartMessage(player);
-
-                if (!string.IsNullOrWhiteSpace(startMsg))
-                    await distinctServerChannelMappings.SendMessageToEachChannel($"{GameName} game started", startMsg, _client);
-
-                string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
-                string howToPlay = PlayButtons == null ? $"Type {playCommands} to play." : $"Press the buttons or type {playCommands} to play.";
-                await distinctServerChannelMappings.SendMessageToEachChannel(GameName, howToPlay, _client, PlayButtons);
+                await AnnounceStart(game, players, player);
             }
             else
             {
@@ -311,45 +350,29 @@ namespace DiscordBot.Games.Managers
 
             PreEndActions(game);
 
-            string title = $"{GameName} game results:";
             try
             {
-                string output = "";
                 if (game.GameNeedsDealer)
-                {
                     DealerEndGameActions(game);
-                    var dealer = game.Players.First(p => p.IsDealer);
-                    output += GetDealerEndMessage(dealer);
-                }
 
                 CalculateWinnings(game);
                 Games.Remove(game);
 
-                var players = game.Players.Where(p => !p.IsDealer);
+                var players = game.Players.Where(p => !p.IsDealer).ToList();
                 await _betManager.ResolveBet(players);
+                var results = new List<PlayerResult>();
                 foreach (var player in players)
                 {
                     CoinAccount coinAccount = await _coinService.Get(player.UserId, player.Username);
-                    string bonusLine = player.BaseWinnings > 0 ? $"(+ ${FormatHelper.GetCommaNumber(player.BonusWinnings)} bonus)" : string.Empty;
-                    string networthLine = $"${FormatHelper.GetCommaNumber(player.BetAmount)} -> ${FormatHelper.GetCommaNumber(player.BaseWinnings)}" +
-                        $"\t{bonusLine}" +
-                        $"\n\t`Networth is now {FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
-
-                    var dailyRoll = _betManager.TakeDailyRoll(player.UserId);
-                    if (dailyRoll != null)
-                        networthLine += $"\n\t{dailyRoll}";
-
-                    string jackpotWin = _betManager.TakeJackpotWin(player.UserId);
-                    if (jackpotWin != null)
-                        networthLine += $"\n\t{jackpotWin}";
-
-                    output += GetEndMessage(player, networthLine);
+                    results.Add(new PlayerResult
+                    {
+                        Player = player,
+                        NetWorth = coinAccount.NetWorth,
+                        DailyRoll = _betManager.TakeDailyRoll(player.UserId)?.ToString(),
+                        JackpotWin = _betManager.TakeJackpotWin(player.UserId),
+                    });
                 }
-
-                var serverChannelMappings = players.Select(p => { return new Tuple<ulong, ulong>(p.ServerId, p.ChannelId); });
-                var distinctServerChannelMappings = serverChannelMappings.Distinct();
-
-                await distinctServerChannelMappings.SendMessageToEachChannel(title, output, _client, ResultButtons);
+                await AnnounceResults(game, results);
             }
             catch (Exception)
             {

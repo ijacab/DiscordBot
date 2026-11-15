@@ -83,6 +83,9 @@ namespace DiscordBot.Games
             }
         }
 
+        /// <summary>How a player's hand compares with the dealer's. Call after the dealer has finished.</summary>
+        public BlackjackResultType ResultOf(BlackjackPlayer player) => Resolve(player);
+
         private BlackjackResultType Resolve(BlackjackPlayer player)
         {
             var playerValidTotals = player.GetPossibleTotalValues();

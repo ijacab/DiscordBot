@@ -1,10 +1,12 @@
 ﻿using Common.Helpers;
 using Discord;
+using Discord.Net;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Models;
 using DiscordBot.Managers;
 using DiscordBot.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -23,6 +25,72 @@ namespace DiscordBot.Games.Managers
         }
 
         protected override MessageComponent ResultButtons => LobbyButtons("Play again…");
+
+        /// <summary>
+        /// Each game's table: one message per channel the players joined from, edited in place from the lobby to the results
+        /// (<see cref="BlackjackView"/>). Only touched under the base manager's lock.
+        /// </summary>
+        private sealed class Table
+        {
+            public Dictionary<ulong, IMessageChannel> Channels { get; } = new Dictionary<ulong, IMessageChannel>();
+            public Dictionary<ulong, IUserMessage> Messages { get; } = new Dictionary<ulong, IUserMessage>();
+        }
+
+        private readonly Dictionary<Guid, Table> _tables = new Dictionary<Guid, Table>();
+
+        protected override Task AnnounceLobby(Blackjack game, BlackjackPlayer player, GameContext context, bool created)
+        {
+            if (!_tables.TryGetValue(game.GameGuid, out var table))
+                _tables[game.GameGuid] = table = new Table();
+            table.Channels[context.Channel.Id] = context.Channel;
+            return Publish(game, BlackjackView.Lobby(game), LobbyButtons());
+        }
+
+        protected override Task AnnounceStart(Blackjack game, IEnumerable<BlackjackPlayer> players, BlackjackPlayer starter) =>
+            Publish(game, BlackjackView.InPlay(game), PlayButtons);
+
+        protected override async Task AnnounceResults(Blackjack game, IReadOnlyList<PlayerResult> results)
+        {
+            var lines = results.Select(r => new BlackjackView.ResultLine
+            {
+                Player = r.Player,
+                Result = game.ResultOf(r.Player),
+                NetWorth = r.NetWorth,
+                Notes = new[] { r.DailyRoll, r.JackpotWin }.Where(n => n != null).ToList(),
+            });
+            await Publish(game, BlackjackView.Results(game, lines), ResultButtons);
+            _tables.Remove(game.GameGuid);
+        }
+
+        /// <summary>Shows the table in every channel the game is in: edits the message there, or posts one if it's missing.</summary>
+        private async Task Publish(Blackjack game, Embed embed, MessageComponent components)
+        {
+            if (!_tables.TryGetValue(game.GameGuid, out var table))
+                return;
+            foreach (var (channelId, channel) in table.Channels)
+            {
+                try
+                {
+                    if (table.Messages.TryGetValue(channelId, out var message))
+                    {
+                        try
+                        {
+                            await message.ModifyAsync(m => { m.Embed = embed; m.Components = components ?? new ComponentBuilder().Build(); });
+                            continue;
+                        }
+                        catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
+                        {
+                            //someone deleted the table, so post it again
+                        }
+                    }
+                    table.Messages[channelId] = await channel.SendMessageAsync(embed: embed, components: components);
+                }
+                catch (Exception)
+                {
+                    //the channel may have gone; the other channels still get the table
+                }
+            }
+        }
 
         public override MessageComponent PlayButtons => new ComponentBuilder()
             .WithButton("Hit", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "hit"), ButtonStyle.Primary)
@@ -82,7 +150,8 @@ namespace DiscordBot.Games.Managers
 
             if (!await EndGameIfAllPlayersFinished(playerId))
             {
-                await context.SendEmbed("Player standings", GameBlackjackGetFormattedPlayerStanding(player), PlayButtons);
+                var game = GetExisitingGame(playerId);
+                await Publish(game, BlackjackView.InPlay(game), PlayButtons);
             }
         }
 
@@ -110,7 +179,8 @@ namespace DiscordBot.Games.Managers
 
             if (!await EndGameIfAllPlayersFinished(playerId))
             {
-                await context.SendEmbed("Player standings", GameBlackjackGetFormattedPlayerStanding(player), PlayButtons);
+                var game = GetExisitingGame(playerId);
+                await Publish(game, BlackjackView.InPlay(game), PlayButtons);
             }
         }
 

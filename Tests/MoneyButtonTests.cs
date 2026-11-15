@@ -98,6 +98,10 @@ namespace Tests
 
             var channel = new Mock<IMessageChannel>();
             channel.SetupGet(c => c.Id).Returns(42);
+            var table = new Mock<IUserMessage>();
+            channel.Setup(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<Embed>(), It.IsAny<RequestOptions>(), It.IsAny<AllowedMentions>(),
+                    It.IsAny<MessageReference>(), It.IsAny<MessageComponent>(), It.IsAny<ISticker[]>(), It.IsAny<Embed[]>(), It.IsAny<MessageFlags>(), It.IsAny<PollProperties>()))
+                .ReturnsAsync(table.Object);
             GameContext Context(ulong id) => new GameContext { UserId = id, Username = $"p{id}", Channel = channel.Object, GuildId = 7 };
 
             try
@@ -110,15 +114,13 @@ namespace Tests
                 Assert.Equal(7UL, player.ServerId);
                 Assert.Single(blackjack.Games);
 
-                //each lobby message came with Join… and Start
+                //one table message, posted with Join… and Start, then edited when the second player sat down
                 var sends = channel.Invocations.Where(i => i.Method.Name == nameof(IMessageChannel.SendMessageAsync)).ToList();
-                Assert.Equal(2, sends.Count);
-                foreach (var send in sends)
-                {
-                    var components = send.Arguments.OfType<MessageComponent>().Single();
-                    var ids = components.Components.OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().Select(b => b.CustomId).ToList();
-                    Assert.Equal(new[] { "bj:join", "bj:start" }, ids);
-                }
+                var send = Assert.Single(sends);
+                var components = send.Arguments.OfType<MessageComponent>().Single();
+                var ids = components.Components.OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().Select(b => b.CustomId).ToList();
+                Assert.Equal(new[] { "bj:join", "bj:start" }, ids);
+                Assert.Single(table.Invocations, i => i.Method.Name == nameof(IUserMessage.ModifyAsync));
 
                 //a second join and a hit before the start are refused
                 await Assert.ThrowsAsync<BadInputException>(() => blackjack.CreateOrJoin(920_001, 1_000, Context(920_001)));

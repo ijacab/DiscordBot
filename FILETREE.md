@@ -26,6 +26,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
+    BlackjackView.cs           the blackjack table embed (lobby, hands, results), edited in place
     Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/

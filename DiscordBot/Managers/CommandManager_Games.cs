@@ -148,16 +148,19 @@ namespace DiscordBot.Managers
                         }
                     }
 
+                    await TryDeleteMessageAsync(message); //the table shows what happened, so the typed command is only clutter
                     return;
                 }
                 else if (args[0].StartsWith("stay"))//'.bj stay'
                 {
                     await _blackjackManager.Stay(playerId, GameContext.From(message));
+                    await TryDeleteMessageAsync(message);
                     return;
                 }
                 else if (args[0].StartsWith("hit"))//'.bj hit'
                 {
                     await _blackjackManager.Hit(playerId, GameContext.From(message));
+                    await TryDeleteMessageAsync(message);
                     return;
                 }
             }
@@ -165,6 +168,7 @@ namespace DiscordBot.Managers
             if (TryExtractBetAmount(args, coinAccount, out double betAmount)) //'.bj 1000'
             {
                 await _blackjackManager.CreateOrJoin(playerId, betAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
+                await TryDeleteMessageAsync(message);
             }
         }
 
