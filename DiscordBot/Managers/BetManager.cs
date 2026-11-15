@@ -111,6 +111,7 @@ namespace DiscordBot.Managers
                 return;
             }
 
+            gambler.Stats.JackpotRolls++;
             double chance = gambler.IsActive(PowerUpIds.JackpotFever, now) ? PowerUpCatalog.JackpotFeverChance : JackpotWinChance;
             if (!RollsJackpot(NextJackpotRoll(), chance))
                 return;
@@ -118,6 +119,8 @@ namespace DiscordBot.Managers
             double won = _coinService.TakeJackpot();
             gambler.NetWorth += won;
             _pendingJackpotWins[gambler.UserId] = won;
+            gambler.Stats.JackpotsWon++;
+            gambler.Stats.JackpotMoneyWon += won;
         }
 
         public BetManager(CoinService coinService, StockService stockService, AppSettings appSettings)
@@ -173,7 +176,7 @@ namespace DiscordBot.Managers
         }
 
         public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> 
-            ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true, bool feedJackpot = true)
+            ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true, bool feedJackpot = true, string game = null)
         {
             if (!InitiatedBetUserIds.Contains(userId))
                 throw new Exception("Something's gone wrong here. Somehow it is trying to resolve a bet which was not initiated.");
@@ -226,11 +229,13 @@ namespace DiscordBot.Managers
                 coinAccount.NetWinningsToday = 0;
 
             UpdateResolveBetStats(coinAccount, betAmount, totalWinnings);
+            RecordGame(coinAccount, game, betAmount, totalWinnings, bonusWinnings);
 
             if (firstGambleOfTheDay)
             {
                 int rollNeeded = coinAccount.TryConsumeCharge(PowerUpIds.LoadedDice, now) ? PowerUpCatalog.LoadedDiceRollNeeded : StealRollNeeded;
                 _pendingDailyRolls[userId] = RollDailySteal(coinAccount, rollNeeded, now);
+                coinAccount.Stats.DailyRolls++;
             }
 
             //an all-in bet is every dollar they have, with everything in cash, whether it wins or loses.
@@ -245,7 +250,11 @@ namespace DiscordBot.Managers
             //most of what is lost goes into the jackpot (after the roll, so you can't win your own loss straight back).
             //Face Off passes false: its losers' money is paid to the winner already
             if (feedJackpot)
-                _coinService.AddToJackpot(JackpotShareOfLoss(betAmount - totalWinnings));
+            {
+                double fed = JackpotShareOfLoss(betAmount - totalWinnings);
+                _coinService.AddToJackpot(fed);
+                coinAccount.Stats.MoneyFedToJackpot += fed;
+            }
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
             InitiatedBetUserIds.Remove(userId);
@@ -287,13 +296,17 @@ namespace DiscordBot.Managers
 
             leader.NetWorth -= amount;
             roller.NetWorth += amount;
+            roller.Stats.DailyStealsWon++;
+            roller.Stats.MoneyStolenByDailyRoll += amount;
+            leader.Stats.TimesRobbedByDailyRoll++;
+            leader.Stats.MoneyLostToDailyRoll += amount;
             result.StolenAmount = amount;
             result.StolenFromName = leader.Name;
             result.StolenFromUserId = leader.UserId;
             return result;
         }
 
-        public async Task ResolveBet(IEnumerable<IPlayer> players, bool feedJackpot = true)
+        public async Task ResolveBet(IEnumerable<IPlayer> players, bool feedJackpot = true, string game = null)
         {
             int i = 1;
             bool updateRemote = false;
@@ -302,7 +315,7 @@ namespace DiscordBot.Managers
                 if (i == players.Count())
                     updateRemote = true;
 
-                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote, feedJackpot);
+                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote, feedJackpot, game);
                 player.BonusWinnings = BonusWinnings; //this gets used outside of the method
                 i++;
             }
@@ -322,6 +335,17 @@ namespace DiscordBot.Managers
                 if (inputMoney < betRequired - 1)
                     throw new BadInputException($"Total bet amount must be at least {minimumPercentBetRequired}% of your net worth. Bet at least ${FormatHelper.GetCommaNumber(betRequired + 1)} or higher.");
             }
+        }
+
+        /// <summary>Adds the bet to the player's record for its game ("Other" when the caller didn't say which).</summary>
+        private static void RecordGame(CoinAccount account, string game, double betAmount, double totalWinnings, double bonusWinnings)
+        {
+            game = string.IsNullOrWhiteSpace(game) ? "Other" : game;
+            if (!account.Stats.Games.TryGetValue(game, out var record))
+                account.Stats.Games[game] = record = new GameRecord();
+            record.Add(betAmount, totalWinnings);
+            if (bonusWinnings > 0)
+                account.Stats.TotalBonusWinnings += bonusWinnings;
         }
 
         public void UpdateInitiateBetStats(CoinAccount coinAccount, double betAmount)

@@ -1350,84 +1350,90 @@ namespace DiscordBot.Managers
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count() == 0)
-                throw new BadSyntaxException();
-
+            //`.stats`, `.stats me`, `.stats @someone`, each with an optional page: `.stats me stocks`
             var accounts = _coinService.GetAll().Accounts;
+            string who = args.Count > 0 ? args[0] : "me";
             CoinAccount account;
-            if (args[0].StartsWith("me"))
-            {
+            if (who.StartsWith("me"))
                 account = accounts.FirstOrDefault(a => a.UserId == message.Author.Id);
-            }
-            else if (DiscordHelper.TryGetUserId(args[0], out ulong userId))
-            {
+            else if (DiscordHelper.TryGetUserId(who, out ulong userId))
                 account = accounts.FirstOrDefault(a => a.UserId == userId);
-            }
             else
-            {
                 throw new BadSyntaxException();
-            }
 
             if (account == null)
                 throw new BadInputException($"Account not found.");
 
-            var stats = account.Stats;
-            string lastPropertyName = string.Empty;
+            StatsReport.Section section = StatsReport.Sections[0];
+            if (args.Count > 1)
+                section = StatsReport.Find(args[1]) ?? throw new BadInputException($"There's no stats page called {args[1]}. Pages: {string.Join(", ", StatsReport.Sections.Select(s => s.Key))}.");
 
-            string title = $"{account.Name} stats";
+            await message.Channel.SendMessageAsync(embed: StatsEmbed(account, section), components: StatsMenu(account.UserId, section.Key));
+        }
 
-            Type type = stats.GetType();
-            PropertyInfo[] properties = type.GetProperties();
-            string output = "";
-            foreach (PropertyInfo property in properties)
+        /// <summary>One stats page as an embed.</summary>
+        private Embed StatsEmbed(CoinAccount account, StatsReport.Section section)
+        {
+            var accounts = _coinService.GetAll().Accounts;
+            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt;
+            var ordered = _appSettings.PrestigeDisabled
+                ? accounts.OrderByDescending(TotalWorth).ToList()
+                : accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth).ToList();
+
+            var market = _stockService.GetMarket();
+            double index = _coinService.GetAll().PropertyIndex;
+            var context = new StatsContext
             {
-                if (property.PropertyType == typeof(Dictionary<ulong, double>))
-                    continue;
+                StocksValue = _stockService.GetPortfolioValue(account.UserId),
+                PropertyValue = _coinService.PropertyValue(account),
+                HourlyRent = account.Properties.Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index)),
+                Rank = ordered.IndexOf(account) + 1,
+                Players = ordered.Count,
+                Holdings = market.GetHoldings(account.UserId).Select(h => (h.Key, h.Value, market.Find(h.Key)?.Price ?? 0)).ToList(),
+                OpenShorts = market.GetShorts(account.UserId).Count,
+                OpenOptions = market.Options.Count(o => o.UserId == account.UserId),
+                JackpotPool = _coinService.JackpotPool,
+                EnteredDraws = RaffleService.EnteredDrawCount(account, DateTime.UtcNow),
+                PrestigeDisabled = _appSettings.PrestigeDisabled,
+                NameOf = id => accounts.FirstOrDefault(a => a.UserId == id)?.Name ?? id.ToString(),
+            };
+            return DiscordHelper.GetEmbedBuilder($"{account.Name} · {section.Emoji} {section.Label}", StatsReport.Build(section.Key, account, context)).Build();
+        }
 
-                var value = property.GetValue(stats, index: null);
-                var strValue = property.PropertyType == typeof(double) ? FormatHelper.GetCommaNumber((double)value) : value.ToString();
+        /// <summary>The page picker under a stats message. Anyone can use it: stats are public.</summary>
+        private static MessageComponent StatsMenu(ulong accountId, string current)
+        {
+            var menu = new SelectMenuBuilder()
+                .WithCustomId(ComponentId.Build(MoneyComponents.Stats, "pick", accountId.ToString()))
+                .WithPlaceholder("More stats…");
+            foreach (var section in StatsReport.Sections)
+                menu.AddOption(section.Label, section.Key, emote: new Emoji(section.Emoji), isDefault: section.Key == current);
+            return new ComponentBuilder().WithSelectMenu(menu).Build();
+        }
 
-                string spacingToAdd = "";
-                if (lastPropertyName == "Streak" && !property.Name.EndsWith("Streak"))
-                {
-                    spacingToAdd = "\n";
-                }
-                else if (lastPropertyName == "Max" && !property.Name.StartsWith("Max"))
-                {
-                    spacingToAdd = "\n";
-                }
-                else if (lastPropertyName == "Total" && !property.Name.StartsWith("Total"))
-                {
-                    spacingToAdd = "\n";
-                }
-
-                output += $"{spacingToAdd}**{property.Name.SplitCamelCaseWithSpace()}:**\t {strValue}\n";
-
-                lastPropertyName = property.Name.StartsWith("Total") ? "Total"
-                    : property.Name.StartsWith("Max") ? "Max"
-                    : property.Name.EndsWith("Streak") ? "Streak"
-                    : string.Empty;
+        private async Task StatsComponent(SocketMessageComponent component, string action, string[] args)
+        {
+            if (action != "pick" || !ButtonOwner.TryRead(args, 0, out ulong accountId) || component.Data.Values.Count == 0)
+            {
+                await ReplyPrivately(component, "That menu doesn't do anything any more.");
+                return;
+            }
+            CoinAccount account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == accountId);
+            if (account == null)
+            {
+                await ReplyPrivately(component, "Account not found.");
+                return;
             }
 
-            await message.SendRichEmbedMessage(title, output);
-
-            string dictOutput = "";
-            foreach (PropertyInfo dictProperty in properties
-                .Where(p => p.PropertyType == typeof(Dictionary<ulong, double>)))
+            StatsReport.Section section = StatsReport.Find(component.Data.Values.First()) ?? StatsReport.Sections[0];
+            await component.DeferAsync();
+            Embed embed = StatsEmbed(account, section);
+            MessageComponent menu = StatsMenu(accountId, section.Key);
+            await component.Message.ModifyAsync(m =>
             {
-                var dict = (Dictionary<ulong, double>)dictProperty.GetValue(stats, index: null);
-                var orderedDict = dict.OrderByDescending(kvp => kvp.Value).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-
-                dictOutput += $"**{dictProperty.Name.SplitCamelCaseWithSpace()}:**\n";
-                foreach (var kvp in orderedDict)
-                {
-                    string userName = client.GetUser(kvp.Key).Username;
-                    dictOutput += $"{userName}: {FormatHelper.GetCommaNumber(kvp.Value)}\n";
-                }
-                dictOutput += "\n";
-            }
-
-            await message.SendRichEmbedMessage($"{account.Name} donation stats", dictOutput);
+                m.Embed = embed;
+                m.Components = menu;
+            });
         }
 
         private async Task GetFreeSpace(DiscordSocketClient client, SocketMessage message, List<string> args)

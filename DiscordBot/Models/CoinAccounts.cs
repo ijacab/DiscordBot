@@ -21,6 +21,7 @@ namespace DiscordBot.Models
         {
             double before = account.Debt;
             double left = account.PayDebtFrom(amount);
+            account.Stats.DebtRepaid += before - account.Debt;
             AddDebtRepaymentToJackpot(before - account.Debt);
             return left;
         }
@@ -29,6 +30,7 @@ namespace DiscordBot.Models
         public double RepayFromCash(CoinAccount account)
         {
             double paid = account.RepayFromCash();
+            account.Stats.DebtRepaid += paid;
             AddDebtRepaymentToJackpot(paid);
             return paid;
         }

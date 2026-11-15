@@ -153,7 +153,9 @@ namespace DiscordBot.Games.Managers
                 throw;
             }
 
-            var resolved = await _betManager.ResolveBet(session.UserId, session.Name, bet, baseWinnings);
+            var resolved = await _betManager.ResolveBet(session.UserId, session.Name, bet, baseWinnings, game: "Slots");
+            if (result.Jackpot)
+                account.Stats.SlotJackpotsHit++;
             var notes = new List<string>
             {
                 _betManager.TakeDailyRoll(session.UserId)?.ToString(),

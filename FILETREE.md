@@ -55,6 +55,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
     StockTickerCard.cs         one stock's graph + stats over a window (`.stocks SYMBOL`, live tickers)
+    StatsReport.cs             the nine `.stats` pages, built from CoinAccountStats (pure text)
     StockThreadService.cs      `.stocksthread`: live ticker thread per server, refreshed each stock tick (stockthreads.json)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale

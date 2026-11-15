@@ -13,6 +13,8 @@
         public const string Debt = "debt";
         /// <summary>The slot machine (Games/SlotView.cs): spin, bet and cash-out buttons for the player whose machine it is.</summary>
         public const string Slots = "slot";
+        /// <summary>The page picker under `.stats`.</summary>
+        public const string Stats = "stats";
     }
 
     public static class ButtonOwner

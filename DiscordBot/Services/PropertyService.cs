@@ -40,6 +40,8 @@ namespace DiscordBot.Services
             account.NetWorth -= cost;
             var holding = new PropertyHolding { Kind = kind, PurchaseCost = cost, PurchasedUtcTicks = DateTime.UtcNow.Ticks };
             account.Properties.Add(holding);
+            account.Stats.PropertiesBought++;
+            account.Stats.PropertySpent += cost;
             await _coinService.Update();
             return (holding, cost);
         }
@@ -52,6 +54,8 @@ namespace DiscordBot.Services
             double proceeds = PropertyCatalog.SaleValue(holding.Kind, index);
 
             account.Properties.Remove(holding);
+            account.Stats.PropertiesSold++;
+            account.Stats.PropertySaleProceeds += proceeds;
             account.NetWorth += _coinService.GetAll().PayDebtFrom(account, proceeds); //sale money pays any debt first, into the jackpot
             await _coinService.Update();
             return (holding, proceeds);
@@ -170,6 +174,7 @@ namespace DiscordBot.Services
                     var squat = squats.FirstOrDefault(s => SquattedPropertyId(account, s) == property.Id);
                     var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
                     (squatter ?? account).NetWorth += net;
+                    (squatter ?? account).Stats.RentEarned += net;
                 }
             }
         }
@@ -203,7 +208,11 @@ namespace DiscordBot.Services
         {
             double index = data.PropertyIndex;
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
-                account.NetWorth -= account.Properties.Sum(p => PropertyCatalog.DailyHoldingCost(p.Kind, index));
+            {
+                double cost = account.Properties.Sum(p => PropertyCatalog.DailyHoldingCost(p.Kind, index));
+                account.NetWorth -= cost;
+                account.Stats.HoldingCostsPaid += cost;
+            }
         }
     }
 }

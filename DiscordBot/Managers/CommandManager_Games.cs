@@ -77,7 +77,7 @@ namespace DiscordBot.Managers
             if (winningBets.Count == 0)
             {
                 output += $"{message.Author.Username} you did not make any successful bets. Your net worth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}.";
-                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings);
+                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, game: "Roulette");
             }
             else
             {
@@ -91,7 +91,7 @@ namespace DiscordBot.Managers
                         : $"{winningBet.RoulleteBetType}: ${FormatHelper.GetCommaNumber(winningBet.Amount)} -> ${FormatHelper.GetCommaNumber(amountBack)}\n";
                 }
 
-                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings);
+                betResolve = await _betManager.ResolveBet(userId, message.Author.Username, inputMoney, baseWinnings, game: "Roulette");
                 output += $"(+ bonus of ${ FormatHelper.GetCommaNumber(betResolve.BonusWinnings)})\n";
                 output += $"{message.Author.Mention} `Your networth is now ${FormatHelper.GetCommaNumber(coinAccount.NetWorth)}`";
             }

@@ -158,6 +158,9 @@ namespace DiscordBot.Services
                 stock.ApplyTrade(shares);
                 account.NetWorth -= cost;
                 _market.RecordPurchase(account.UserId, stock.Symbol, shares, fill);
+                account.Stats.StockBuys++;
+                account.Stats.SharesBought += shares;
+                account.Stats.MoneySpentOnStocks += cost;
                 Save();
                 return PersistAccount(account, (stock, shares, cost));
             }
@@ -179,10 +182,20 @@ namespace DiscordBot.Services
                 double fill = stock.PreviewTrade(-shares, SpreadFor(account)).Fill;
                 double gross = Math.Round(shares * fill, 2);
                 double tax = account.IsActive(PowerUpIds.TaxHaven, DateTime.UtcNow) ? 0 : Stock.TaxOn(gross);
+                double costOfShares = _market.GetAverageCost(account.UserId, stock.Symbol) * shares;
                 _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
                 account.NetWorth += _coinService.GetAll().PayDebtFrom(account, gross - tax); //sale money pays any debt first, into the jackpot
                 _market.AddShares(account.UserId, stock.Symbol, -shares);
+                double profit = gross - tax - costOfShares;
+                var stats = account.Stats;
+                stats.StockSells++;
+                stats.SharesSold += shares;
+                stats.StockSaleProceeds += gross;
+                stats.SellTaxPaid += tax;
+                stats.StockRealizedProfit += profit;
+                stats.BestStockSale = Math.Max(stats.BestStockSale, profit);
+                stats.WorstStockSale = Math.Min(stats.WorstStockSale, profit);
                 Save();
                 return PersistAccount(account, (stock, shares, gross, tax));
             }
@@ -221,6 +234,8 @@ namespace DiscordBot.Services
                 stock.ApplyTrade(-shares);
                 account.NetWorth -= margin + tax;
                 _market.AddShort(account.UserId, stock.Symbol, shares, fill, margin);
+                account.Stats.ShortsOpened++;
+                account.Stats.SellTaxPaid += tax;
                 Save();
                 return PersistAccount(account, (stock, shares, margin, tax));
             }
@@ -244,6 +259,8 @@ namespace DiscordBot.Services
 
                 stock.ApplyTrade(shares);
                 account.NetWorth += returned;
+                account.Stats.ShortsCovered++;
+                account.Stats.ShortProfit += returned - released;
                 Save();
                 return PersistAccount(account, (stock, shares, returned, returned - released));
             }
@@ -301,6 +318,8 @@ namespace DiscordBot.Services
                 _market.Options.Add(option);
                 _coinService.AddToJackpot(fee);
                 account.NetWorth -= premium + fee;
+                account.Stats.OptionContractsBought += contracts;
+                account.Stats.OptionPremiumsPaid += premium + fee;
                 Save();
                 return PersistAccount(account, (option, premium, fee));
             }
@@ -334,6 +353,8 @@ namespace DiscordBot.Services
                 if (account != null && payout > 0)
                 {
                     account.NetWorth += payout;
+                    account.Stats.OptionPayouts += payout;
+                    account.Stats.OptionsExpiredInTheMoney++;
                     _coinService.Update(account.UserId, account.NetWorth, account.Name).GetAwaiter().GetResult();
                 }
                 string kind = option.IsCall ? "call" : "put";

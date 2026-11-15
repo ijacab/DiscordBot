@@ -369,7 +369,7 @@ namespace DiscordBot.Games.Managers
                 var players = game.Players.Where(p => !p.IsDealer).ToList();
                 foreach (var p in players)
                     _lastBets[p.UserId] = p.BetAmount;
-                await _betManager.ResolveBet(players, LossesFeedJackpot);
+                await _betManager.ResolveBet(players, LossesFeedJackpot, game: GameName);
                 var results = new List<PlayerResult>();
                 foreach (var player in players)
                 {

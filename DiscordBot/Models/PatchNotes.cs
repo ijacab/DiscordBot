@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-15", "`.stats` now has nine pages (betting, per-game, stocks, property, jackpot, power-ups, dungeon, donations...) with a menu to switch. New counters start from today."),
             new PatchNote("2026-11-15", "Slot spins show their result instantly now, with no spinning animation."),
             new PatchNote("2026-11-15", "Blackjack's Play again button now deals a new game straight away with your last bet (no form). `.stocks` no longer graphs gold and bonds."),
             new PatchNote("2026-11-15", "New game: `.slots`, a slot machine with Spin / Bet / Max / Cash out buttons. Three 💎 win the jackpot (x100 to x2000 your bet)."),

@@ -105,6 +105,10 @@ namespace DiscordBot.Services
             var prize = PowerUpCatalog.Pick(random(), ContextFor(winner, entrants));
             winner.Grant(prize.Id, now);
 
+            foreach (var entrant in entrants)
+                entrant.Stats.RafflesEntered++;
+            winner.Stats.RafflesWon++;
+
             var result = new DrawResult { Winner = winner, Prize = prize, Entrants = entrants.Count };
             if (betOpenUserIds != null && betOpenUserIds.Contains(winner.UserId))
                 result.Kept = "you have a bet open";
@@ -146,6 +150,7 @@ namespace DiscordBot.Services
             user.Prune(now);
             bool copycat = number >= 1 && number <= user.HeldPowerUps.Count && user.HeldPowerUps[number - 1].Id == PowerUpIds.Copycat;
             string effect = ApplyUse(user, number, now, random);
+            user.Stats.PowerUpsUsed++;
             if (copycat && user.HeldPowerUps.Count > 0)
             {
                 var (copyEffect, copyKept) = Activate(user, now, random);
@@ -289,6 +294,9 @@ namespace DiscordBot.Services
             double toDebt = amount - fromCash;
             victim.Debt = Math.Round(victim.Debt + toDebt, 2);
             thief.NetWorth += amount;
+            victim.Stats.PeakDebt = Math.Max(victim.Stats.PeakDebt, victim.Debt);
+            thief.Stats.MoneyTakenByPowerUps += amount;
+            victim.Stats.MoneyLostToPowerUps += amount;
             return (fromCash, toDebt);
         }
 
@@ -317,6 +325,8 @@ namespace DiscordBot.Services
             if (victim.TryConsumeCharge(PowerUpIds.Mirror, now))
             {
                 Seize(attacker, victim, amount);
+                victim.Stats.AttacksLanded++;
+                attacker.Stats.AttacksSuffered++;
                 return new HitResult { Victim = victim, Gained = -amount, Reflected = true };
             }
 
@@ -328,6 +338,8 @@ namespace DiscordBot.Services
                 parachuted = true;
             }
             var (_, toDebt) = Seize(victim, attacker, amount);
+            attacker.Stats.AttacksLanded++;
+            victim.Stats.AttacksSuffered++;
             return new HitResult { Victim = victim, Gained = amount, ToDebt = toDebt, Parachuted = parachuted };
         }
 

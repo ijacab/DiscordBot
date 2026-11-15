@@ -64,6 +64,7 @@ namespace DiscordBot.Games.Managers
                     return $"You only have ${FormatHelper.GetCommaNumber(host.NetWorth)}.";
 
                 host.NetWorth -= buyIn;
+                host.Stats.DungeonRuns++;
                 await _coinService.Update(host.UserId, host.NetWorth, host.Name);
 
                 _session = new DungeonSession(host.UserId, host.Name, buyIn, DateTime.UtcNow, _random);
@@ -86,6 +87,7 @@ namespace DiscordBot.Games.Managers
                 if (refusal == null)
                 {
                     account.NetWorth -= session.BuyIn;
+                    account.Stats.DungeonRuns++;
                     await _coinService.Update(account.UserId, account.NetWorth, account.Name);
                 }
                 return refusal;
@@ -214,11 +216,19 @@ namespace DiscordBot.Games.Managers
             {
                 CoinAccount account = await _coinService.Get(payout.UserId, payout.Name);
                 account.NetWorth += payout.Amount;
+                account.Stats.DungeonPayouts += payout.Amount;
                 await _coinService.Update(payout.UserId, account.NetWorth, payout.Name);
             }
 
             //buy-in money that is lost feeds the jackpot like any other lost bet
-            double forfeited = _session.TakeForfeits().Sum(f => BetManager.JackpotShareOfLoss(f.Amount));
+            var forfeits = _session.TakeForfeits();
+            foreach (var forfeit in forfeits)
+            {
+                var account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == forfeit.UserId);
+                if (account != null)
+                    account.Stats.DungeonBuyInsLost += forfeit.Amount;
+            }
+            double forfeited = forfeits.Sum(f => BetManager.JackpotShareOfLoss(f.Amount));
             if (forfeited > 0)
             {
                 _coinService.AddToJackpot(forfeited);

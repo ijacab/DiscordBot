@@ -170,7 +170,12 @@ namespace DiscordBot.Services
             if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
                 || dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {
-                _coinAccounts.Accounts.ForEach(a => a.NetWorth += _appSettings.PrestigeDisabled ? 1000 : 1000 * (a.PrestigeLevel + 1)); //add 1000 if it is the start of the day
+                foreach (var a in _coinAccounts.Accounts) //add 1000 if it is the start of the day
+                {
+                    double daily = _appSettings.PrestigeDisabled ? 1000 : 1000 * (a.PrestigeLevel + 1);
+                    a.NetWorth += daily;
+                    a.Stats.DailyIncomeEarned += daily;
+                }
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
             }
 
@@ -180,7 +185,9 @@ namespace DiscordBot.Services
                 if (account.IsActive(PowerUpIds.Audited, DateTime.UtcNow))
                     continue; //an Audit power-up stops their interest
                 double multiplier = account.IsActive(PowerUpIds.CompoundInterest, DateTime.UtcNow) ? PowerUpCatalog.CompoundInterestMultiplier : 1;
-                account.NetWorth += CalculateAddedInterest(account) * multiplier; //add interest per hour if they are granted the bonus
+                double interest = CalculateAddedInterest(account) * multiplier;
+                account.NetWorth += interest; //add interest per hour if they are granted the bonus
+                account.Stats.InterestEarned += interest;
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);
             string content = JsonConvert.SerializeObject(_coinAccounts);
