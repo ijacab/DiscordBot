@@ -139,9 +139,13 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 double spread = SpreadFor(account);
+                //a holding can't pass int.MaxValue shares, so that's the most that can be added to it
+                int room = int.MaxValue - _market.GetShares(account.UserId, stock.Symbol);
+                if (room < 1) throw StockMarket.TooManyShares(stock.Symbol);
                 int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? stock.MaxAffordableShares(account.NetWorth, spread)
+                    ? stock.MaxAffordableShares(account.NetWorth, spread, room)
                     : ParseShares(amount);
+                if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
                     throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${stock.Price:N2}).");
@@ -197,9 +201,12 @@ namespace DiscordBot.Services
             lock (_lock)
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
+                int room = int.MaxValue - (_market.GetShort(account.UserId, stock.Symbol)?.Shares ?? 0);
+                if (room < 1) throw StockMarket.TooManyShares(stock.Symbol);
                 int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? stock.MaxShortableShares(account.NetWorth)
+                    ? stock.MaxShortableShares(account.NetWorth, room)
                     : ParseShares(amount);
+                if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
                     throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${stock.Price:N2}).");

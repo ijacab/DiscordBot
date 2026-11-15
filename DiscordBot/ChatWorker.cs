@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordBot.Installers;
+using DiscordBot.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -12,13 +13,15 @@ namespace DiscordBot
         private readonly ILogger<ChatWorker> _logger;
         private readonly MessageHandler _messageHandler;
         private readonly OllamaInstaller _ollamaInstaller;
+        private readonly HangWatchdog _watchdog;
         private bool _isStartupComplete = false;
 
-        public ChatWorker(ILogger<ChatWorker> logger, MessageHandler messageHandler, OllamaInstaller ollamaInstaller)
+        public ChatWorker(ILogger<ChatWorker> logger, MessageHandler messageHandler, OllamaInstaller ollamaInstaller, HangWatchdog watchdog)
         {
             _logger = logger;
             _messageHandler = messageHandler;
             _ollamaInstaller = ollamaInstaller;
+            _watchdog = watchdog;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,10 +46,13 @@ namespace DiscordBot
 
 
                 await _messageHandler.StartAsync();
+                //restarts the bot if it stops answering Discord or this loop gets stuck
+                _watchdog.Start();
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     await _messageHandler.RunBackgroundTasks();
+                    _watchdog.MarkLoopPass();
                     await Task.Delay(TimeSpan.FromMinutes(1));
                 }
             }

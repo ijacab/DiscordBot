@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DiscordBot.Exceptions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -92,8 +93,9 @@ namespace DiscordBot.Models
         public void RecordPurchase(ulong userId, string symbol, int shares, double price)
         {
             int owned = GetShares(userId, symbol);
+            if ((long)owned + shares > int.MaxValue) throw TooManyShares(symbol);
             double averageCost = GetAverageCost(userId, symbol);
-            double newAverage = (owned * averageCost + shares * price) / (owned + shares);
+            double newAverage = ((double)owned * averageCost + (double)shares * price) / ((long)owned + shares);
 
             AddShares(userId, symbol, shares);
             if (!CostBasis.TryGetValue(userId, out var basis))
@@ -101,13 +103,19 @@ namespace DiscordBot.Models
             basis[symbol] = newAverage;
         }
 
+        /// <summary>A holding is counted in an int, so it can't pass int.MaxValue (about 2.1 billion) shares.</summary>
+        public static BadInputException TooManyShares(string symbol) =>
+            new BadInputException($"You already hold as many {symbol} shares as the market can track (about 2.1 billion).");
+
         public void AddShares(ulong userId, string symbol, int shares)
         {
             if (!Portfolios.TryGetValue(userId, out var holdings))
                 Portfolios[userId] = holdings = new Dictionary<string, int>();
 
-            int newTotal = (holdings.TryGetValue(symbol, out int current) ? current : 0) + shares;
-            if (newTotal < 0) throw new InvalidOperationException("Can't have a negative number of shares.");
+            long total = (long)(holdings.TryGetValue(symbol, out int current) ? current : 0) + shares;
+            if (total > int.MaxValue) throw TooManyShares(symbol);
+            if (total < 0) throw new InvalidOperationException("Can't have a negative number of shares.");
+            int newTotal = (int)total;
 
             if (newTotal == 0)
             {
@@ -126,6 +134,7 @@ namespace DiscordBot.Models
         /// <summary>Adds shorted shares, averaging the entry price and summing the margin.</summary>
         public void AddShort(ulong userId, string symbol, int shares, double fill, double margin)
         {
+            if ((long)(GetShort(userId, symbol)?.Shares ?? 0) + shares > int.MaxValue) throw TooManyShares(symbol);
             if (!Shorts.TryGetValue(userId, out var positions))
                 Shorts[userId] = positions = new Dictionary<string, ShortPosition>();
 
@@ -134,7 +143,7 @@ namespace DiscordBot.Models
                 positions[symbol] = new ShortPosition { Shares = shares, EntryPrice = fill, Margin = margin };
                 return;
             }
-            position.EntryPrice = (position.Shares * position.EntryPrice + shares * fill) / (position.Shares + shares);
+            position.EntryPrice = ((double)position.Shares * position.EntryPrice + (double)shares * fill) / ((long)position.Shares + shares);
             position.Shares += shares;
             position.Margin += margin;
         }

@@ -47,6 +47,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     DebtService.cs             `.autosell`: sells stocks, then property, every minute to pay off debt
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
+    HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
     StockTickerCard.cs         one stock's graph + stats over a window (`.stocks SYMBOL`, live tickers)
     StockThreadService.cs      `.stocksthread`: live ticker thread per server, refreshed each stock tick (stockthreads.json)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures

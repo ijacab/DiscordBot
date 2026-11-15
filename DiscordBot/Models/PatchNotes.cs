@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-15", "Fixed `.buy max` / `.short max` freezing the whole bot for players with billions. Holdings top out at about 2.1 billion shares per stock, and the bot now restarts itself if it ever hangs."),
             new PatchNote("2026-11-14", "One money action now enters you in every power-up draw for the next 6 hours, not just the next one."),
             new PatchNote("2026-11-14", "`.stocksthread` is bot admins only now, and the existing ticker threads were deleted."),
             new PatchNote("2026-11-14", "`.stocksthread` recent tickers now cover the last 3 hours instead of 1."),

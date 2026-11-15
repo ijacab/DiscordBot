@@ -239,42 +239,47 @@ namespace DiscordBot.Models
         }
 
         /// <summary>
-        /// The largest number of shares whose cost fits in <paramref name="cash"/>. Cost rises with size because of impact,
-        /// so this searches rather than dividing. Buying pushes the fill up, so the price is an upper bound.
+        /// The largest number of shares whose cost fits in <paramref name="cash"/>, and no more than <paramref name="maxShares"/>.
+        /// Cost rises with size because of impact, so this searches rather than dividing. Buying pushes the fill up, so the
+        /// price is an upper bound.
         /// </summary>
         public int MaxAffordableShares(double cash) => MaxAffordableShares(cash, Spread);
 
-        public int MaxAffordableShares(double cash, double spread)
+        public int MaxAffordableShares(double cash, double spread, int maxShares = int.MaxValue)
         {
-            if (cash < Price) return 0;
-            int low = 0;
-            int high = (int)Math.Min(int.MaxValue, Math.Floor(cash / Price));
+            if (cash < Price || maxShares < 1) return 0;
+            //long, so the midpoint can't overflow: with billions of cash the top of the range is int.MaxValue,
+            //and an int search there wrapped negative and never finished, freezing the bot
+            long low = 0;
+            long high = (long)Math.Min(maxShares, Math.Floor(cash / Price));
             while (low < high)
             {
-                int mid = low + (high - low + 1) / 2;
-                double cost = Math.Round(mid * PreviewTrade(mid, spread).Fill, 2);
+                long mid = low + (high - low + 1) / 2;
+                double cost = Math.Round(mid * PreviewTrade((int)mid, spread).Fill, 2);
                 if (cost <= cash) low = mid;
                 else high = mid - 1;
             }
-            return low;
+            return (int)low;
         }
 
         /// <summary>
         /// The largest number of shares that can be shorted with <paramref name="cash"/>: the margin (the sale value) plus the
         /// sale tax must fit. Selling pushes the fill down, so this searches rather than dividing.
         /// </summary>
-        public int MaxShortableShares(double cash)
+        public int MaxShortableShares(double cash, int maxShares = int.MaxValue)
         {
-            int low = 0;
-            int high = (int)Math.Min(int.MaxValue, Math.Floor(cash / MinPrice));
+            if (cash <= 0 || maxShares < 1) return 0;
+            //long for the same reason as MaxAffordableShares
+            long low = 0;
+            long high = (long)Math.Min(maxShares, Math.Floor(cash / MinPrice));
             while (low < high)
             {
-                int mid = low + (high - low + 1) / 2;
-                double gross = Math.Round(mid * PreviewTrade(-mid).Fill, 2);
+                long mid = low + (high - low + 1) / 2;
+                double gross = Math.Round(mid * PreviewTrade(-(int)mid).Fill, 2);
                 if (gross + TaxOn(gross) <= cash) low = mid;
                 else high = mid - 1;
             }
-            return low;
+            return (int)low;
         }
 
         /// <summary>Shares in one option contract.</summary>
