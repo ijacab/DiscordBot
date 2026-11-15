@@ -63,6 +63,7 @@ namespace DiscordBot
             services.AddSingleton<BattleArenaManager>();
             services.AddSingleton<DuckRaceManager>();
             services.AddSingleton<DungeonManager>();
+            services.AddSingleton<SlotMachineManager>();
             services.AddScoped<DuckDuckGoService>();
             services.AddSingleton<BetManager>();
             services.AddSingleton<LocalFileService>();

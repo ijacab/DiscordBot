@@ -88,6 +88,9 @@ namespace DiscordBot.Games.Managers
         /// <summary>Buttons under the results. None by default (Face Off has its own dashboard).</summary>
         protected virtual MessageComponent ResultButtons => null;
 
+        /// <summary>Whether money lost in this game goes into the jackpot. Face Off turns it off: its losers' money is paid to the winner.</summary>
+        protected virtual bool LossesFeedJackpot => true;
+
         /// <summary>How one player came out of a game, for the results.</summary>
         public sealed class PlayerResult
         {
@@ -359,7 +362,7 @@ namespace DiscordBot.Games.Managers
                 Games.Remove(game);
 
                 var players = game.Players.Where(p => !p.IsDealer).ToList();
-                await _betManager.ResolveBet(players);
+                await _betManager.ResolveBet(players, LossesFeedJackpot);
                 var results = new List<PlayerResult>();
                 foreach (var player in players)
                 {

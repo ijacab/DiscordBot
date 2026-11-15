@@ -32,6 +32,7 @@ namespace DiscordBot.Managers
         private readonly BattleArenaManager _battleArenaManager;
         private readonly DuckRaceManager _duckRaceManager;
         private readonly DungeonManager _dungeonManager;
+        private readonly SlotMachineManager _slotMachineManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
         private readonly TranslationService _translationService;
@@ -46,7 +47,7 @@ namespace DiscordBot.Managers
 
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
-            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng",
+            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot",
             "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty"
         };
 
@@ -54,7 +55,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, GPTService gptService, ConvoService convoService,
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService,
             TranslationService translationService, BanService banService)
         {
             _logger = logger;
@@ -74,6 +75,7 @@ namespace DiscordBot.Managers
             _battleArenaManager = battleArenaManager;
             _duckRaceManager = duckRaceManager;
             _dungeonManager = dungeonManager;
+            _slotMachineManager = slotMachineManager;
             _gptService = gptService;
             _convoService = convoService;
             _translationService = translationService;
@@ -96,6 +98,8 @@ namespace DiscordBot.Managers
                 new Command("duck", GameDuckRace) { Hidden = true, Syntax = "`.duckrace betAmount` to start where betAmount is the amount you want to bet. For example `.duckrace 1000`" },
                 new Command("dungeon", GameDungeon) { Description = "Only one dungeon session can be open at a time, across all channels. Open a lobby with a buy-in from your cash, and anyone presses Join on the dashboard within 60 seconds. Then each player presses Go to crawl their own run, floor by floor, in blocks of 10 floors. At each boss door (floors 5 and 10) you choose: fight it, sneak past (half the time it works, otherwise the boss strikes first), or drink a potion and fight. Every block is about a 50% chance, so 20 floors is about 25% and 30 floors about 12.5%. After each block you're at a checkpoint: cash out to bank your haul, or enter the PvP pool. Once every run has decided, the pool fights, the winner takes the pot of the hauls and crawls on, and the losers are out. Stalled runs are cashed out after 15 minutes. Loot and potions drop automatically. Dying loses the haul and the buy-in. Everything is on the dashboard's buttons; typed commands work too. Shorthand: `.dng`", Syntax = "`.dungeon 1000` to open a lobby with a 1000 buy-in each, then use the buttons. Typed: `.dng join`, `.dng leave`, `.dng start`, `.dng go`, `.dng boss`, `.dng sneak`, `.dng potion`, `.dng fight`, `.dng cash`, or `.dng` to bring the dashboard to the bottom" },
                 new Command("dng", GameDungeon) { Hidden = true, Syntax = "`.dng 1000` to open a lobby with a 1000 buy-in each, then use the buttons. Typed: `.dng join`, `.dng leave`, `.dng start`, `.dng go`, `.dng boss`, `.dng sneak`, `.dng potion`, `.dng fight`, `.dng cash`, or `.dng` to bring the dashboard to the bottom" },
+                new Command("slots", GameSlots) { Description = "A slot machine with buttons. Pull the lever with Spin, change the bet with Bet ½, Bet x2, Max or Bet…, and cash out when you're done. Match symbols on the middle line: three 7️⃣ pay x250, and three 💎 win the jackpot pool (at least x100 your bet). 75% of every lost bet goes into the jackpot. Shorthand: `.slot`", Syntax = "`.slots` (bets 1% of your cash), `.slots 1000`, `.slots 10%` or `.slots max`" },
+                new Command("slot", GameSlots) { Hidden = true, Syntax = "`.slots 1000`" },
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows various detailed stats", Syntax = "`.stats me` or `.stats @someone`" },
@@ -122,7 +126,7 @@ namespace DiscordBot.Managers
                 new Command("powerup", PowerUp) { Description = "Shows your power-ups. One is drawn every hour among everyone who used money in the 6 hours before, and it goes off the moment it's won (lower on the leaderboard you draw more attacks and catch-up items). One that couldn't go off yet is kept: use it by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("autosell", AutoSell) { Description = "When on, your stocks and then property are sold automatically to pay off any debt (debt grows 10% every hour). Shorts and options are left alone.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
-                new Command("jackpot", Jackpot) { Description = "Shows the tax pool. Sell tax, donation tax and debt repayments go in. A `max` bet with all your money in cash (no stocks) can win the lot.",Syntax = "`.jackpot`" },
+                new Command("jackpot", Jackpot) { Description = "Shows the jackpot. 75% of every lost bet, sell tax, donation tax and debt repayments go in. A `max` bet with all your money in cash (no stocks or property) can win the lot, with 2 rolls an hour each. Three 💎 on `.slots` win it too.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },

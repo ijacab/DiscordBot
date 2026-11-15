@@ -23,8 +23,15 @@ namespace DiscordBot.Managers
         private const double StealPercent = 0.10;
         /// <summary>Chance that an all-in bet (the whole net worth) wins the jackpot pool.</summary>
         public const double JackpotWinChance = 0.03;
+        /// <summary>A player gets this many jackpot rolls in each UTC hour.</summary>
+        public const int JackpotRollsPerHour = 2;
+        /// <summary>The share of money lost on a bet that goes into the jackpot.</summary>
+        public const double JackpotLossShare = 0.75;
         private static readonly Random _random = new Random();
+        /// <summary>The random source for the jackpot roll (0 to 1). Settable so tests aren't random.</summary>
+        public Func<double> NextJackpotRoll { get; set; } = () => _random.NextDouble();
         private readonly Dictionary<ulong, double> _pendingJackpotWins = new Dictionary<ulong, double>();
+        private readonly Dictionary<ulong, string> _pendingJackpotNotes = new Dictionary<ulong, string>();
 
         public class DailyRollResult
         {
@@ -57,16 +64,55 @@ namespace DiscordBot.Managers
         /// <summary>Returns (and clears) the announcement for a jackpot won when the user's bet was last resolved, if any.</summary>
         public string TakeJackpotWin(ulong userId)
         {
-            if (!_pendingJackpotWins.Remove(userId, out double won))
-                return null;
-            return $"💰 **JACKPOT!** You went all in and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} tax pool!";
+            if (_pendingJackpotWins.Remove(userId, out double won))
+            {
+                _pendingJackpotNotes.Remove(userId);
+                return $"💰 **JACKPOT!** You went all in and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} jackpot!";
+            }
+            //an all-in bet that couldn't roll because the hour's rolls were used up
+            return _pendingJackpotNotes.Remove(userId, out string note) ? note : null;
         }
 
-        /// <summary>An all-in bet has a small chance to take the whole tax pool. The win is paid to the gambler.</summary>
+        /// <summary>
+        /// Uses one of the player's jackpot rolls for this UTC hour. False when they have already used
+        /// <see cref="JackpotRollsPerHour"/>. A new hour starts the count again.
+        /// </summary>
+        public static bool TryUseJackpotRoll(CoinAccount account, DateTime utcNow)
+        {
+            long hour = utcNow.Ticks / TimeSpan.TicksPerHour;
+            if (account.JackpotRollHour != hour)
+            {
+                account.JackpotRollHour = hour;
+                account.JackpotRollsThisHour = 0;
+            }
+            if (account.JackpotRollsThisHour >= JackpotRollsPerHour)
+                return false;
+            account.JackpotRollsThisHour++;
+            return true;
+        }
+
+        /// <summary>Money lost on a bet that goes into the jackpot (whole cents).</summary>
+        public static double JackpotShareOfLoss(double lost) =>
+            lost > 0 ? Math.Floor(lost * JackpotLossShare * 100) / 100 : 0;
+
+        /// <summary>
+        /// An all-in bet has a small chance to take the whole pool, up to <see cref="JackpotRollsPerHour"/> rolls an hour.
+        /// The win is paid to the gambler.
+        /// </summary>
         private void RollJackpot(CoinAccount gambler)
         {
-            double chance = gambler.IsActive(PowerUpIds.JackpotFever, DateTime.UtcNow) ? PowerUpCatalog.JackpotFeverChance : JackpotWinChance;
-            if (_coinService.JackpotPool <= 0 || !RollsJackpot(_random.NextDouble(), chance))
+            if (_coinService.JackpotPool <= 0)
+                return;
+
+            var now = DateTime.UtcNow;
+            if (!TryUseJackpotRoll(gambler, now))
+            {
+                _pendingJackpotNotes[gambler.UserId] = $"🎰 No jackpot rolls left this hour ({JackpotRollsPerHour} an hour).";
+                return;
+            }
+
+            double chance = gambler.IsActive(PowerUpIds.JackpotFever, now) ? PowerUpCatalog.JackpotFeverChance : JackpotWinChance;
+            if (!RollsJackpot(NextJackpotRoll(), chance))
                 return;
 
             double won = _coinService.TakeJackpot();
@@ -127,7 +173,7 @@ namespace DiscordBot.Managers
         }
 
         public async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)> 
-            ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true)
+            ResolveBet(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote = true, bool feedJackpot = true)
         {
             if (!InitiatedBetUserIds.Contains(userId))
                 throw new Exception("Something's gone wrong here. Somehow it is trying to resolve a bet which was not initiated.");
@@ -196,6 +242,11 @@ namespace DiscordBot.Managers
             if (allInWithNothingElseInvested)
                 RollJackpot(coinAccount);
 
+            //most of what is lost goes into the jackpot (after the roll, so you can't win your own loss straight back).
+            //Face Off passes false: its losers' money is paid to the winner already
+            if (feedJackpot)
+                _coinService.AddToJackpot(JackpotShareOfLoss(betAmount - totalWinnings));
+
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
             InitiatedBetUserIds.Remove(userId);
             return (bonusWinnings, totalWinnings, netWinnings, bonusGranted);
@@ -242,7 +293,7 @@ namespace DiscordBot.Managers
             return result;
         }
 
-        public async Task ResolveBet(IEnumerable<IPlayer> players)
+        public async Task ResolveBet(IEnumerable<IPlayer> players, bool feedJackpot = true)
         {
             int i = 1;
             bool updateRemote = false;
@@ -251,7 +302,7 @@ namespace DiscordBot.Managers
                 if (i == players.Count())
                     updateRemote = true;
 
-                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote);
+                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote, feedJackpot);
                 player.BonusWinnings = BonusWinnings; //this gets used outside of the method
                 i++;
             }

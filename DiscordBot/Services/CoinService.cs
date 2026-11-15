@@ -36,6 +36,14 @@ namespace DiscordBot.Services
                 _coinAccounts.JackpotPool += amount;
         }
 
+        /// <summary>Takes up to this much out of the jackpot and returns what was there to take. Saved with the next Update.</summary>
+        public double RemoveFromJackpot(double amount)
+        {
+            double taken = Math.Min(Math.Max(0, amount), _coinAccounts.JackpotPool);
+            _coinAccounts.JackpotPool -= taken;
+            return taken;
+        }
+
         /// <summary>Takes a share of the jackpot and returns it. Saved with the next Update.</summary>
         public double TakeFromJackpot(double fraction)
         {

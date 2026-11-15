@@ -43,6 +43,7 @@ namespace DiscordBot.Games.Models.Dungeon
         private readonly List<ScenePlayer> _departed = new List<ScenePlayer>();
         private readonly List<string> _log = new List<string>();
         private readonly List<DungeonPayout> _payouts = new List<DungeonPayout>();
+        private readonly List<DungeonPayout> _forfeits = new List<DungeonPayout>();
 
         public DungeonSession(ulong hostId, string hostName, double buyIn, DateTime now, Random random = null)
         {
@@ -110,6 +111,25 @@ namespace DiscordBot.Games.Models.Dungeon
             var taken = _payouts.ToList();
             _payouts.Clear();
             return taken;
+        }
+
+        /// <summary>
+        /// Buy-in money lost since the last call: the whole buy-in of a run that went down or lost the PvP pool, and the
+        /// shortfall of a cash out below the buy-in. The manager puts a share of it in the jackpot.
+        /// </summary>
+        public List<DungeonPayout> TakeForfeits()
+        {
+            var taken = _forfeits.ToList();
+            _forfeits.Clear();
+            return taken;
+        }
+
+        /// <summary>Notes what a run lost of its buy-in once it is over, given what it was paid.</summary>
+        private void Forfeit(DungeonRun run, double paidOut)
+        {
+            double lost = Math.Round(BuyIn - paidOut, 2);
+            if (lost > 0)
+                _forfeits.Add(new DungeonPayout { UserId = run.UserId, Name = run.Name, Amount = lost });
         }
 
         public void MarkPublished() => Changed = false;
@@ -192,6 +212,7 @@ namespace DiscordBot.Games.Models.Dungeon
             double payout = run.CashOut();
             Depart(run, "CASHED OUT", payout, run.Hp);
             Pay(run.UserId, run.Name, payout);
+            Forfeit(run, payout);
             AddLog($"{run.Name} cashes out ${payout:N2} after {run.Floor} floors and {run.Kills} kills.");
             TryResolvePool(now);
             return null;
@@ -282,6 +303,7 @@ namespace DiscordBot.Games.Models.Dungeon
                     double payout = run.CashOut();
                     Depart(run, "IDLE CASH OUT", payout, run.Hp);
                     Pay(run.UserId, run.Name, payout);
+                    Forfeit(run, payout);
                     AddLog($"{run.Name} has been idle for {IdleLimit.TotalMinutes} minutes, so their ${payout:N2} is banked.");
                 }
             }
@@ -319,6 +341,7 @@ namespace DiscordBot.Games.Models.Dungeon
             if (room.Died)
             {
                 Depart(run, "DOWN", 0, 0);
+                Forfeit(run, 0);
                 AddLog($"{run.Name}'s haul of ${FormatHelper.GetCommaNumber(run.Haul)} and buy-in are lost.");
                 TryResolvePool(now);
                 return;
@@ -396,6 +419,7 @@ namespace DiscordBot.Games.Models.Dungeon
                 {
                     run.Eliminate();
                     Depart(run, "LOST PVP", 0, 0);
+                    Forfeit(run, 0);
                 }
             }
 

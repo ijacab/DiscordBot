@@ -31,6 +31,7 @@ namespace DiscordBot.Games.Managers
     {
         public const string ComponentGame = "fo";
         public override string GameName => "Face Off";
+        protected override bool LossesFeedJackpot => false;
         public override string BaseCommand => "fo";
         public override string[] PlayCommands => new string[] { "attack", "defend", "focus", "gamble", "ability" };
 

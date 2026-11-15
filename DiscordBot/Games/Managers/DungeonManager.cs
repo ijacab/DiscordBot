@@ -1,6 +1,7 @@
 ﻿using Common.Helpers;
 using Discord;
 using DiscordBot.Games.Models.Dungeon;
+using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.Extensions.Logging;
@@ -214,6 +215,14 @@ namespace DiscordBot.Games.Managers
                 CoinAccount account = await _coinService.Get(payout.UserId, payout.Name);
                 account.NetWorth += payout.Amount;
                 await _coinService.Update(payout.UserId, account.NetWorth, payout.Name);
+            }
+
+            //buy-in money that is lost feeds the jackpot like any other lost bet
+            double forfeited = _session.TakeForfeits().Sum(f => BetManager.JackpotShareOfLoss(f.Amount));
+            if (forfeited > 0)
+            {
+                _coinService.AddToJackpot(forfeited);
+                await _coinService.Update();
             }
 
             if (_session.Ended)

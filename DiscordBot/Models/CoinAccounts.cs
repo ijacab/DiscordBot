@@ -77,6 +77,9 @@ namespace DiscordBot.Models
             public BattlePerson BattlePerson { get; set; }
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
             public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
+            /// <summary>The UTC hour (hours since 1970) of the player's last jackpot roll, and how many they've used in it. See <see cref="Managers.BetManager.TryUseJackpotRoll"/>.</summary>
+            public long JackpotRollHour { get; set; }
+            public int JackpotRollsThisHour { get; set; }
 
             /// <summary>When (UTC ticks) the player last did something with money. Within 6 hours before a draw enters the raffle (RaffleService.EntryWindow).</summary>
             public long LastActiveUtcTicks { get; set; }

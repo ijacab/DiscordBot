@@ -23,14 +23,17 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
+    CommandManager_Slots.cs    .slots and the slot machine's buttons / bet form
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
     BlackjackView.cs           the blackjack table embed (lobby, hands, results), edited in place
+    SlotMachine.cs  SlotView.cs   slot machine rules (reels, paytable, jackpot payout) and its embed/buttons
     Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
+      SlotMachineManager.cs        slot sessions, spin settlement and reel animation
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/

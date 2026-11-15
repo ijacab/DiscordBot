@@ -44,6 +44,9 @@ namespace DiscordBot.Managers
                     case BattleArenaManager.ComponentGame:
                         await FaceOffComponent(component, action, args);
                         break;
+                    case MoneyComponents.Slots:
+                        await SlotComponent(component, action, args);
+                        break;
                     case MoneyComponents.Stock:
                     case MoneyComponents.PowerUp:
                     case MoneyComponents.Property:
@@ -81,6 +84,9 @@ namespace DiscordBot.Managers
                 {
                     case BattleArenaManager.ComponentGame:
                         await FaceOffModal(modal, action, args);
+                        break;
+                    case MoneyComponents.Slots:
+                        await SlotModal(modal, action, args);
                         break;
                     case MoneyComponents.Stock:
                         await StockModal(modal, action, args);
