@@ -40,9 +40,9 @@ namespace DiscordBot.Models
         public double IntrinsicPerShare(double fairPrice) =>
             Math.Max(0, IsCall ? fairPrice - Strike : Strike - fairPrice);
 
-        /// <summary>What the option pays at expiry: how far in the money, per share. There is no cap, so a call on a mega boom pays the whole move.</summary>
+        /// <summary>What the option pays at expiry: how far in the money, per share, up to <see cref="Stock.MaxOptionPayoutMultiple"/> times the strike.</summary>
         public double PayoutAt(double fairPrice) =>
-            Math.Round(IntrinsicPerShare(fairPrice) * Stock.OptionContractSize * Contracts, 2);
+            Math.Round(Math.Min(IntrinsicPerShare(fairPrice), Strike * Stock.MaxOptionPayoutMultiple) * Stock.OptionContractSize * Contracts, 2);
     }
 
     public class StockMarket
