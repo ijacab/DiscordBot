@@ -114,7 +114,7 @@ namespace DiscordBot.Services
                     //one tick only, even if the bot was down for several periods
                     foreach (var stock in _market.Stocks)
                     {
-                        stock.ApplyTick(_random.NextDouble, MarketCycle.DriftFor(stock, data.MarketPhase));
+                        stock.ApplyTick(_random.NextDouble, MarketCycle.DriftFor(stock, data.MarketPhase, data.CrisisSeverity));
                         stock.RecordHistory();
                     }
                     _market.LastTickSlot = slot;
@@ -126,6 +126,35 @@ namespace DiscordBot.Services
                 if (changed) Save();
             }
             if (coinChanged) await _coinService.Update();
+        }
+
+        /// <summary>
+        /// The share of all player wealth held in ordinary stocks and houses, 0 to 1. It sets the market crash chance
+        /// (<see cref="MarketCycle.ChanceFor"/>). Gold and bonds count in the total but not as risky, so holding them lowers it.
+        /// </summary>
+        public double RiskyAssetShare()
+        {
+            lock (_lock)
+            {
+                double risky = 0, total = 0;
+                foreach (var account in _coinService.GetAll().Accounts)
+                {
+                    double property = _coinService.PropertyValue(account);
+                    risky += property;
+                    total += property + Math.Max(0, account.NetWorth);
+
+                    if (!_market.Portfolios.TryGetValue(account.UserId, out var holdings)) continue;
+                    foreach (var (symbol, shares) in holdings)
+                    {
+                        var stock = _market.Find(symbol);
+                        if (stock == null) continue;
+                        double value = shares * stock.Price;
+                        total += value;
+                        if (stock.Role == StockRole.Normal) risky += value;
+                    }
+                }
+                return MarketCycle.ExposureOf(risky, total);
+            }
         }
 
         public bool HasPositions(ulong userId)

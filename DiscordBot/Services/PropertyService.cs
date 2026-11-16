@@ -79,9 +79,10 @@ namespace DiscordBot.Services
         }
 
         /// <summary>Called every minute. Steps the market once a UTC day and pays rent for each hour that has passed and holding costs for each day.</summary>
-        public Task TickIfDue() => TickIfDue(DateTime.UtcNow, _random.NextDouble);
+        /// <param name="exposure">The share of player wealth in ordinary stocks and houses (0 to 1), which raises the crash chance. Only asked for on a day a crash could start.</param>
+        public Task TickIfDue(Func<double> exposure = null) => TickIfDue(DateTime.UtcNow, _random.NextDouble, exposure);
 
-        public async Task TickIfDue(DateTime now, Func<double> random)
+        public async Task TickIfDue(DateTime now, Func<double> random, Func<double> exposure = null)
         {
             var data = _coinService.GetAll();
             long today = PropertyMarket.DayNumber(now);
@@ -98,13 +99,13 @@ namespace DiscordBot.Services
             if (data.LastPropertyDay != today)
             {
                 //the market crisis calendar moves first, so today's step already follows the new phase
-                string headline = MarketCycle.AdvanceDay(data, today, random);
+                string headline = MarketCycle.AdvanceDay(data, today, random, exposure);
                 if (headline != null) _news.Add(headline);
 
                 double index = data.PropertyIndex;
                 if (data.MarketPhase != CrisisPhase.None)
                 {
-                    MarketCycle.StepProperty(ref index, data.MarketPhase);
+                    MarketCycle.StepProperty(ref index, data.MarketPhase, data.CrisisSeverity);
                 }
                 else
                 {

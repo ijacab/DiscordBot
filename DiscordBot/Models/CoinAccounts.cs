@@ -48,6 +48,13 @@ namespace DiscordBot.Models
         public ulong LastUsedPowerUpUserId { get; set; }
         /// <summary>The channel of the last money command, where raffle winners are announced.</summary>
         public ulong LastActiveChannelId { get; set; }
+        /// <summary>The last few channels money was used in, newest first. Market crash news and patch notes go to all of them.</summary>
+        public List<ulong> RecentActiveChannelIds { get; set; } = new List<ulong>();
+        public const int RecentChannelCount = 3;
+        /// <summary>The newest patch note (<see cref="PatchNotes.KeyOf"/>) already announced after a restart.</summary>
+        public string LastAnnouncedPatch { get; set; }
+        /// <summary>How bad the running market crash is, 0 (mild) to 1 (brutal). Rolled when it starts.</summary>
+        public double CrisisSeverity { get; set; }
         /// <summary>The shared property market index. 1.0 is the base national median; see <see cref="PropertyCatalog"/>.</summary>
         public double PropertyIndex { get; set; } = 1.0;
         /// <summary>+1 for a boom, -1 for a bust.</summary>

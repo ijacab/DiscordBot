@@ -1,4 +1,5 @@
-﻿using Discord;
+﻿using Microsoft.Extensions.Logging;
+using Discord;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
@@ -148,6 +149,50 @@ namespace DiscordBot.Managers
                 await message.SendRichEmbedMessage("Custom commands", "None added yet. Add one with `.add \"key\" \"value\"`");
             else
                 await SendPagedEmbeds(message.Channel, "Custom commands", new[] { string.Join(", ", customCommandNames) });
+        }
+
+        /// <summary>Sends text to the last few channels money was used in (market news, patch notes). A channel that's gone is skipped.</summary>
+        private async Task PostToRecentChannels(DiscordSocketClient client, string text = null, Func<IMessageChannel, Task> send = null)
+        {
+            foreach (ulong channelId in _coinService.RecentChannels())
+            {
+                try
+                {
+                    if (client.GetChannel(channelId) is not IMessageChannel channel) continue;
+                    if (send != null) await send(channel);
+                    else await channel.SendMessageAsync(text);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Couldn't post to channel {Channel}: {Message}", channelId, ex.Message);
+                }
+            }
+        }
+
+        public const int PatchNotesPostedAfterUpdate = 8;
+
+        /// <summary>
+        /// After a restart that came with new patch notes, posts them in the last few active channels. Once per run, when the bot is
+        /// connected. The first run with nothing recorded only records the newest note. A restart with nothing new posts nothing.
+        /// </summary>
+        private async Task AnnouncePatchNotesIfNew(DiscordSocketClient client)
+        {
+            if (_patchNotesChecked || client.ConnectionState != ConnectionState.Connected || client.Guilds.Count == 0) return;
+            _patchNotesChecked = true;
+
+            var data = _coinService.GetAll();
+            string newest = PatchNotes.KeyOf(PatchNotes.All[0]);
+            if (data.LastAnnouncedPatch == newest) return;
+
+            var fresh = PatchNotes.NewSince(data.LastAnnouncedPatch, PatchNotesPostedAfterUpdate);
+            int more = PatchNotes.CountSince(data.LastAnnouncedPatch) - fresh.Count;
+            data.LastAnnouncedPatch = newest;
+            await _coinService.Update(); //saved first, so a failed post can't repeat on every restart
+
+            if (fresh.Count == 0) return;
+            var lines = fresh.Select(n => $"**{n.Date}** · {n.Text}").ToList();
+            if (more > 0) lines.Add($"…and {more} more. See `.patchnotes`.");
+            await PostToRecentChannels(client, send: channel => SendPagedEmbeds(channel, "🛠️ Updated: new patch notes", lines));
         }
 
         private async Task ShowPatchNotes(DiscordSocketClient client, SocketMessage message, List<string> args)

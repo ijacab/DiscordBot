@@ -51,6 +51,7 @@ namespace DiscordBot.Managers
             "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty"
         };
 
+        private bool _patchNotesChecked;
         private bool _stopped;
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
@@ -292,17 +293,23 @@ namespace DiscordBot.Managers
             //coin tasks
             Task coinServiceTask = _coinService.AddInterest();
             Task stockTask = _stockService.TickIfDue();
-            Task propertyTask = _propertyService.TickIfDue();
+            Task propertyTask = _propertyService.TickIfDue(_stockService.RiskyAssetShare);
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
 
             //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
             _ = _stockThreadService.RefreshIfDue(client);
 
-            //market headlines when a crash starts, bottoms out, recovers or ends
+            //market headlines when a crash starts, bottoms out, recovers or ends, in the last few channels money was used in
             foreach (var headline in _propertyService.TakeNews())
+                await PostToRecentChannels(client, headline);
+
+            try
             {
-                if (client.GetChannel(_coinService.GetAll().LastActiveChannelId) is Discord.IMessageChannel newsChannel)
-                    await newsChannel.SendMessageAsync(headline);
+                await AnnouncePatchNotesIfNew(client);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error while announcing patch notes {nameof(CommandManager)}: {ex.Message}");
             }
 
             //any spare cash goes straight to debt, then players with auto-sell on sell assets for what's left

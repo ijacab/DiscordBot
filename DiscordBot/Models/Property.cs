@@ -48,6 +48,8 @@ namespace DiscordBot.Models
         /// <summary>The market index can't go below or above these, so prices can't run away.</summary>
         public const double IndexMin = 0.6;
         public const double IndexMax = 1.6;
+        /// <summary>A market crash can take the index lower than the ordinary floor (up to a 70% fall).</summary>
+        public const double CrisisIndexMin = 0.15;
         /// <summary>Daily drift of the index in the current boom or bust, as a share of the index.</summary>
         public const double TrendPerDay = 0.0025;
         /// <summary>Daily random movement on top of the drift.</summary>
@@ -107,7 +109,8 @@ namespace DiscordBot.Models
 
             double noise = (random() * 2 - 1) * PropertyCatalog.NoisePerDay;
             double move = trendDirection * PropertyCatalog.TrendPerDay + noise;
-            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(PropertyCatalog.IndexMin, index * (1 + move)));
+            //an index a crash left below the floor can rise but not fall further, and isn't snapped up to the floor
+            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(Math.Min(PropertyCatalog.IndexMin, index), index * (1 + move)));
             trendDaysLeft--;
         }
 

@@ -60,6 +60,20 @@ namespace DiscordBot.Services
             if (account == null) return;
             account.LastActiveUtcTicks = DateTime.UtcNow.Ticks;
             _coinAccounts.LastActiveChannelId = channelId;
+
+            var recent = _coinAccounts.RecentActiveChannelIds;
+            recent.Remove(channelId);
+            recent.Insert(0, channelId);
+            if (recent.Count > CoinAccounts.RecentChannelCount)
+                recent.RemoveRange(CoinAccounts.RecentChannelCount, recent.Count - CoinAccounts.RecentChannelCount);
+        }
+
+        /// <summary>The last few channels money was used in, newest first. Before any are recorded, the last active channel alone.</summary>
+        public IReadOnlyList<ulong> RecentChannels()
+        {
+            if (_coinAccounts.RecentActiveChannelIds.Count > 0)
+                return _coinAccounts.RecentActiveChannelIds.ToList();
+            return _coinAccounts.LastActiveChannelId != 0 ? new List<ulong> { _coinAccounts.LastActiveChannelId } : new List<ulong>();
         }
 
         /// <summary>What the player's houses would sell for right now, after selling costs.</summary>

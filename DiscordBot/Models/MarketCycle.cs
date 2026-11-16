@@ -36,41 +36,74 @@ namespace DiscordBot.Models
     }
 
     /// <summary>
-    /// Rare market-wide crashes, roughly once every two years. A crash runs Decline, Bottom and Recovery, and moves stocks
-    /// and property together. Gold rallies in a decline; bonds ignore it. Stock prices and property stay where they fall.
-    /// Random draws in <see cref="AdvanceDay"/> are the daily roll only, so tests can control it.
+    /// Market-wide crashes (the GFC), about once every two months at the base chance, more often the more of the players' wealth
+    /// sits in ordinary stocks and houses (<see cref="ChanceFor"/>). A crash runs Decline, Bottom and Recovery, and moves stocks
+    /// and property together, harder or softer depending on a severity rolled when it starts. Gold rallies in a decline; bonds
+    /// ignore it. Stock prices and property recover most of the way but not all of it.
+    /// Random draws in <see cref="AdvanceDay"/> are the daily roll and, when a crash starts, its severity, so tests can control them.
     /// </summary>
     public static class MarketCycle
     {
-        /// <summary>Chance per UTC day that a crash starts, if none is running and the cooldown has passed. About once every two years.</summary>
-        public const double DailyChance = 1.0 / 730;
-        /// <summary>Days after a crash starts before another one can start.</summary>
-        public const int CooldownDays = 730;
-        public const int DeclineDays = 14;
-        public const int BottomDays = 5;
-        public const int RecoveryDays = 120;
+        /// <summary>
+        /// Chance per UTC day that a crash starts while the market is normal, when players hold no stocks or houses. With the
+        /// 40 day cycle that is about one crash every two months.
+        /// </summary>
+        public const double DailyChance = 1.0 / 20;
+        /// <summary>The chance is this many times the base when <see cref="FullExposureShare"/> of player wealth is in ordinary stocks and houses.</summary>
+        public const double MaxChanceMultiple = 5;
+        /// <summary>Share of all player wealth in ordinary stocks and houses that gives the full multiple.</summary>
+        public const double FullExposureShare = 0.6;
+        /// <summary>Days after a crash starts before another one can start. The cycle itself spaces them.</summary>
+        public const int CooldownDays = 0;
+        public const int DeclineDays = 7;
+        public const int BottomDays = 3;
+        public const int RecoveryDays = 30;
 
-        /// <summary>Total fall over a decline for crypto.</summary>
+        /// <summary>Total fall over a decline for crypto in the mildest crash (severity 0) and in the worst (severity 1).</summary>
         public const double CryptoFall = 0.60;
+        public const double CryptoWorstFall = 0.99;
+        /// <summary>The worst fall of an ordinary stock is this plus <see cref="WorstFallPerTier"/> for each tier above 3: 70%, 80%, 90%.</summary>
+        public const double WorstFallBase = 0.70;
+        public const double WorstFallPerTier = 0.10;
         /// <summary>Total fall for an ordinary stock is this plus <see cref="TierFallPerTier"/> per risk tier: 26% in tier 1, 50% in tier 5.</summary>
         public const double TierFallBase = 0.20;
         public const double TierFallPerTier = 0.06;
         /// <summary>Share of the lost value (in log terms) that comes back over the recovery.</summary>
-        public const double RecoveryShare = 0.6;
+        public const double RecoveryShare = 0.85;
         /// <summary>How far gold rises over a decline.</summary>
         public const double GoldRise = 0.20;
         /// <summary>Swings are this many times normal in the bottom.</summary>
         public const double BottomSwingScale = 2;
 
-        /// <summary>Property index multiplier over a decline and over a recovery.</summary>
+        /// <summary>Property index multiplier over the decline of the mildest crash (a 25% fall). The worst crash takes 70%.</summary>
         public const double PropertyDeclineTotal = 0.75;
-        public const double PropertyRecoveryTotal = 1.15;
+        public const double PropertyWorstFall = 0.70;
 
-        /// <summary>Total fall of an ordinary stock over a decline.</summary>
-        public static double FallFor(Stock stock) => stock.IsCrypto ? CryptoFall : TierFallBase + TierFallPerTier * stock.RiskTier;
+        /// <summary>How much a crash of this severity (0 to 1) takes off property over the decline.</summary>
+        public static double PropertyFall(double severity) =>
+            (1 - PropertyDeclineTotal) + (PropertyWorstFall - (1 - PropertyDeclineTotal)) * Math.Clamp(severity, 0, 1);
 
-        /// <summary>The drift a stock gets on each tick in this phase.</summary>
-        public static MarketDrift DriftFor(Stock stock, CrisisPhase phase)
+        /// <summary>The share of wealth in ordinary stocks and houses that decides the crash chance: 0 to 1.</summary>
+        public static double ExposureOf(double riskyValue, double totalValue) =>
+            totalValue <= 0 ? 0 : Math.Clamp(riskyValue / totalValue, 0, 1);
+
+        /// <summary>Chance of a crash starting on a day, from that exposure: the base with nothing held, up to the maximum multiple.</summary>
+        public static double ChanceFor(double exposure) =>
+            DailyChance * (1 + (MaxChanceMultiple - 1) * Math.Clamp(exposure / FullExposureShare, 0, 1));
+
+        /// <summary>
+        /// Total fall of an ordinary stock over a decline: today's tier fall in the mildest crash (severity 0), up to 70% to 90%
+        /// by tier (99% for crypto) in the worst (severity 1).
+        /// </summary>
+        public static double FallFor(Stock stock, double severity = 0)
+        {
+            double mild = stock.IsCrypto ? CryptoFall : TierFallBase + TierFallPerTier * stock.RiskTier;
+            double worst = stock.IsCrypto ? CryptoWorstFall : Math.Max(mild, WorstFallBase + WorstFallPerTier * (stock.RiskTier - 3));
+            return mild + (worst - mild) * Math.Clamp(severity, 0, 1);
+        }
+
+        /// <summary>The drift a stock gets on each tick in this phase of a crash of this severity.</summary>
+        public static MarketDrift DriftFor(Stock stock, CrisisPhase phase, double severity = 0)
         {
             if (stock.Role == StockRole.Bond) return MarketDrift.None;
             bool safeHaven = stock.Role == StockRole.SafeHaven;
@@ -80,43 +113,55 @@ namespace DiscordBot.Models
                 case CrisisPhase.Decline:
                     if (safeHaven)
                         return new MarketDrift(Math.Log(1 + GoldRise) / DeclineDays / Stock.TicksPerDay, 1, false);
-                    return new MarketDrift(Math.Log(1 - FallFor(stock)) / DeclineDays / Stock.TicksPerDay, 1, false);
+                    return new MarketDrift(Math.Log(1 - FallFor(stock, severity)) / DeclineDays / Stock.TicksPerDay, 1, false);
 
                 case CrisisPhase.Bottom:
                     return new MarketDrift(0, BottomSwingScale, false);
 
                 case CrisisPhase.Recovery:
                     if (safeHaven) return MarketDrift.None; //gold drifts back to its base
-                    return new MarketDrift(-Math.Log(1 - FallFor(stock)) * RecoveryShare / RecoveryDays / Stock.TicksPerDay, 1, false);
+                    return new MarketDrift(-Math.Log(1 - FallFor(stock, severity)) * RecoveryShare / RecoveryDays / Stock.TicksPerDay, 1, false);
 
                 default:
                     return MarketDrift.None;
             }
         }
 
-        /// <summary>Moves the property index for one day of a crisis. Apartments still move more than houses, as the index is raised to a power.</summary>
-        public static void StepProperty(ref double index, CrisisPhase phase)
+        /// <summary>
+        /// Moves the property index for one day of a crisis of this severity. The recovery gives back <see cref="RecoveryShare"/> of
+        /// the fall in log terms, like stocks. The index can go as low as <see cref="PropertyCatalog.CrisisIndexMin"/>.
+        /// </summary>
+        public static void StepProperty(ref double index, CrisisPhase phase, double severity = 0)
         {
+            double kept = 1 - PropertyFall(severity);
             double factor = 1;
-            if (phase == CrisisPhase.Decline) factor = Math.Pow(PropertyDeclineTotal, 1.0 / DeclineDays);
-            else if (phase == CrisisPhase.Recovery) factor = Math.Pow(PropertyRecoveryTotal, 1.0 / RecoveryDays);
-            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(PropertyCatalog.IndexMin, index * factor));
+            if (phase == CrisisPhase.Decline) factor = Math.Pow(kept, 1.0 / DeclineDays);
+            else if (phase == CrisisPhase.Recovery) factor = Math.Pow(Math.Pow(1 / kept, RecoveryShare), 1.0 / RecoveryDays);
+            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(PropertyCatalog.CrisisIndexMin, index * factor));
         }
+
+        /// <summary>The days a phase lasts.</summary>
+        public static int LengthOf(CrisisPhase phase) =>
+            phase == CrisisPhase.Decline ? DeclineDays : phase == CrisisPhase.Bottom ? BottomDays : phase == CrisisPhase.Recovery ? RecoveryDays : 0;
 
         /// <summary>
         /// Advances the crisis by one UTC day, starting one at random if none is running. Returns a headline to post, or null.
-        /// <paramref name="random"/> is only drawn when a crash could start.
+        /// <paramref name="random"/> is drawn only when a crash could start: the roll, then the crash's severity.
+        /// <paramref name="exposure"/> (0 to 1, see <see cref="ExposureOf"/>) is only asked for on a day a roll is made.
         /// </summary>
-        public static string AdvanceDay(CoinAccounts data, long day, Func<double> random)
+        public static string AdvanceDay(CoinAccounts data, long day, Func<double> random, Func<double> exposure = null)
         {
             if (data.MarketPhase == CrisisPhase.None)
             {
-                if (day < data.NextCrisisAllowedDay || random() >= DailyChance) return null;
+                if (day < data.NextCrisisAllowedDay || random() >= ChanceFor(exposure?.Invoke() ?? 0)) return null;
                 data.NextCrisisAllowedDay = day + CooldownDays;
-                return Begin(data, CrisisPhase.Decline, DeclineDays,
-                    "📉 **Markets are in freefall.** Stocks and property are sliding. Gold is rising and government bonds are steady, so they're safer places to put money.");
+                double roll = random();
+                data.CrisisSeverity = roll * roll; //most crashes are moderate, a few are brutal
+                return Begin(data, CrisisPhase.Decline, DeclineDays, FreefallHeadline(data.CrisisSeverity));
             }
 
+            //a crash saved under longer phases is cut to the current length
+            data.MarketPhaseDaysLeft = Math.Min(data.MarketPhaseDaysLeft, LengthOf(data.MarketPhase));
             data.MarketPhaseDaysLeft--;
             if (data.MarketPhaseDaysLeft > 0) return null;
 
@@ -144,6 +189,15 @@ namespace DiscordBot.Models
             foreach (var stock in stocks)
                 if (stock.Role == StockRole.Normal)
                     stock.BasePrice = stock.FairPrice;
+        }
+
+        /// <summary>The headline when a crash starts: how bad it is, from the severity.</summary>
+        public static string FreefallHeadline(double severity)
+        {
+            string how = severity < 0.25 ? "📉 **A recession hits.** Prices are sliding."
+                : severity < 0.6 ? "📉 **Markets are in freefall.** Stocks and property are crashing."
+                : "🔥 **A GFC: markets are being wiped out.** Stocks and property are collapsing.";
+            return how + " Gold is rising and government bonds are steady, so they're safer places to put money. The more stocks and houses players hold, the likelier a crash.";
         }
 
         private static string Begin(CoinAccounts data, CrisisPhase phase, int days, string headline)

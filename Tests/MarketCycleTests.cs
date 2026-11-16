@@ -196,15 +196,16 @@ namespace Tests
             Assert.Equal(MarketCycle.PropertyDeclineTotal, index, 6);
 
             for (int i = 0; i < MarketCycle.RecoveryDays; i++) MarketCycle.StepProperty(ref index, CrisisPhase.Recovery);
-            Assert.Equal(MarketCycle.PropertyDeclineTotal * MarketCycle.PropertyRecoveryTotal, index, 6);
+            //the mildest crash takes 25% and recovery gives back 85% of that in log terms
+            Assert.Equal(MarketCycle.PropertyDeclineTotal * Math.Pow(1 / MarketCycle.PropertyDeclineTotal, MarketCycle.RecoveryShare), index, 6);
         }
 
         [Fact]
         public void StepProperty_StaysInsideTheIndexClamp()
         {
-            double index = PropertyCatalog.IndexMin + 0.01;
-            for (int i = 0; i < 100; i++) MarketCycle.StepProperty(ref index, CrisisPhase.Decline);
-            Assert.Equal(PropertyCatalog.IndexMin, index, 6);
+            double index = PropertyCatalog.CrisisIndexMin + 0.01;
+            for (int i = 0; i < 100; i++) MarketCycle.StepProperty(ref index, CrisisPhase.Decline, severity: 1);
+            Assert.Equal(PropertyCatalog.CrisisIndexMin, index, 6);
         }
 
         [Fact]

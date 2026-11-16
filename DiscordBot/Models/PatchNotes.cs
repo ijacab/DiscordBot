@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace DiscordBot.Models
 {
@@ -20,8 +22,30 @@ namespace DiscordBot.Models
     /// </summary>
     public static class PatchNotes
     {
+        /// <summary>Identifies a note across restarts, for remembering which ones were announced.</summary>
+        public static string KeyOf(PatchNote note) => $"{note.Date}|{note.Text}";
+
+        /// <summary>
+        /// The notes newer than the one with this key, newest first, at most <paramref name="max"/>. Empty when the key is the
+        /// newest note, or isn't in the list (a note was reworded), so a reworded note is never announced again.
+        /// </summary>
+        public static IReadOnlyList<PatchNote> NewSince(string key, int max)
+        {
+            int position = string.IsNullOrEmpty(key) ? -1 : All.ToList().FindIndex(n => KeyOf(n) == key);
+            return position <= 0 ? new List<PatchNote>() : All.Take(position).Take(max).ToList();
+        }
+
+        /// <summary>How many notes are newer than this key (for "and N more").</summary>
+        public static int CountSince(string key)
+        {
+            int position = string.IsNullOrEmpty(key) ? -1 : All.ToList().FindIndex(n => KeyOf(n) == key);
+            return Math.Max(0, position);
+        }
+
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-16", "The bot posts the new patch notes in the last few active channels after an update."),
+            new PatchNote("2026-11-16", "Market crashes (GFC) come about every 2 months, more often the more stocks and houses players hold (gold/bonds don't count), and can wipe stocks out up to 99%."),
             new PatchNote("2026-11-16", "The live stock thread is now one message with one image (all-time and 3-hour charts for every stock, like `.stocks`) instead of a message per stock."),
             new PatchNote("2026-11-15", "`.stats` now has nine pages (betting, per-game, stocks, property, jackpot, power-ups, dungeon, donations...) with a menu to switch. New counters start from today."),
             new PatchNote("2026-11-15", "Slot spins show their result instantly now, with no spinning animation."),
