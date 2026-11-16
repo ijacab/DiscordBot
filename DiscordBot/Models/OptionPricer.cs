@@ -12,16 +12,19 @@ namespace DiscordBot.Models
     /// </summary>
     public static class OptionPricer
     {
-        /// <summary>The longest option, in ticks (3 days).</summary>
-        public const int MaxPricedTicks = 864;
+        /// <summary>
+        /// Options longer than this many ticks (24 hours) are priced as this long. The price has forgotten where it started by then, and
+        /// a premium barely changes beyond it (a crypto call costs the same for 24 hours as for 3 days), while a longer run is slow.
+        /// </summary>
+        public const int MaxPricedTicks = 288;
         private const int OrdinaryTickBudget = 1_000_000;
-        private const int CryptoTickBudget = 3_000_000;
+        private const int CryptoTickBudget = 2_000_000;
         private const int MinPaths = 2_000;
-        private const int MaxPaths = 12_000;
+        private const int MaxPaths = 40_000;
         private const int MaxCached = 4_000;
 
         private readonly record struct Key(string Symbol, int RiskTier, StockRole Role, bool IsCall, int Ticks, double Fair, double Base,
-            int Momentum, int Recovery, double DriftLog, double DriftSwing, bool DriftReverts);
+            int Momentum, int Recovery, int MegaTicks, double MegaStep, double DriftLog, double DriftSwing, bool DriftReverts);
 
         private static readonly Dictionary<Key, double> _cache = new Dictionary<Key, double>();
         private static readonly object _lock = new object();
@@ -31,7 +34,7 @@ namespace DiscordBot.Models
         {
             ticks = Math.Clamp(ticks, 1, MaxPricedTicks);
             var key = new Key(stock.Symbol, stock.RiskTier, stock.Role, isCall, ticks, stock.FairPrice, stock.BasePrice,
-                stock.MomentumTicks, stock.CrashRecoveryTicks, drift.LogPerTick, drift.SwingScale, drift.AllowReversion);
+                stock.MomentumTicks, stock.CrashRecoveryTicks, stock.MegaTicks, stock.MegaStep, drift.LogPerTick, drift.SwingScale, drift.AllowReversion);
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out double cached)) return cached;
@@ -66,6 +69,8 @@ namespace DiscordBot.Models
                 scratch.Impact = 0;
                 scratch.MomentumTicks = stock.MomentumTicks;
                 scratch.CrashRecoveryTicks = stock.CrashRecoveryTicks;
+                scratch.MegaTicks = stock.MegaTicks;
+                scratch.MegaStep = stock.MegaStep;
                 for (int tick = 0; tick < ticks; tick++)
                     scratch.ApplyTick(next, drift);
                 double end = scratch.FairPrice;

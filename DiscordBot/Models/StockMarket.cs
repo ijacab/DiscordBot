@@ -283,7 +283,7 @@ namespace DiscordBot.Models
                 if (shares <= 0) continue;
                 AddShares(userId, symbol, -shares);
                 Owe(userId, Math.Round(shares * stock.Price, 2));
-                AddSettledResult(userId, $"{symbol} was taken off the market. Your {shares} shares were paid out at ${stock.Price:N2}.");
+                AddSettledResult(userId, $"{symbol} was taken off the market. Your {shares} shares were paid out at ${Stock.FormatPrice(stock.Price)}.");
             }
 
             foreach (ulong userId in Shorts.Keys.ToList())

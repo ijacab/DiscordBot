@@ -405,7 +405,7 @@ namespace DiscordBot.Managers
         }
 
         private static string StockRow(Stock stock, string lead) =>
-            $"{lead} **{stock.Symbol}** ${stock.Price:N2} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {stock.AllTimeChange:+0.00;-0.00;0.00}% all time)\n";
+            $"{lead} **{stock.Symbol}** ${Stock.FormatPrice(stock.Price)} ({stock.PercentChange:+0.00;-0.00;0.00}% last tick | {stock.AllTimeChange:+0.00;-0.00;0.00}% all time)\n";
 
         /// <summary>
         /// Every stock's % change since its first kept tick, as one panel per stock in a single image (two per row), so
@@ -428,7 +428,7 @@ namespace DiscordBot.Managers
                     {
                         history.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList()
                     };
-                    charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), v => $"{v:+0;-0;0}%", StockChart.ColourForChange(stock.AllTimeChange)));
+                    charts.Add(StockChart.RenderMultiPng(series, TimeSpan.FromMinutes(5), StockChart.FormatPercentLabel, StockChart.ColourForChange(stock.AllTimeChange)));
                     symbols.Add(stock.Symbol.ToUpperInvariant());
                 }
                 if (charts.Count == 0) return;
@@ -512,7 +512,7 @@ namespace DiscordBot.Managers
             EnsureNotBetting(userId, "trading stocks");
             CoinAccount account = await _coinService.Get(userId, username);
             var (stock, shares, cost) = _stockService.Buy(account, symbol, amount);
-            return ($"{mention} bought {shares} share(s) of {stock.Symbol} at an average ${cost / shares:N2} for ${FormatHelper.GetCommaNumber(cost)}. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
+            return ($"{mention} bought {shares} share(s) of {stock.Symbol} at an average ${Stock.FormatPrice(cost / shares)} for ${FormatHelper.GetCommaNumber(cost)}. {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
         }
 
         /// <summary>Sells for a player and returns the public line, for `.sell` and the Sell buttons.</summary>
@@ -521,7 +521,7 @@ namespace DiscordBot.Managers
             EnsureNotBetting(userId, "trading stocks");
             CoinAccount account = await _coinService.Get(userId, username);
             var (stock, shares, gross, tax) = _stockService.Sell(account, symbol, amount);
-            return ($"{mention} sold {shares} share(s) of {stock.Symbol} at an average ${gross / shares:N2} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
+            return ($"{mention} sold {shares} share(s) of {stock.Symbol} at an average ${Stock.FormatPrice(gross / shares)} for ${FormatHelper.GetCommaNumber(gross)}, less ${FormatHelper.GetCommaNumber(tax)} sell tax (goes to the jackpot). {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.", stock.Symbol);
         }
 
         /// <summary>Refuses while the player has a bet open, so a bet's stake can't be spent twice.</summary>
@@ -640,7 +640,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (stock, shares, margin, tax) = _stockService.Short(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} shorted {shares} share(s) of {stock.Symbol}, locking ${FormatHelper.GetCommaNumber(margin)} margin and ${FormatHelper.GetCommaNumber(tax)} sale tax (goes to the jackpot). You profit if it falls and lose margin as it rises, and at 2x the entry price you're wiped out. {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} shorted {shares} share(s) of {stock.Symbol}, locking ${FormatHelper.GetCommaNumber(margin)} margin and ${FormatHelper.GetCommaNumber(tax)} sale tax (goes to the jackpot). You profit if it falls and lose margin as it rises, and at 2x the entry price you're wiped out. {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         private async Task CoverStock(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -651,7 +651,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (stock, shares, returned, profit) = _stockService.Cover(account, args[0], args[1]);
 
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} covered {shares} share(s) of {stock.Symbol} and got back ${FormatHelper.GetCommaNumber(returned)} ({SignedMoney(profit)}). {stock.Symbol} is now ${stock.Price:N2}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} covered {shares} share(s) of {stock.Symbol} and got back ${FormatHelper.GetCommaNumber(returned)} ({SignedMoney(profit)}). {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         private Task CallOption(DiscordSocketClient client, SocketMessage message, List<string> args) => BuyOptionCommand(message, args, isCall: true);
@@ -673,7 +673,7 @@ namespace DiscordBot.Managers
 
             string kind = isCall ? "call" : "put";
             string wins = isCall ? "rises above" : "falls below";
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {contracts} {option.Symbol} {kind} option(s) with strike ${option.Strike:N2} for ${FormatHelper.GetCommaNumber(premium)} plus ${FormatHelper.GetCommaNumber(fee)} fee (goes to the jackpot). Each is 100 shares and pays out only if {option.Symbol} {wins} the strike by expiry in {FormatRemaining(duration)}. Settled on the fair price, not on trades. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {contracts} {option.Symbol} {kind} option(s) with strike ${Stock.FormatPrice(option.Strike)} for ${FormatHelper.GetCommaNumber(premium)} plus ${FormatHelper.GetCommaNumber(fee)} fee (goes to the jackpot). Each is 100 shares and pays out only if {option.Symbol} {wins} the strike by expiry in {FormatRemaining(duration)}. Settled on the fair price, not on trades. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
         }
 
         private async Task Options(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -697,7 +697,7 @@ namespace DiscordBot.Managers
                 foreach (var option in open)
                 {
                     double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                    output += $"{(option.IsCall ? "📈 call" : "📉 put")} {option.Contracts}x **{option.Symbol}** strike ${option.Strike:N2} · expires in {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))} now (paid ${FormatHelper.GetCommaNumber(option.Premium)})\n";
+                    output += $"{(option.IsCall ? "📈 call" : "📉 put")} {option.Contracts}x **{option.Symbol}** strike ${Stock.FormatPrice(option.Strike)} · expires in {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))} now (paid ${FormatHelper.GetCommaNumber(option.Premium)})\n";
                 }
             }
             if (recent != null && recent.Count > 0)
@@ -863,7 +863,7 @@ namespace DiscordBot.Managers
                 var stock = market.Find(holding.Key);
                 double averageCost = market.GetAverageCost(account.UserId, holding.Key);
                 string trend = averageCost <= 0 ? "➖" : stock.Price >= averageCost ? "📈" : "📉";
-                output += $"{trend} **{holding.Key}** {holding.Value} sh · now ${stock.Price:N2} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)}\n";
+                output += $"{trend} **{holding.Key}** {holding.Value} sh · now ${Stock.FormatPrice(stock.Price)} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)}\n";
 
                 if (averageCost <= 0)
                 {
@@ -880,12 +880,12 @@ namespace DiscordBot.Managers
                 var stock = market.Find(held.Key);
                 var position = held.Value;
                 double shortGain = position.EquityAt(stock.Price) - position.Margin;
-                output += $"{(shortGain >= 0 ? "📈" : "📉")} **{held.Key}** short {position.Shares} sh · sold @ ${position.EntryPrice:N2}, now ${stock.Price:N2} · margin ${FormatHelper.GetCommaNumber(position.Margin)} · {SignedMoney(shortGain)}\n";
+                output += $"{(shortGain >= 0 ? "📈" : "📉")} **{held.Key}** short {position.Shares} sh · sold @ ${Stock.FormatPrice(position.EntryPrice)}, now ${Stock.FormatPrice(stock.Price)} · margin ${FormatHelper.GetCommaNumber(position.Margin)} · {SignedMoney(shortGain)}\n";
             }
             foreach (var option in options)
             {
                 double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                output += $"🎟️ {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${option.Strike:N2} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
+                output += $"🎟️ {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
             }
 
             var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);

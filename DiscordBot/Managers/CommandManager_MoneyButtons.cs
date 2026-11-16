@@ -40,7 +40,7 @@ namespace DiscordBot.Managers
                 .WithCustomId(Id(MoneyComponents.Stock, "pick"))
                 .WithPlaceholder("Trade a stock…");
             foreach (var stock in stocks.Take(25))
-                menu.AddOption(Trim($"{stock.Symbol} · ${stock.Price:N2}", 100), stock.Symbol, Trim(stock.Name, 100));
+                menu.AddOption(Trim($"{stock.Symbol} · ${Stock.FormatPrice(stock.Price)}", 100), stock.Symbol, Trim(stock.Name, 100));
             return menu.Options.Count == 0 ? null : new ComponentBuilder().WithSelectMenu(menu).Build();
         }
 

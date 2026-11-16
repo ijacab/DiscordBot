@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-16", "Crypto can now mega boom or crash 10x to 100,000x about every 2 days each way (min price 1 cent). Big trades move it much more. Calls are capped at 10x their strike."),
             new PatchNote("2026-11-16", "Sped up for a 2-4 week season: a crash now lasts a week, property booms/busts 4-8 days, bonds pay 0.1% an hour and house upkeep is 1% an hour with the rent."),
             new PatchNote("2026-11-16", "Crypto moons and crashes are now equally likely and equally big, so holding crypto is no longer a money machine and calls on it can beat buying."),
             new PatchNote("2026-11-16", "Calls and puts are priced by simulating how the stock really moves: much cheaper on tiers 3-5, dearer below the launch price, and a call pays at most 10x its strike."),

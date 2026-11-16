@@ -38,7 +38,7 @@ namespace Tests
                 if (premium < 0.5) continue; //too cheap to measure (the 1 cent minimum)
 
                 //other random numbers than the pricer used
-                int paths = tier == 6 ? 12_000 : 6_000;
+                int paths = tier == 6 ? 40_000 : 6_000;
                 double realised = OptionPricer.Simulate(stock, isCall, TicksOf(duration), MarketDrift.None, paths, seed: 2_468_013 + tier);
                 double ratio = realised / premium;
                 Assert.True(ratio is > 0.78 and < 0.99,
@@ -132,62 +132,70 @@ namespace Tests
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"a 3 day crypto call took {clock.Elapsed.TotalSeconds:F1}s to price");
         }
 
-        /// <summary>The spread of a stock's 6 hour return (root mean square of end/start - 1), by running the real tick process from its base.</summary>
-        private static double SixHourSpread(int tier, int paths = 6_000)
+        /// <summary>The typical size of a stock's 6 hour move (the median of |end/start - 1|), by running the real tick process from its base. The median ignores the rare giant crypto moves.</summary>
+        private static double SixHourTypicalMove(int tier, int paths = 6_000)
         {
             var random = new Random(55_000 + tier);
-            double sumSquares = 0;
+            var moves = new double[paths];
             for (int path = 0; path < paths; path++)
             {
                 var stock = At(tier, 1.0);
                 for (int tick = 0; tick < 72; tick++) stock.ApplyTick(random.NextDouble);
-                double move = stock.FairPrice / 100 - 1;
-                sumSquares += move * move;
+                moves[path] = Math.Abs(stock.FairPrice / 100 - 1);
             }
-            return Math.Sqrt(sumSquares / paths);
+            Array.Sort(moves);
+            return moves[paths / 2];
         }
 
         [Fact]
-        public void TheRewardIsSimilarAtEveryTier_PremiumFollowsHowMuchTheStockMoves()
+        public void TheRewardIsSimilarAtEveryOrdinaryTier_PremiumFollowsHowMuchTheStockMoves()
         {
             //a call costs about the same share of what the stock typically moves, so a move of the same size in its own terms
-            //pays about the same multiple on a calm stock as on a wild one
-            foreach (int tier in new[] { 3, 4, 5, 6 })
+            //pays about the same multiple on a calm stock as on a wild one. Crypto is left out: its price is mostly its rare giant moves
+            foreach (int tier in new[] { 3, 4, 5 })
             {
                 double premiumShare = At(tier, 1.0).OptionPremiumPerShare(TimeSpan.FromHours(6), true) / 100;
-                double perMove = premiumShare / SixHourSpread(tier);
-                Assert.InRange(perMove, 0.22, 0.60);
+                double perMove = premiumShare / SixHourTypicalMove(tier);
+                Assert.InRange(perMove, 0.2, 0.9);
             }
         }
 
         [Fact]
-        public void HoldingCrypto_IsNotAMoneyMachine()
+        public void CryptoCalls_AreDearBecauseABoomIsLikely_ButStillCheaperThanThePrice()
         {
-            //moons and crashes are equally likely and big, so the average price stays near the launch price
+            var coin = At(6, 1.0);
+            double sixHours = coin.OptionPremiumPerShare(TimeSpan.FromHours(6), true) / 100;
+            double day = coin.OptionPremiumPerShare(TimeSpan.FromHours(24), true) / 100;
+            Assert.InRange(sixHours, 0.15, 1.0);
+            Assert.InRange(day, sixHours * 0.9, 1.3); //longer costs about as much once a boom has had time to happen
+        }
+
+        [Fact]
+        public void HoldingCrypto_KeepsItsTypicalPriceNearLaunch_ButItsAverageRunsHigher()
+        {
+            //the median price stays near the launch price (so most of the time it is flat), while rare mega booms pull the average up
             var random = new Random(31_415);
-            const int paths = 4_000;
-            double sumPrice = 0, sumGrowth = 0;
+            const int paths = 3_000;
+            var prices = new double[paths];
             for (int path = 0; path < paths; path++)
             {
                 var coin = At(6, 1.0);
-                for (int tick = 0; tick < 1_000; tick++) coin.ApplyTick(random.NextDouble);
-                double start = coin.FairPrice;
-                sumPrice += start / 100;
-                for (int tick = 0; tick < 72; tick++) coin.ApplyTick(random.NextDouble);
-                sumGrowth += coin.FairPrice / start;
+                for (int tick = 0; tick < 1_500; tick++) coin.ApplyTick(random.NextDouble);
+                prices[path] = coin.FairPrice / 100;
             }
-
-            Assert.True(sumPrice / paths < 1.4, $"the average crypto price is {sumPrice / paths:F2}x its launch price");
-            Assert.True(sumGrowth / paths < 1.4, $"holding crypto for 6 hours returns {sumGrowth / paths:F2}x on average");
+            Array.Sort(prices);
+            Assert.InRange(prices[paths / 2], 0.5, 1.5);
+            Assert.True(prices[paths - 1] > 1, "no boom at all");
         }
 
         [Fact]
-        public void ACallOnCrypto_BeatsBuyingItWhenItDoubles()
+        public void ACallOnCrypto_BeatsBuyingOutrightWhenItFiveTimes()
         {
             var coin = At(6, 1.0, basePrice: 30);
             double premium = coin.OptionPremiumPerShare(TimeSpan.FromHours(6), true);
-            double callMultiple = coin.FairPrice / (premium * (1 + Stock.OptionFeeRate));
-            double buyMultiple = 2 * (1 - Stock.Spread / 2) / (1 + Stock.Spread / 2) * (1 - Stock.SellTaxRate);
+            //a call pays 4 strikes' worth when the price goes 5x (a crypto call is dear, because a mega boom is likely, so it takes a bigger move than on the calmer tiers)
+            double callMultiple = 4 * coin.FairPrice / (premium * (1 + Stock.OptionFeeRate));
+            double buyMultiple = 5 * (1 - Stock.Spread / 2) / (1 + Stock.Spread / 2) * (1 - Stock.SellTaxRate);
             Assert.True(callMultiple > buyMultiple, $"the call returns {callMultiple:F2}x, buying {buyMultiple:F2}x");
         }
     }

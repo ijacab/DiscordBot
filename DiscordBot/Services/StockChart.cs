@@ -273,7 +273,19 @@ namespace DiscordBot.Services
             return span.TotalHours >= 24 ? $"{(int)span.TotalDays}d {span.Hours}h" : $"{(int)span.TotalHours}h {span.Minutes}m";
         }
 
-        private static string FormatPrice(double price) => $"${price:N2}";
+        /// <summary>A price for a chart label: cents, 4 decimals under a dollar, and K, M, B for big prices (a boom can multiply a crypto thousands of times).</summary>
+        private static string FormatPrice(double price) =>
+            price >= 1e9 ? $"${price / 1e9:0.#}B" : price >= 1e6 ? $"${price / 1e6:0.#}M" : price >= 1e5 ? $"${price / 1e3:0}K"
+            : price < 1 ? $"${price:0.####}" : $"${price:N2}";
+
+        /// <summary>A % change for a chart axis, short enough to fit even for a 1,000x boom: +250%, +12K%, +3M%.</summary>
+        public static string FormatPercentLabel(double percent)
+        {
+            string sign = percent > 0 ? "+" : percent < 0 ? "-" : "";
+            double size = Math.Abs(percent);
+            string number = size >= 1e9 ? $"{size / 1e9:0.#}B" : size >= 1e6 ? $"{size / 1e6:0.#}M" : size >= 1e4 ? $"{size / 1e3:0.#}K" : $"{size:0}";
+            return $"{sign}{number}%";
+        }
 
         /// <summary>Price followed by its % difference from the current price, e.g. "$12.34 -3.10%".</summary>
         private static string PriceWithChange(double price, double current) =>

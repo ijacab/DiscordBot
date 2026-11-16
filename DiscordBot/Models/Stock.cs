@@ -17,6 +17,11 @@ namespace DiscordBot.Models
     public class Stock
     {
         public const double MinPrice = 1.00;
+        /// <summary>
+        /// Crypto can crash far further than other stocks (a mega crash is up to 100,000x down), so its floor is a cent. Prices under a
+        /// dollar are kept to 4 decimals (<see cref="RoundPrice"/>).
+        /// </summary>
+        public const double CryptoMinPrice = 0.01;
         /// <summary>5 minute ticks in a day.</summary>
         public const int TicksPerDay = 24 * 60 / 5;
         /// <summary>Bond yield per hour, as a log move: 0.1% an hour, about 2.4% a day. Scaled to the game's hours (rent is 3.5% an hour), so a bond is a steady holding over a 2 to 4 week season.</summary>
@@ -51,6 +56,21 @@ namespace DiscordBot.Models
         public const double CryptoReboundSwing = 0.06;
         /// <summary>Fraction of the log gap to the base price closed per tick while rebounding. Strong enough to beat the noise.</summary>
         public const double CryptoReboundReversion = 0.06;
+        /// <summary>
+        /// Mega events: a crypto can boom or crash by 10x up to 100,000x. Each is checked per idle tick, after the small streaks above,
+        /// and the two are equally likely. A coin is idle (not in a streak or a recovery) about 44% of the time, so a chance of 1 in 250
+        /// per idle tick comes to about one boom and one crash every 2 days, or about 10 of each in a 3 week season.
+        /// </summary>
+        public const double CryptoMegaChance = 1.0 / 250;
+        /// <summary>
+        /// The size of a mega event is a log move of at least ln 10 plus an exponential extra, cut off at ln 100,000: every one is at
+        /// least 10x, 1 in 10 reaches 100x, 1 in 100 reaches 1,000x, 1 in 1,000 reaches 10,000x, and none passes 100,000x.
+        /// </summary>
+        public const double CryptoMegaMinLog = 2.302585092994046, CryptoMegaMaxLog = 11.512925464970229;
+        /// <summary>A mega move is spread over this many ticks, so the chart ramps. Afterwards it fades back at the normal pull.</summary>
+        public const int CryptoMegaMinTicks = 2, CryptoMegaMaxTicks = 6;
+        /// <summary>Selling can push a crypto's quote down at most this far (as a fraction of the fair price). Buying has no limit: the market is thin.</summary>
+        public const double CryptoMaxSellImpact = 0.95;
         /// <summary>Pull back to the base price on normal ticks, which bleeds off a moon over a few hours.</summary>
         public const double CryptoMeanReversionRate = 0.03;
         /// <summary>A rough per-tick volatility for crypto, covering the bursts as well as the noise.</summary>
@@ -108,6 +128,10 @@ namespace DiscordBot.Models
         public int CrashRecoveryTicks { get; set; }
         /// <summary>Ticks left of a crypto burst: positive for a moon, negative for a crash. 0 when none.</summary>
         public int MomentumTicks { get; set; }
+        /// <summary>Ticks left of a crypto mega boom (positive) or mega crash (negative). 0 when none.</summary>
+        public int MegaTicks { get; set; }
+        /// <summary>The log move each tick of the running mega event (always positive; the sign is on <see cref="MegaTicks"/>).</summary>
+        public double MegaStep { get; set; }
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
@@ -117,6 +141,15 @@ namespace DiscordBot.Models
         public double AllTimeChange => BasePrice <= 0 ? 0 : (Price - BasePrice) / BasePrice * 100;
 
         public bool IsCrypto => RiskTier == CryptoTier;
+
+        /// <summary>The lowest this stock's price can go: a dollar, or a cent for crypto.</summary>
+        public double FloorPrice => IsCrypto ? CryptoMinPrice : MinPrice;
+
+        /// <summary>Rounds a price to the cent, or to 4 decimals under a dollar, so a cheap crypto isn't bought at a rounded-down price.</summary>
+        public static double RoundPrice(double price) => price < 1 ? Math.Round(price, 4) : Math.Round(price, 2);
+
+        /// <summary>A price for text: cents normally, 4 decimals under a dollar (a crashed crypto).</summary>
+        public static string FormatPrice(double price) => price < 1 ? price.ToString("N4") : price.ToString("N2");
 
         /// <summary>Normal, safe haven or bond. Old saved stocks load as Normal.</summary>
         public StockRole Role { get; set; } = StockRole.Normal;
@@ -162,6 +195,14 @@ namespace DiscordBot.Models
             {
                 moved = FairPrice * (1 + noise * MaxSwingByTier[RiskTier] * drift.SwingScale);
             }
+            else if (MegaTicks != 0)
+            {
+                //a mega boom or crash in progress: the same log step each tick, nothing else moves the price
+                int direction = Math.Sign(MegaTicks);
+                moved = FairPrice * Math.Exp(direction * MegaStep);
+                MegaTicks -= direction;
+                reversion = 0;
+            }
             else if (MomentumTicks != 0)
             {
                 int direction = Math.Sign(MomentumTicks);
@@ -183,7 +224,21 @@ namespace DiscordBot.Models
                 double roll = random();
                 bool crash = roll < CryptoCrashChance;
                 bool moon = !crash && roll < CryptoCrashChance + CryptoMoonChance;
-                if (crash || moon)
+                double streakEnd = CryptoCrashChance + CryptoMoonChance;
+                bool megaCrash = !crash && !moon && roll < streakEnd + CryptoMegaChance;
+                bool megaBoom = !crash && !moon && !megaCrash && roll < streakEnd + 2 * CryptoMegaChance;
+                if (megaCrash || megaBoom)
+                {
+                    //size, then length: a log move of at least ln 10, with an exponential tail, cut off at ln 100,000
+                    double size = MegaSize(random());
+                    int length = CryptoMegaMinTicks + (int)(random() * (CryptoMegaMaxTicks - CryptoMegaMinTicks + 1));
+                    int direction = megaCrash ? -1 : 1;
+                    MegaStep = size / length;
+                    moved = FairPrice * Math.Exp(direction * MegaStep);
+                    MegaTicks = direction * (length - 1); //this tick was the first of the move
+                    reversion = 0;
+                }
+                else if (crash || moon)
                 {
                     int length = CryptoStreakMinTicks + (int)(random() * (CryptoStreakMaxTicks - CryptoStreakMinTicks + 1));
                     int direction = crash ? -1 : 1;
@@ -199,7 +254,7 @@ namespace DiscordBot.Models
             }
 
             moved *= Math.Exp(drift.LogPerTick);
-            moved = Math.Max(MinPrice, moved);
+            moved = Math.Max(FloorPrice, moved);
             if (!drift.AllowReversion) reversion = 0; //during a crisis the price follows the drift, not the old base
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
             if (BasePrice > 0 && reversion > 0)
@@ -207,10 +262,13 @@ namespace DiscordBot.Models
 
             PreviousPrice = Price;
             //four decimals, so a slow crisis drift on a cheap stock isn't rounded away every tick (the quote is still shown to the cent)
-            FairPrice = Math.Max(MinPrice, Math.Round(moved, 4));
+            FairPrice = Math.Max(FloorPrice, Math.Round(moved, 4));
             Impact *= ImpactDecayPerTick;
             RefreshQuote();
         }
+
+        /// <summary>The log size of a mega event for a uniform draw <paramref name="u"/> in [0, 1): at least ln 10, an exponential tail, cut off at ln 100,000.</summary>
+        public static double MegaSize(double u) => Math.Min(CryptoMegaMinLog - Math.Log(1 - u), CryptoMegaMaxLog);
 
         private static double StreakStep(Func<double> random) => CryptoStepMin + random() * (CryptoStepMax - CryptoStepMin);
 
@@ -225,12 +283,51 @@ namespace DiscordBot.Models
         /// <summary>As <see cref="PreviewTrade(int)"/> with a different spread, e.g. none for an Insider Trader.</summary>
         public (double Fill, double NewImpact) PreviewTrade(int shares, double spread)
         {
+            if (IsCrypto) return PreviewCryptoTrade(shares, spread);
+
             double move = ImpactCoefficient * Math.Sqrt(Math.Abs(shares) / SharesOutstanding) * Math.Sign(shares);
             double newImpact = Math.Max(-MaxImpact, Math.Min(MaxImpact, Impact + move));
             double after = PriceAt(FairPrice, newImpact);
             double mid = (Price + after) / 2;
             double fill = Math.Max(MinPrice, mid * (1 + Math.Sign(shares) * spread / 2));
-            return (Math.Round(fill, 2), newImpact);
+            return (RoundPrice(fill), newImpact);
+        }
+
+        /// <summary>
+        /// A crypto trade. The market is thin and a mega boom can multiply the price, so trading impact has no 50% cap: buying follows
+        /// the square-root law all the way, and selling can push the quote down at most <see cref="CryptoMaxSellImpact"/>. The fill is
+        /// the average price along the impact curve (not the midpoint), so a big order pays for its own impact.
+        /// </summary>
+        private (double Fill, double NewImpact) PreviewCryptoTrade(int shares, double spread)
+        {
+            double quantity = Math.Abs((double)shares);
+            double scale = ImpactCoefficient * Math.Sqrt(quantity / SharesOutstanding);
+            double newImpact, averageImpact;
+            if (shares >= 0)
+            {
+                newImpact = Impact + scale;
+                averageImpact = Impact + scale * 2.0 / 3.0;
+            }
+            else
+            {
+                newImpact = Math.Max(-CryptoMaxSellImpact, Impact - scale);
+                //shares that can be sold before the quote reaches its lowest; beyond that the rest sell at that lowest price
+                double headroom = Impact + CryptoMaxSellImpact;
+                double untilFloor = headroom <= 0 ? 0 : SharesOutstanding * Math.Pow(headroom / ImpactCoefficient, 2);
+                if (quantity <= untilFloor || quantity == 0)
+                {
+                    averageImpact = Impact - scale * 2.0 / 3.0;
+                }
+                else
+                {
+                    double areaAboveFloor = Impact * untilFloor - ImpactCoefficient * (2.0 / 3.0) * Math.Pow(untilFloor, 1.5) / Math.Sqrt(SharesOutstanding);
+                    averageImpact = (areaAboveFloor - (quantity - untilFloor) * CryptoMaxSellImpact) / quantity;
+                }
+            }
+
+            double mid = Math.Max(FloorPrice, FairPrice * (1 + averageImpact));
+            double fill = Math.Max(FloorPrice, mid * (1 + Math.Sign(shares) * spread / 2));
+            return (RoundPrice(fill), newImpact);
         }
 
         /// <summary>Records a trade's impact on the quoted price and returns the price it filled at.</summary>
@@ -275,7 +372,7 @@ namespace DiscordBot.Models
             if (cash <= 0 || maxShares < 1) return 0;
             //long for the same reason as MaxAffordableShares
             long low = 0;
-            long high = (long)Math.Min(maxShares, Math.Floor(cash / MinPrice));
+            long high = (long)Math.Min(maxShares, Math.Floor(cash / FloorPrice));
             while (low < high)
             {
                 long mid = low + (high - low + 1) / 2;
@@ -327,11 +424,11 @@ namespace DiscordBot.Models
             return Math.Max(MinOptionPremiumPerShare, Math.Round(fair * OptionHouseEdge, 2));
         }
 
-        /// <summary>The quote for a fair price and impact, never below <see cref="MinPrice"/>.</summary>
-        public static double PriceAt(double fairPrice, double impact) =>
-            Math.Max(MinPrice, Math.Round(fairPrice * (1 + impact), 2));
+        /// <summary>The quote for a fair price and impact, never below <paramref name="floor"/> (a dollar unless it's a crypto).</summary>
+        public static double PriceAt(double fairPrice, double impact, double floor = MinPrice) =>
+            Math.Max(floor, RoundPrice(fairPrice * (1 + impact)));
 
-        public void RefreshQuote() => Price = PriceAt(FairPrice, Impact);
+        public void RefreshQuote() => Price = PriceAt(FairPrice, Impact, FloorPrice);
 
         public void RecordHistory()
         {

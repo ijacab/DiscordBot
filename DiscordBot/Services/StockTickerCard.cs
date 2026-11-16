@@ -72,7 +72,7 @@ namespace DiscordBot.Services
                 : $"Line is {(stock.AllTimeChange >= 0 ? "green" : "red")} for that.";
             string text = $"{NameLine(stock)}\n" +
                 $"{windowChange:+0.00;-0.00;0.00}% over the last {StockChart.FormatSpan(points.Count, Tick)}{windowNote} | low ${points.Min():N2} | high ${points.Max():N2}\n" +
-                $"All time {stock.AllTimeChange:+0.00;-0.00;0.00}% (launched at ${stock.BasePrice:N2}). {colourNote}\n" +
+                $"All time {stock.AllTimeChange:+0.00;-0.00;0.00}% (launched at ${Stock.FormatPrice(stock.BasePrice)}). {colourNote}\n" +
                 footer;
 
             using MemoryStream chart = StockChart.RenderPng(points, Tick, LineColourFor(stock, points, colourByWindow));
@@ -95,7 +95,7 @@ namespace DiscordBot.Services
                 foreach (var stock in ordered)
                 {
                     var recentPoints = Window(stock.History, recent);
-                    lines.Add($"{stock.TypeEmoji ?? "•"} **{stock.Symbol}** ${stock.Price:N2} · 5m {stock.PercentChange:+0.00;-0.00;0.00}% · {StockChart.FormatSpan(recentPoints.Count, Tick)} {ChangeOf(recentPoints):+0.00;-0.00;0.00}% · all time {stock.AllTimeChange:+0.00;-0.00;0.00}%");
+                    lines.Add($"{stock.TypeEmoji ?? "•"} **{stock.Symbol}** ${Stock.FormatPrice(stock.Price)} · 5m {stock.PercentChange:+0.00;-0.00;0.00}% · {StockChart.FormatSpan(recentPoints.Count, Tick)} {ChangeOf(recentPoints):+0.00;-0.00;0.00}% · all time {stock.AllTimeChange:+0.00;-0.00;0.00}%");
 
                     if (stock.Role != StockRole.Normal || stock.History.Count < 2) continue;
                     charts.Add(PercentChart(stock.History, StockChart.ColourForChange(stock.AllTimeChange)));
@@ -119,13 +119,13 @@ namespace DiscordBot.Services
         {
             double first = points[0];
             var series = new List<IReadOnlyList<double>> { points.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList() };
-            return StockChart.RenderMultiPng(series, Tick, v => $"{v:+0;-0;0}%", colour);
+            return StockChart.RenderMultiPng(series, Tick, StockChart.FormatPercentLabel, colour);
         }
 
         private static string NameLine(Stock stock)
         {
             string name = stock.TypeEmoji == null ? stock.Name : $"{stock.TypeEmoji} {stock.Name}";
-            return $"{name} ({stock.KindLabel}): ${stock.Price:N2}";
+            return $"{name} ({stock.KindLabel}): ${Stock.FormatPrice(stock.Price)}";
         }
 
         /// <summary>The order <c>.stocks</c> lists them in: ordinary stocks by tier then symbol, then the safe havens.</summary>

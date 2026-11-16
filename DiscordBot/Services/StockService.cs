@@ -177,7 +177,7 @@ namespace DiscordBot.Services
                 if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
-                    throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${stock.Price:N2}).");
+                    throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}).");
 
                 double fill = stock.PreviewTrade(shares, spread).Fill;
                 double cost = Math.Round(shares * fill, 2);
@@ -251,7 +251,7 @@ namespace DiscordBot.Services
                 if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
-                    throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${stock.Price:N2}).");
+                    throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}).");
 
                 double fill = stock.PreviewTrade(-shares).Fill;
                 double margin = Math.Round(shares * fill, 2);
@@ -371,7 +371,7 @@ namespace DiscordBot.Services
                     if (stock == null || !held.Value.IsLiquidatedAt(stock.Price)) continue;
 
                     _market.ReduceShort(user, held.Key, held.Value.Shares);
-                    _market.AddSettledResult(user, $"Short {held.Key} liquidated at ${stock.Price:N2}, margin lost.");
+                    _market.AddSettledResult(user, $"Short {held.Key} liquidated at ${Stock.FormatPrice(stock.Price)}, margin lost.");
                 }
         }
 
@@ -395,7 +395,7 @@ namespace DiscordBot.Services
                 }
                 string kind = option.IsCall ? "call" : "put";
                 _market.AddSettledResult(option.UserId,
-                    $"{option.Contracts}x {option.Symbol} {kind} @ ${option.Strike:N2} expired at ${fair:N2}: paid ${payout:N2} for ${option.Premium:N2}.");
+                    $"{option.Contracts}x {option.Symbol} {kind} @ ${Stock.FormatPrice(option.Strike)} expired at ${Stock.FormatPrice(fair)}: paid ${payout:N2} for ${option.Premium:N2}.");
             }
             return expired.Count > 0;
         }
