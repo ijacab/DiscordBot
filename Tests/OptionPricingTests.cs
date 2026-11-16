@@ -131,5 +131,64 @@ namespace Tests
             crypto.OptionPremiumPerShare(TimeSpan.FromDays(3), true);
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"a 3 day crypto call took {clock.Elapsed.TotalSeconds:F1}s to price");
         }
+
+        /// <summary>The spread of a stock's 6 hour return (root mean square of end/start - 1), by running the real tick process from its base.</summary>
+        private static double SixHourSpread(int tier, int paths = 6_000)
+        {
+            var random = new Random(55_000 + tier);
+            double sumSquares = 0;
+            for (int path = 0; path < paths; path++)
+            {
+                var stock = At(tier, 1.0);
+                for (int tick = 0; tick < 72; tick++) stock.ApplyTick(random.NextDouble);
+                double move = stock.FairPrice / 100 - 1;
+                sumSquares += move * move;
+            }
+            return Math.Sqrt(sumSquares / paths);
+        }
+
+        [Fact]
+        public void TheRewardIsSimilarAtEveryTier_PremiumFollowsHowMuchTheStockMoves()
+        {
+            //a call costs about the same share of what the stock typically moves, so a move of the same size in its own terms
+            //pays about the same multiple on a calm stock as on a wild one
+            foreach (int tier in new[] { 3, 4, 5, 6 })
+            {
+                double premiumShare = At(tier, 1.0).OptionPremiumPerShare(TimeSpan.FromHours(6), true) / 100;
+                double perMove = premiumShare / SixHourSpread(tier);
+                Assert.InRange(perMove, 0.22, 0.60);
+            }
+        }
+
+        [Fact]
+        public void HoldingCrypto_IsNotAMoneyMachine()
+        {
+            //moons and crashes are equally likely and big, so the average price stays near the launch price
+            var random = new Random(31_415);
+            const int paths = 4_000;
+            double sumPrice = 0, sumGrowth = 0;
+            for (int path = 0; path < paths; path++)
+            {
+                var coin = At(6, 1.0);
+                for (int tick = 0; tick < 1_000; tick++) coin.ApplyTick(random.NextDouble);
+                double start = coin.FairPrice;
+                sumPrice += start / 100;
+                for (int tick = 0; tick < 72; tick++) coin.ApplyTick(random.NextDouble);
+                sumGrowth += coin.FairPrice / start;
+            }
+
+            Assert.True(sumPrice / paths < 1.4, $"the average crypto price is {sumPrice / paths:F2}x its launch price");
+            Assert.True(sumGrowth / paths < 1.4, $"holding crypto for 6 hours returns {sumGrowth / paths:F2}x on average");
+        }
+
+        [Fact]
+        public void ACallOnCrypto_BeatsBuyingItWhenItDoubles()
+        {
+            var coin = At(6, 1.0, basePrice: 30);
+            double premium = coin.OptionPremiumPerShare(TimeSpan.FromHours(6), true);
+            double callMultiple = coin.FairPrice / (premium * (1 + Stock.OptionFeeRate));
+            double buyMultiple = 2 * (1 - Stock.Spread / 2) / (1 + Stock.Spread / 2) * (1 - Stock.SellTaxRate);
+            Assert.True(callMultiple > buyMultiple, $"the call returns {callMultiple:F2}x, buying {buyMultiple:F2}x");
+        }
     }
 }

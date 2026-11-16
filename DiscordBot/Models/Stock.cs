@@ -29,14 +29,18 @@ namespace DiscordBot.Models
         public const int CryptoTier = 6;
         /// <summary>Normal crypto noise per tick, as a log move (about ±12%). Symmetric in log space, so it has no downward drift.</summary>
         public const double CryptoSwing = 0.12;
-        /// <summary>Chance per idle tick that a moon streak starts.</summary>
-        public const double CryptoMoonChance = 0.025;
-        /// <summary>Chance per idle tick that a crash streak starts.</summary>
-        public const double CryptoCrashChance = 0.02;
+        /// <summary>Chance per idle tick that a moon streak starts. Equal to <see cref="CryptoCrashChance"/>.</summary>
+        public const double CryptoMoonChance = 0.0225;
+        /// <summary>
+        /// Chance per idle tick that a crash streak starts. Moons and crashes are equally likely and equally big (in log terms). Bigger
+        /// or more frequent moons than crashes made the average crypto price several times its launch price, so holding it was a
+        /// money machine and calls on it could never compete.
+        /// </summary>
+        public const double CryptoCrashChance = 0.0225;
         /// <summary>A streak lasts this many ticks (15 to 40 minutes).</summary>
         public const int CryptoStreakMinTicks = 3, CryptoStreakMaxTicks = 8;
-        /// <summary>Each tick of a streak moves the price by this log amount (+10% to +42% up, or the same down).</summary>
-        public const double CryptoStepMin = 0.10, CryptoStepMax = 0.35;
+        /// <summary>Each tick of a streak moves the price by this log amount (+5% to +16% up, or the same down in log terms).</summary>
+        public const double CryptoStepMin = 0.05, CryptoStepMax = 0.15;
         /// <summary>Ticks (about 4 hours) of recovery after a crash streak ends: a short bottom, then a rebound.</summary>
         public const int CryptoRecoveryTicks = 46;
         /// <summary>The last this many recovery ticks are the rebound. The ticks before them are the bottom.</summary>

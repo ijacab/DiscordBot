@@ -32,11 +32,11 @@ namespace Tests
             //noise, event (moon), length (3 ticks), first step (smallest)
             coin.ApplyTick(Rolls(0.5, 0.03, 0.0, 0.0));
             Assert.Equal(2, coin.MomentumTicks);
-            Assert.InRange(coin.FairPrice, 109.5, 110.6); //+10% (e^0.10)
+            Assert.InRange(coin.FairPrice, 104.5, 105.6); //+5% (e^0.05)
 
             double before = coin.FairPrice;
             coin.ApplyTick(Rolls(0.5, 0.0)); //noise, step: only these are drawn mid streak
-            Assert.True(coin.FairPrice >= before * 1.10 - 0.01);
+            Assert.True(coin.FairPrice >= before * 1.05 - 0.01);
             coin.ApplyTick(Rolls(0.5, 0.0));
             Assert.Equal(0, coin.MomentumTicks);
             Assert.Equal(0, coin.CrashRecoveryTicks);
@@ -50,13 +50,13 @@ namespace Tests
             //noise, event (crash), length (3 ticks), first step (biggest)
             coin.ApplyTick(Rolls(0.5, 0.0, 0.0, 0.999999));
             Assert.Equal(-2, coin.MomentumTicks);
-            Assert.InRange(coin.FairPrice, 69, 71); //e^-0.35
+            Assert.InRange(coin.FairPrice, 85, 87); //e^-0.15
 
             coin.ApplyTick(Rolls(0.5, 0.999999));
             coin.ApplyTick(Rolls(0.5, 0.999999));
             Assert.Equal(0, coin.MomentumTicks);
             Assert.Equal(Stock.CryptoRecoveryTicks, coin.CrashRecoveryTicks);
-            Assert.InRange(coin.FairPrice, 33, 36); //three of e^-0.35
+            Assert.InRange(coin.FairPrice, 62.5, 65); //three of e^-0.15
         }
 
         [Fact]
