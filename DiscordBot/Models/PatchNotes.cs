@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-16", "Calls and puts are priced by simulating how the stock really moves: much cheaper on tiers 3-5, dearer below the launch price, and a call pays at most 10x its strike."),
             new PatchNote("2026-11-16", "The bot posts the new patch notes in the last few active channels after an update."),
             new PatchNote("2026-11-16", "Market crashes (GFC) come about every 2 months, more often the more stocks and houses players hold (gold/bonds don't count), and can wipe stocks out up to 99%."),
             new PatchNote("2026-11-16", "The live stock thread is now one message with one image (all-time and 3-hour charts for every stock, like `.stocks`) instead of a message per stock."),

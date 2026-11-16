@@ -295,8 +295,15 @@ namespace DiscordBot.Services
             }
         }
 
+        /// <summary>The market-wide crash drift on a stock right now, which options are priced with.</summary>
+        private MarketDrift CurrentDrift(Stock stock)
+        {
+            var data = _coinService.GetAll();
+            return MarketCycle.DriftFor(stock, data.MarketPhase, data.CrisisSeverity);
+        }
+
         /// <summary>The most option contracts the account can pay for (premium plus fee) at this duration.</summary>
-        public int MaxAffordableContracts(CoinAccount account, string symbol, TimeSpan duration)
+        public int MaxAffordableContracts(CoinAccount account, string symbol, bool isCall, TimeSpan duration)
         {
             lock (_lock)
             {
@@ -304,7 +311,7 @@ namespace DiscordBot.Services
                 if (duration < MinOptionDuration || duration > MaxOptionDuration)
                     throw new BadInputException("Options last between 15m and 3d.");
 
-                double perShare = stock.OptionPremiumPerShare(duration);
+                double perShare = stock.OptionPremiumPerShare(duration, isCall, CurrentDrift(stock));
                 int contracts = Stock.MaxAffordableContracts(account.NetWorth, perShare);
                 if (contracts < 1)
                     throw new BadInputException($"One contract of {stock.Symbol} costs ${Stock.OptionCost(perShare, 1):N2} (premium plus fee) and you only have ${account.NetWorth:N2}.");
@@ -329,7 +336,7 @@ namespace DiscordBot.Services
                 if (duration < MinOptionDuration || duration > MaxOptionDuration)
                     throw new BadInputException("Options last between 15m and 3d.");
 
-                double premium = Math.Round(stock.OptionPremiumPerShare(duration) * Stock.OptionContractSize * contracts, 2);
+                double premium = Math.Round(stock.OptionPremiumPerShare(duration, isCall, CurrentDrift(stock)) * Stock.OptionContractSize * contracts, 2);
                 double fee = Math.Round(premium * Stock.OptionFeeRate, 2);
                 if (premium + fee > account.NetWorth)
                     throw new BadInputException($"That option costs ${premium + fee:N2} (premium plus fee) but you only have ${account.NetWorth:N2}.");

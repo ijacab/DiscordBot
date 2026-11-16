@@ -49,7 +49,7 @@ namespace DiscordBot.Models
         public const double CryptoReboundReversion = 0.06;
         /// <summary>Pull back to the base price on normal ticks, which bleeds off a moon over a few hours.</summary>
         public const double CryptoMeanReversionRate = 0.03;
-        /// <summary>Option pricing volatility per tick for crypto, covering the bursts as well as the noise.</summary>
+        /// <summary>A rough per-tick volatility for crypto, covering the bursts as well as the noise.</summary>
         public const double CryptoTickVolatility = 0.25;
         /// <summary>Shares a crypto is issued with. A thin market, so trades move it more.</summary>
         public const double CryptoSharesOutstanding = 20_000;
@@ -123,7 +123,7 @@ namespace DiscordBot.Models
         /// <summary>What kind of listing this is, for headers: "safe haven", "bond", or the tier for ordinary stocks.</summary>
         public string KindLabel => Role == StockRole.SafeHaven ? "safe haven" : Role == StockRole.Bond ? "bond" : $"tier {RiskTier}";
 
-        /// <summary>Standard deviation of one tick's move as a fraction of the price. Used to price options.</summary>
+        /// <summary>Standard deviation of one tick's move as a fraction of the price (options are now priced by simulation, see <see cref="OptionPricer"/>).</summary>
         public double TickVolatility => IsCrypto ? CryptoTickVolatility : MaxSwingByTier[RiskTier] / Math.Sqrt(3);
 
         /// <summary>
@@ -284,8 +284,8 @@ namespace DiscordBot.Models
 
         /// <summary>Shares in one option contract.</summary>
         public const int OptionContractSize = 100;
-        /// <summary>The approximate value of an at-the-money option as a multiple of price × volatility × √time.</summary>
-        public const double OptionValueFactor = 0.4;
+        /// <summary>An option pays at most this many times its strike per share (a call can only win up to 10x the price it was bought at). It keeps rare crypto moons from paying out absurd amounts, and lets the price be found accurately by simulation.</summary>
+        public const double MaxOptionPayoutMultiple = 10;
         /// <summary>Extra the house charges on the fair premium.</summary>
         public const double OptionHouseEdge = 1.10;
         /// <summary>Fee on the premium, paid into the jackpot.</summary>
@@ -311,13 +311,15 @@ namespace DiscordBot.Models
         public const double MinOptionPremiumPerShare = 0.01;
 
         /// <summary>
-        /// Premium per share of an at-the-money option lasting <paramref name="duration"/>, from this stock's tick volatility.
-        /// Longer and wilder stocks cost more.
+        /// Premium per share of an at-the-money call or put lasting <paramref name="duration"/>: what it pays on average when the real
+        /// price process is run forward from this stock's current state (<see cref="OptionPricer"/>), plus the house edge. Calls
+        /// are dear and puts cheap when the stock is well below its base, and the reverse when it is above. <paramref name="drift"/>
+        /// is the market-wide crisis drift now running, so puts aren't cheap in the middle of a crash.
         /// </summary>
-        public double OptionPremiumPerShare(TimeSpan duration)
+        public double OptionPremiumPerShare(TimeSpan duration, bool isCall = true, MarketDrift? drift = null)
         {
-            double ticks = Math.Max(1, duration.TotalMinutes / 5);
-            double fair = FairPrice * TickVolatility * Math.Sqrt(ticks) * OptionValueFactor;
+            int ticks = (int)Math.Max(1, Math.Round(duration.TotalMinutes / 5));
+            double fair = OptionPricer.FairValuePerShare(this, isCall, ticks, drift ?? MarketDrift.None);
             return Math.Max(MinOptionPremiumPerShare, Math.Round(fair * OptionHouseEdge, 2));
         }
 

@@ -668,7 +668,7 @@ namespace DiscordBot.Managers
             EnsureNotBetting(message);
 
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], duration) : int.Parse(args[1]);
+            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], isCall, duration) : int.Parse(args[1]);
             var (option, premium, fee) = _stockService.BuyOption(account, args[0], isCall, contracts, duration);
 
             string kind = isCall ? "call" : "put";
