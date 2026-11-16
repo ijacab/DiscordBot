@@ -132,6 +132,12 @@ namespace DiscordBot.Models
         public int MegaTicks { get; set; }
         /// <summary>The log move each tick of the running mega event (always positive; the sign is on <see cref="MegaTicks"/>).</summary>
         public double MegaStep { get; set; }
+        /// <summary>Pricing only (<see cref="OptionPricer"/>): never start a mega boom, so the rest of the process can be simulated and the boom priced exactly.</summary>
+        [Newtonsoft.Json.JsonIgnore] public bool DisableMegaBoom { get; set; }
+        /// <summary>Pricing only: how many ticks so far were idle ones (the only ticks a mega event can start on).</summary>
+        [Newtonsoft.Json.JsonIgnore] public int PricingIdleTicks { get; set; }
+        /// <summary>Pricing only: the pull towards the base applied so far, summed over ticks.</summary>
+        [Newtonsoft.Json.JsonIgnore] public double PricingReversionSum { get; set; }
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
@@ -226,7 +232,8 @@ namespace DiscordBot.Models
                 bool moon = !crash && roll < CryptoCrashChance + CryptoMoonChance;
                 double streakEnd = CryptoCrashChance + CryptoMoonChance;
                 bool megaCrash = !crash && !moon && roll < streakEnd + CryptoMegaChance;
-                bool megaBoom = !crash && !moon && !megaCrash && roll < streakEnd + 2 * CryptoMegaChance;
+                bool megaBoom = !DisableMegaBoom && !crash && !moon && !megaCrash && roll < streakEnd + 2 * CryptoMegaChance;
+                PricingIdleTicks++;
                 if (megaCrash || megaBoom)
                 {
                     //size, then length: a log move of at least ln 10, with an exponential tail, cut off at ln 100,000
@@ -256,6 +263,7 @@ namespace DiscordBot.Models
             moved *= Math.Exp(drift.LogPerTick);
             moved = Math.Max(FloorPrice, moved);
             if (!drift.AllowReversion) reversion = 0; //during a crisis the price follows the drift, not the old base
+            if (BasePrice > 0) PricingReversionSum += reversion;
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
             if (BasePrice > 0 && reversion > 0)
                 moved *= Math.Pow(BasePrice / moved, reversion);
@@ -385,8 +393,6 @@ namespace DiscordBot.Models
 
         /// <summary>Shares in one option contract.</summary>
         public const int OptionContractSize = 100;
-        /// <summary>An option pays at most this many times its strike per share (a call can only win up to 10x the price it was bought at). It keeps rare crypto moons from paying out absurd amounts, and lets the price be found accurately by simulation.</summary>
-        public const double MaxOptionPayoutMultiple = 10;
         /// <summary>Extra the house charges on the fair premium.</summary>
         public const double OptionHouseEdge = 1.10;
         /// <summary>Fee on the premium, paid into the jackpot.</summary>

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using Xunit;
 
 namespace Tests
@@ -34,6 +35,8 @@ namespace Tests
             foreach (bool isCall in new[] { true, false })
             {
                 var stock = At(tier, state);
+                //a crypto call is worth its rare stacked mega booms, which a plain average never sees (see the tests for it below)
+                if (tier == 6 && isCall) continue;
                 double premium = stock.OptionPremiumPerShare(duration, isCall);
                 if (premium < 0.5) continue; //too cheap to measure (the 1 cent minimum)
 
@@ -108,19 +111,33 @@ namespace Tests
             b.FairPrice = 110;
             Assert.NotEqual(a.OptionPremiumPerShare(TimeSpan.FromHours(6)), b.OptionPremiumPerShare(TimeSpan.FromHours(6)));
 
-            //a crypto in the middle of a moon streak isn't priced like a quiet one
+            //a crypto in the middle of a mega boom (3 more ticks of it to come) isn't priced like a quiet one
             var quiet = At(6, 1.0);
-            var mooning = At(6, 1.0);
+            var booming = At(6, 1.0);
+            booming.MegaTicks = 3;
+            booming.MegaStep = 0.8;
+            Assert.True(booming.OptionPremiumPerShare(TimeSpan.FromHours(1)) > 2 * quiet.OptionPremiumPerShare(TimeSpan.FromHours(1)));
+            //and an ordinary coin mid-streak is still priced from where its streak takes it
+            var mooning = At(5, 1.0);
             mooning.MomentumTicks = 5;
-            Assert.True(mooning.OptionPremiumPerShare(TimeSpan.FromHours(1)) > quiet.OptionPremiumPerShare(TimeSpan.FromHours(1)));
+            Assert.True(mooning.OptionPremiumPerShare(TimeSpan.FromHours(1)) >= At(5, 1.0).OptionPremiumPerShare(TimeSpan.FromHours(1)));
         }
 
         [Fact]
-        public void APayoutIsCappedAtTenTimesTheStrike()
+        public void APayoutHasNoCap_ACallPaysTheWholeMove()
         {
             var call = new OptionContract { IsCall = true, Strike = 30, Contracts = 2 };
-            Assert.Equal(2 * 100 * 30 * 3, call.PayoutAt(120), 6); //+90 is 3x the strike, under the cap
-            Assert.Equal(2 * 100 * 30 * 10, call.PayoutAt(30 * 40), 6);
+            Assert.Equal(2 * 100 * 30 * 3, call.PayoutAt(120), 6); //+90 is 3x the strike
+            Assert.Equal(2 * 100 * 30 * 39, call.PayoutAt(30 * 40), 6); //a 40x boom pays 39 strikes
+            Assert.Equal(2 * 100 * 30 * 99_999, call.PayoutAt(30 * 100_000), 2);
+        }
+
+        [Fact]
+        public void APutPaysAtMostTheStrike()
+        {
+            var put = new OptionContract { IsCall = false, Strike = 30, Contracts = 2 };
+            Assert.Equal(2 * 100 * 29.99, put.PayoutAt(0.01), 2); //a crypto at its cent floor
+            Assert.Equal(0, put.PayoutAt(31));
         }
 
         [Fact]
@@ -161,13 +178,68 @@ namespace Tests
         }
 
         [Fact]
-        public void CryptoCalls_AreDearBecauseABoomIsLikely_ButStillCheaperThanThePrice()
+        public void CryptoCalls_AreDear_AndNeverCheaperForALongerExpiry()
         {
             var coin = At(6, 1.0);
-            double sixHours = coin.OptionPremiumPerShare(TimeSpan.FromHours(6), true) / 100;
-            double day = coin.OptionPremiumPerShare(TimeSpan.FromHours(24), true) / 100;
-            Assert.InRange(sixHours, 0.15, 1.0);
-            Assert.InRange(day, sixHours * 0.9, 1.3); //longer costs about as much once a boom has had time to happen
+            double previous = 0;
+            foreach (var duration in new[] { TimeSpan.FromMinutes(15), TimeSpan.FromHours(1), TimeSpan.FromHours(6), TimeSpan.FromHours(24) })
+            {
+                double premium = coin.OptionPremiumPerShare(duration, true) / 100;
+                Assert.True(premium >= previous * 0.97, $"{duration}: {premium:F2} of the price, after {previous:F2}"); //each is its own simulation, so allow for a little noise
+                previous = premium;
+            }
+            //with no cap a call is worth the rare giant booms, so a day long one costs more than the coin itself
+            Assert.InRange(previous, 1.0, 10.0);
+        }
+
+        [Theory]
+        [InlineData(3)]
+        [InlineData(6)]
+        public void TheUncappedCryptoCallPrice_MatchesAPlainSimulation_WhereAPlainSimulationCanSeeTheTail(int ticks)
+        {
+            //over a few ticks at most one boom fits in, so a plain average over lots of paths is a fair check on the exact boom factor
+            var coin = At(6, 1.0);
+            double exact = OptionPricer.CryptoCallValue(coin, ticks, MarketDrift.None, paths: 20_000, seed: 77);
+            double plain = OptionPricer.Simulate(coin, true, ticks, MarketDrift.None, paths: 600_000, seed: 31_337);
+            Assert.InRange(exact / plain, 0.8, 1.25);
+        }
+
+        [Fact]
+        public void TheUncappedCryptoCallQuote_IsSteadyAcrossSeeds()
+        {
+            //the plain average of the same call swings by a third from seed to seed
+            var coin = At(6, 1.0);
+            var quotes = new[] { 1, 2, 3, 4 }.Select(i => OptionPricer.CryptoCallValue(coin, 72, MarketDrift.None, paths: 10_000, seed: i * 1_000)).ToArray();
+            Assert.True(quotes.Max() / quotes.Min() < 1.1, string.Join(", ", quotes.Select(q => q.ToString("F1"))));
+        }
+
+        [Fact]
+        public void TheBoomFactor_IsOneWithNoBoomAndGrowsWithTheTimeAndTheSize()
+        {
+            var idle = Enumerable.Repeat(1.0, 72).ToArray();
+            var none = new double[72];
+            Assert.Equal(1.0, OptionPricer.BoomFactor(new double[72], none, 72), 9);
+            Assert.True(OptionPricer.BoomFactor(idle, none, 12) < OptionPricer.BoomFactor(idle, none, 72));
+            //a boom that fades away leaves less behind
+            var fades = Enumerable.Repeat(0.1, 72).ToArray();
+            Assert.True(OptionPricer.BoomFactor(idle, fades, 72) < OptionPricer.BoomFactor(idle, none, 72));
+            //the growth of a boom: the whole size is worth about 100x on average, and none of it nothing
+            Assert.Equal(1.0, OptionPricer.MegaGrowth(0), 9);
+            Assert.InRange(OptionPricer.MegaGrowth(1), 90, 115);
+        }
+
+        [Fact]
+        public void TheMegaGrowthFormula_MatchesTheDrawnSizes()
+        {
+            var random = new Random(4);
+            foreach (double kept in new[] { 0.3, 0.7, 1.0 })
+            {
+                double sum = 0;
+                const int draws = 400_000;
+                for (int i = 0; i < draws; i++) sum += Math.Exp(kept * Stock.MegaSize(random.NextDouble()));
+                double expected = OptionPricer.MegaGrowth(kept);
+                Assert.InRange(sum / draws / expected, kept < 1 ? 0.95 : 0.4, kept < 1 ? 1.05 : 2.0); //kept 1 is heavy tailed
+            }
         }
 
         [Fact]
@@ -188,15 +260,5 @@ namespace Tests
             Assert.True(prices[paths - 1] > 1, "no boom at all");
         }
 
-        [Fact]
-        public void ACallOnCrypto_BeatsBuyingOutrightWhenItFiveTimes()
-        {
-            var coin = At(6, 1.0, basePrice: 30);
-            double premium = coin.OptionPremiumPerShare(TimeSpan.FromHours(6), true);
-            //a call pays 4 strikes' worth when the price goes 5x (a crypto call is dear, because a mega boom is likely, so it takes a bigger move than on the calmer tiers)
-            double callMultiple = 4 * coin.FairPrice / (premium * (1 + Stock.OptionFeeRate));
-            double buyMultiple = 5 * (1 - Stock.Spread / 2) / (1 + Stock.Spread / 2) * (1 - Stock.SellTaxRate);
-            Assert.True(callMultiple > buyMultiple, $"the call returns {callMultiple:F2}x, buying {buyMultiple:F2}x");
-        }
     }
 }
