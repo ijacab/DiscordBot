@@ -62,7 +62,7 @@ namespace DiscordBot.Models
         public int PropertyTrendDaysLeft { get; set; }
         /// <summary>The UTC day (days since 1970) the market was last stepped. Stepped once a day.</summary>
         public long LastPropertyDay { get; set; }
-        /// <summary>The UTC day (days since 1970) holding costs were last charged up to.</summary>
+        /// <summary>No longer used: holding costs are charged hourly, with the rent. Kept so old saves load.</summary>
         public long LastRentDay { get; set; }
         /// <summary>The UTC hour (hours since 1970) rent was last paid up to.</summary>
         public long LastRentHour { get; set; }

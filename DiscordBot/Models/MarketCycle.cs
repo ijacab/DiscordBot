@@ -46,7 +46,7 @@ namespace DiscordBot.Models
     {
         /// <summary>
         /// Chance per UTC day that a crash starts while the market is normal, when players hold no stocks or houses. With the
-        /// 40 day cycle that is about one crash every two months.
+        /// 7 day cycle that is about one crash every 4 weeks (one a season), and about one every 11 days when players are heavily invested.
         /// </summary>
         public const double DailyChance = 1.0 / 20;
         /// <summary>The chance is this many times the base when <see cref="FullExposureShare"/> of player wealth is in ordinary stocks and houses.</summary>
@@ -55,9 +55,10 @@ namespace DiscordBot.Models
         public const double FullExposureShare = 0.6;
         /// <summary>Days after a crash starts before another one can start. The cycle itself spaces them.</summary>
         public const int CooldownDays = 0;
-        public const int DeclineDays = 7;
-        public const int BottomDays = 3;
-        public const int RecoveryDays = 30;
+        //a season lasts 2 to 4 weeks, so a whole crash (a week) has to fit inside one
+        public const int DeclineDays = 2;
+        public const int BottomDays = 1;
+        public const int RecoveryDays = 4;
 
         /// <summary>Total fall over a decline for crypto in the mildest crash (severity 0) and in the worst (severity 1).</summary>
         public const double CryptoFall = 0.60;

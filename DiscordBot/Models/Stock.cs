@@ -19,8 +19,8 @@ namespace DiscordBot.Models
         public const double MinPrice = 1.00;
         /// <summary>5 minute ticks in a day.</summary>
         public const int TicksPerDay = 24 * 60 / 5;
-        /// <summary>Bond yield per day, as a log move. About 0.02% a day, or 7% a year.</summary>
-        public const double BondGrowthPerDay = 0.0002;
+        /// <summary>Bond yield per hour, as a log move: 0.1% an hour, about 2.4% a day. Scaled to the game's hours (rent is 3.5% an hour), so a bond is a steady holding over a 2 to 4 week season.</summary>
+        public const double BondGrowthPerHour = 0.001;
         /// <summary>Bond noise per tick, as a log move. Tiny, so the yield is what shows.</summary>
         public const double BondNoise = 0.0001;
         public const int MinTier = 1;
@@ -147,7 +147,7 @@ namespace DiscordBot.Models
             if (Role == StockRole.Bond)
             {
                 //bonds don't round to the cent, or the small daily yield would be lost on every tick
-                double bondMoved = FairPrice * Math.Exp(BondGrowthPerDay / TicksPerDay + noise * BondNoise);
+                double bondMoved = FairPrice * Math.Exp(BondGrowthPerHour * 24 / TicksPerDay + noise * BondNoise);
                 PreviousPrice = Price;
                 FairPrice = Math.Max(MinPrice, bondMoved);
                 Impact *= ImpactDecayPerTick;

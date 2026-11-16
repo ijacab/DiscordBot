@@ -61,7 +61,7 @@ namespace Tests
         }
 
         [Fact]
-        public void Crashes_ComeAboutEveryTwoMonthsAtBaseAndMoreOftenWhenInvested()
+        public void Crashes_ComeAboutOnceASeasonAtBaseAndMoreOftenWhenInvested()
         {
             int Starts(double exposure)
             {
@@ -78,7 +78,8 @@ namespace Tests
             }
 
             int none = Starts(0), full = Starts(0.6);
-            Assert.InRange(36500.0 / none, 45, 75); //about 60 days between crashes
+            Assert.InRange(36500.0 / none, 22, 33); //about 4 weeks between crashes: a 7 day cycle and a 1 in 20 daily roll
+            Assert.InRange(36500.0 / full, 8, 15); //about 11 days when everyone is invested
             Assert.True(full > none * 1.2, $"{full} vs {none}");
         }
 
@@ -180,6 +181,20 @@ namespace Tests
             var data = new CoinAccounts { MarketPhase = CrisisPhase.Recovery, MarketPhaseDaysLeft = 100 };
             MarketCycle.AdvanceDay(data, Day, () => 0.99);
             Assert.Equal(MarketCycle.RecoveryDays - 1, data.MarketPhaseDaysLeft);
+        }
+
+        [Fact]
+        public void ACrashAndItsRecoveryFitInsideASeason()
+        {
+            Assert.True(MarketCycle.DeclineDays + MarketCycle.BottomDays + MarketCycle.RecoveryDays <= 10);
+        }
+
+        [Fact]
+        public void PropertySwings_LastDaysSoTheyShowWithinASeason()
+        {
+            Assert.InRange(PropertyCatalog.MaxTrendDays, 1, 10);
+            Assert.Equal(PropertyCatalog.MaxTrendDays, PropertyMarket.CutOldTrend(120)); //a trend saved when swings lasted months
+            Assert.Equal(3, PropertyMarket.CutOldTrend(3));
         }
 
         [Fact]

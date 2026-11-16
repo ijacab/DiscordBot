@@ -171,7 +171,7 @@ namespace Tests
             for (int i = 0; i < Stock.TicksPerDay; i++)
                 bond.ApplyTick(() => 0.5);
 
-            AssertClose(100 * Math.Exp(Stock.BondGrowthPerDay), bond.FairPrice, 0.001);
+            AssertClose(100 * Math.Exp(Stock.BondGrowthPerHour * 24), bond.FairPrice, 0.001);
         }
 
         [Fact]

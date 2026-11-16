@@ -71,8 +71,9 @@ namespace Tests
             int direction = 1, daysLeft = 0;
             PropertyMarket.Step(ref index, ref direction, ref daysLeft, Fixed(0.5));
             Assert.Equal(-1, direction);
-            //60 + 0.5 * 61 = 90 days, minus the day just used
-            Assert.Equal(89, daysLeft);
+            //MinTrendDays + half the range, minus the day just used
+            int length = PropertyCatalog.MinTrendDays + (int)(0.5 * (PropertyCatalog.MaxTrendDays - PropertyCatalog.MinTrendDays + 1));
+            Assert.Equal(length - 1, daysLeft);
             Assert.True(index < 1.0);
         }
 
@@ -95,7 +96,7 @@ namespace Tests
         public void DailyMove_IsSmall()
         {
             //the most a day can move is the trend plus the noise, so a day is never a casino swing
-            Assert.True(PropertyCatalog.TrendPerDay + PropertyCatalog.NoisePerDay <= 0.005);
+            Assert.True(PropertyCatalog.TrendPerDay + PropertyCatalog.NoisePerDay <= 0.03);
         }
 
         [Fact]
@@ -155,16 +156,16 @@ namespace Tests
         }
 
         [Fact]
-        public void HoldingCost_IsChargedDaily()
+        public void HoldingCost_IsChargedHourly()
         {
             var account = new CoinAccount { UserId = 1, NetWorth = 1_000 };
             account.Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
             var data = new CoinAccounts { PropertyIndex = 1.0 };
             data.Accounts.Add(account);
 
-            PropertyService.PayHoldingOneDay(data);
+            PropertyService.PayHoldingOneHour(data);
 
-            Assert.Equal(1_000 - PropertyCatalog.DailyHoldingCost(PropertyKind.Apartment, 1.0), account.NetWorth, 6);
+            Assert.Equal(1_000 - PropertyCatalog.HourlyHoldingCost(PropertyKind.Apartment, 1.0), account.NetWorth, 6);
         }
 
         [Fact]

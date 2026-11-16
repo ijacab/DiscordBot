@@ -42,26 +42,27 @@ namespace DiscordBot.Models
         public const double AgencyFeeRate = 0.08;
         /// <summary>Share of the year a let property sits empty.</summary>
         public const double VacancyRate = 0.04;
-        /// <summary>Council rates and maintenance, a share of the current value per year. Charged every day, on top of the rent coming in.</summary>
-        public const double HoldingCostPerYear = 0.015;
+        /// <summary>
+        /// Council rates and maintenance, a share of the current value every hour, charged with the rent. About a third of the gross
+        /// rent, like rates are a fraction of a real rent, scaled to the game's hours.
+        /// </summary>
+        public const double HoldingCostPerHour = 0.01;
 
         /// <summary>The market index can't go below or above these, so prices can't run away.</summary>
         public const double IndexMin = 0.6;
         public const double IndexMax = 1.6;
         /// <summary>A market crash can take the index lower than the ordinary floor (up to a 70% fall).</summary>
         public const double CrisisIndexMin = 0.15;
-        /// <summary>Daily drift of the index in the current boom or bust, as a share of the index.</summary>
-        public const double TrendPerDay = 0.0025;
+        /// <summary>Daily drift of the index in the current boom or bust, as a share of the index. A season is 2 to 4 weeks, so a boom or bust lasts days.</summary>
+        public const double TrendPerDay = 0.02;
         /// <summary>Daily random movement on top of the drift.</summary>
-        public const double NoisePerDay = 0.0025;
-        public const int MinTrendDays = 60;
-        public const int MaxTrendDays = 120;
+        public const double NoisePerDay = 0.01;
+        public const int MinTrendDays = 4;
+        public const int MaxTrendDays = 8;
         /// <summary>Apartments move this much more, in percent, than houses.</summary>
         public const double ApartmentVolatility = 1.2;
         /// <summary>At most this many hours of rent are paid at once (a week), if the bot was down for longer.</summary>
         public const int MaxRentCatchUpHours = 7 * 24;
-        /// <summary>At most this many days of holding costs are charged at once, if the bot was down for longer.</summary>
-        public const int MaxHoldingCatchUpDays = 7;
 
         public static double BasePrice(PropertyKind kind) => kind == PropertyKind.House ? HousePrice : ApartmentPrice;
 
@@ -91,8 +92,8 @@ namespace DiscordBot.Models
         /// <summary>What the landlord is paid for one hour: gross rent less the agency's cut.</summary>
         public static double NetRentPerHour(PropertyKind kind, double index) => GrossRentPerHour(kind, index) * (1 - AgencyFeeRate);
 
-        /// <summary>Holding cost for one day on a property at this index.</summary>
-        public static double DailyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerYear / 365.0;
+        /// <summary>Holding cost for one hour on a property at this index.</summary>
+        public static double HourlyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerHour;
     }
 
     /// <summary>The shared market index and the day-by-day moves that drive property prices.</summary>
@@ -113,6 +114,9 @@ namespace DiscordBot.Models
             index = Math.Min(PropertyCatalog.IndexMax, Math.Max(Math.Min(PropertyCatalog.IndexMin, index), index * (1 + move)));
             trendDaysLeft--;
         }
+
+        /// <summary>A trend saved when booms and busts lasted months is cut to the current length, or it would run at today's speed for ages.</summary>
+        public static int CutOldTrend(int trendDaysLeft) => Math.Min(trendDaysLeft, PropertyCatalog.MaxTrendDays);
 
         public static long DayNumber(DateTime utc) => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToUnixTimeSeconds() / 86400L;
 

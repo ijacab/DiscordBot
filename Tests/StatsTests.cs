@@ -144,7 +144,7 @@ namespace Tests
 
             await property.Buy(account, PropertyKind.House);
             PropertyService.PayRentOneHour(coins.GetAll());
-            PropertyService.PayHoldingOneDay(coins.GetAll());
+            PropertyService.PayHoldingOneHour(coins.GetAll());
             await property.Sell(account, 1);
 
             var s = account.Stats;

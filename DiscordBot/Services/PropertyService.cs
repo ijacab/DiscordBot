@@ -9,7 +9,7 @@ namespace DiscordBot.Services
 {
     /// <summary>
     /// Houses. Bought and sold with cash only, valued on a shared market index, and always rented out for an
-    /// hourly income after the agency's cut. Holding costs apply every day.
+    /// hourly income after the agency's cut. Holding costs apply every hour.
     /// </summary>
     public class PropertyService
     {
@@ -110,7 +110,7 @@ namespace DiscordBot.Services
                 else
                 {
                     int direction = data.PropertyTrendDirection;
-                    int daysLeft = data.PropertyTrendDaysLeft;
+                    int daysLeft = PropertyMarket.CutOldTrend(data.PropertyTrendDaysLeft);
                     PropertyMarket.Step(ref index, ref direction, ref daysLeft, random);
                     data.PropertyTrendDirection = direction;
                     data.PropertyTrendDaysLeft = daysLeft;
@@ -131,28 +131,13 @@ namespace DiscordBot.Services
                 //one hour at a time, but never more than a week if the bot was down
                 long hours = Math.Min(PropertyCatalog.MaxRentCatchUpHours, hour - data.LastRentHour);
                 for (long i = 0; i < hours; i++)
+                {
                     PayRentOneHour(data);
+                    PayHoldingOneHour(data);
+                }
                 if (hours > 0)
                 {
                     data.LastRentHour = hour;
-                    changed = true;
-                }
-            }
-
-            //holding costs are charged once a day
-            if (data.LastRentDay == 0)
-            {
-                data.LastRentDay = today;
-                changed = true;
-            }
-            else
-            {
-                long days = Math.Min(PropertyCatalog.MaxHoldingCatchUpDays, today - data.LastRentDay);
-                for (long i = 0; i < days; i++)
-                    PayHoldingOneDay(data);
-                if (days > 0)
-                {
-                    data.LastRentDay = today;
                     changed = true;
                 }
             }
@@ -204,13 +189,13 @@ namespace DiscordBot.Services
             return paid;
         }
 
-        /// <summary>One day of holding costs (rates and maintenance) comes out of cash.</summary>
-        public static void PayHoldingOneDay(CoinAccounts data)
+        /// <summary>One hour of holding costs (rates and maintenance) comes out of cash.</summary>
+        public static void PayHoldingOneHour(CoinAccounts data)
         {
             double index = data.PropertyIndex;
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
             {
-                double cost = account.Properties.Sum(p => PropertyCatalog.DailyHoldingCost(p.Kind, index));
+                double cost = account.Properties.Sum(p => PropertyCatalog.HourlyHoldingCost(p.Kind, index));
                 account.NetWorth -= cost;
                 account.Stats.HoldingCostsPaid += cost;
             }

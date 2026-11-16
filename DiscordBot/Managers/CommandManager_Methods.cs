@@ -537,7 +537,7 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             double index = data.PropertyIndex;
 
-            string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices move about 0.5% a day at most, and the market runs in booms and busts.\n\n";
+            string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices move about 2% a day (3% at most), and the market runs in booms and busts of 4 to 8 days.\n\n";
             var house = PropertyKind.House;
             output += $"🏠 **House**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(house, index))} " +
                 $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(house, index))} to buy with stamp duty), " +
@@ -554,7 +554,7 @@ namespace DiscordBot.Managers
                     $"rented out, about {netRentPerHour:N2} an hour after the agency\n";
             }
 
-            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1.5% of value a year) come out daily. " +
+            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1% of value an hour) come out hourly with the rent. " +
                 "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
                 "Every property is rented out automatically. `.sellproperty N` sells.";
             await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Property", output).Build(), components: PropertyBuyButton());
