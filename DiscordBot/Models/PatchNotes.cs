@@ -22,6 +22,7 @@ namespace DiscordBot.Models
     {
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-16", "The live stock thread is now one message with one image (all-time and 3-hour charts for every stock, like `.stocks`) instead of a message per stock."),
             new PatchNote("2026-11-15", "`.stats` now has nine pages (betting, per-game, stocks, property, jackpot, power-ups, dungeon, donations...) with a menu to switch. New counters start from today."),
             new PatchNote("2026-11-15", "Slot spins show their result instantly now, with no spinning animation."),
             new PatchNote("2026-11-15", "Blackjack's Play again button now deals a new game straight away with your last bet (no form). `.stocks` no longer graphs gold and bonds."),

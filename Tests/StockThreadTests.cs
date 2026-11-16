@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Tests
 {
-    /// <summary>The live ticker thread from `.stocksthread`: the ticker cards and the saved layout.</summary>
+    /// <summary>The live stock thread from `.stocksthread`: the one-image board, the ticker cards and the saved state.</summary>
     public class StockThreadTests
     {
         private static Stock WithHistory(string symbol, IEnumerable<double> history, double basePrice, int tier = 3, StockRole role = StockRole.Normal)
@@ -77,33 +77,55 @@ namespace Tests
             Assert.Equal(new[] { "ABC", "ZED", "COIN", "GOLD", "BOND" }, StockTickerCard.Ordered(stocks).Select(s => s.Symbol));
         }
 
-        private static LiveStockThread Saved(params string[] symbols)
+        [Fact]
+        public void Board_IsOneImageWithAllTimeAndRecentChartsForEachOrdinaryStock()
         {
-            var entry = new LiveStockThread();
-            ulong id = 1;
-            foreach (var (symbol, lastHour) in LiveStockThread.LayoutFor(symbols))
-                entry.Tickers.Add(new TickerMessage { Symbol = symbol, LastHour = lastHour, MessageId = id++ });
-            return entry;
+            var history = Enumerable.Range(1, 60).Select(i => (double)i).ToList();
+            var stocks = new List<Stock>
+            {
+                WithHistory("GOLD", history, 1, 2, StockRole.SafeHaven),
+                WithHistory("ZED", history, 1, 3),
+                WithHistory("ABC", history, 1, 3),
+                WithHistory("COIN", history, 1, 6),
+            };
+
+            var (text, png) = StockTickerCard.BuildBoard(stocks, StockThreadService.RecentWindow);
+
+            Assert.NotNull(png);
+            using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(png);
+            //three ordinary stocks, two panels each, two panels per row; gold is left off the image
+            Assert.Equal(StockChart.Width * 2, image.Width);
+            Assert.Equal(StockChart.Height * 3, image.Height);
+
+            //every stock still has a line, in the .stocks order, safe havens last
+            var lines = text.Split('\n');
+            Assert.Equal(4, lines.Length);
+            Assert.Contains("**ABC**", lines[0]);
+            Assert.Contains("**ZED**", lines[1]);
+            Assert.Contains("**COIN**", lines[2]);
+            Assert.Contains("**GOLD**", lines[3]);
+            Assert.Contains("3h 0m", lines[0]);
         }
 
         [Fact]
-        public void Layout_IsAllTimeForEachThenLastHourForEach()
+        public void Board_WithNoHistoryYet_IsTextOnly()
         {
-            var layout = LiveStockThread.LayoutFor(new[] { "A", "B" });
-            Assert.Equal(new[] { ("A", false), ("B", false), ("A", true), ("B", true) }, layout);
+            var (text, png) = StockTickerCard.BuildBoard(new[] { WithHistory("ABC", new[] { 5.0 }, 5) }, StockThreadService.RecentWindow);
+            Assert.Null(png);
+            Assert.Contains("**ABC**", text);
         }
 
         [Fact]
-        public void NeedsRepost_OnlyWhenTheStocksChanged()
+        public void OldLayouts_AreReplacedByTheBoard()
         {
-            Assert.False(Saved("A", "B").NeedsRepost(new[] { "A", "B" }));
-            Assert.True(Saved("A", "B").NeedsRepost(new[] { "A", "B", "C" }));
-            Assert.True(Saved("A", "B").NeedsRepost(new[] { "A" }));
-            Assert.True(Saved("A", "B").NeedsRepost(new[] { "B", "A" }));
+            Assert.False(new LiveStockThread { BoardMessageId = 5 }.IsOldLayout);
+            Assert.True(new LiveStockThread().IsOldLayout);
+            Assert.True(new LiveStockThread { BoardMessageId = 5, HeaderMessageId = 4 }.IsOldLayout);
+            Assert.True(new LiveStockThread { BoardMessageId = 5, Tickers = { new TickerMessage { Symbol = "A", MessageId = 1 } } }.IsOldLayout);
 
-            var missingHour = Saved("A", "B");
-            missingHour.Tickers.RemoveAt(3);
-            Assert.True(missingHour.NeedsRepost(new[] { "A", "B" }));
+            //a save from before the board has a header and tickers but no board
+            var old = JsonConvert.DeserializeObject<StockThreads>("{\"CleanupVersion\":1,\"Threads\":[{\"GuildId\":1,\"ThreadId\":2,\"HeaderMessageId\":3,\"Tickers\":[{\"Symbol\":\"A\",\"LastHour\":false,\"MessageId\":4}]}]}");
+            Assert.True(old.Threads.Single().IsOldLayout);
         }
 
         [Fact]
@@ -122,19 +144,19 @@ namespace Tests
         public void State_RoundTripsThroughJson()
         {
             var state = new StockThreads();
-            var entry = Saved("A");
+            var entry = new LiveStockThread();
             entry.GuildId = 111111111111111111;
             entry.ThreadId = 222222222222222222;
-            entry.HeaderMessageId = 333333333333333333;
+            entry.BoardMessageId = 333333333333333333;
             entry.LastSlot = 5_000_000;
             state.Threads.Add(entry);
 
             var back = JsonConvert.DeserializeObject<StockThreads>(JsonConvert.SerializeObject(state));
             var loaded = Assert.Single(back.Threads);
             Assert.Equal(entry.ThreadId, loaded.ThreadId);
-            Assert.Equal(entry.HeaderMessageId, loaded.HeaderMessageId);
+            Assert.Equal(entry.BoardMessageId, loaded.BoardMessageId);
             Assert.Equal(entry.LastSlot, loaded.LastSlot);
-            Assert.False(loaded.NeedsRepost(new[] { "A" }));
+            Assert.False(loaded.IsOldLayout);
         }
     }
 }

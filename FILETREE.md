@@ -54,9 +54,9 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
-    StockTickerCard.cs         one stock's graph + stats over a window (`.stocks SYMBOL`, live tickers)
+    StockTickerCard.cs         one stock's graph + stats over a window (`.stocks SYMBOL`), and the one-image market board for the live thread
     StatsReport.cs             the nine `.stats` pages, built from CoinAccountStats (pure text)
-    StockThreadService.cs      `.stocksthread`: live ticker thread per server, refreshed each stock tick (stockthreads.json)
+    StockThreadService.cs      `.stocksthread`: live one-message, one-image market board per server, refreshed each stock tick (stockthreads.json)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
     DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player (HP, floor pips, potions)
@@ -76,7 +76,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
     MoneyComponents.cs         money button prefixes (stk/pu/prop/debt) and ButtonOwner (owner-only buttons)
-    StockThread.cs             saved `.stocksthread` state: thread, header and ticker message ids per server
+    StockThread.cs             saved `.stocksthread` state: thread and board message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts

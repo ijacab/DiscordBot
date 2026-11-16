@@ -15,9 +15,9 @@ using System.Threading.Tasks;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// <c>.stocksthread</c>: a thread of live stock tickers, one message per stock over all time, then one per stock over the
-    /// last 3 hours, edited in place after every 5 minute stock tick. One thread per server. The thread and message ids are
-    /// saved in stockthreads.json, so updates carry on after a restart or deploy.
+    /// <c>.stocksthread</c>: a thread with one live message, a line per stock and one image with every stock's chart (all time on
+    /// the left, the last 3 hours on the right, like `.stocks`), edited in place after every 5 minute stock tick. One thread per
+    /// server. The thread and message ids are saved in stockthreads.json, so updates carry on after a restart or deploy.
     /// </summary>
     public class StockThreadService
     {
@@ -53,8 +53,7 @@ namespace DiscordBot.Services
                 IThreadChannel thread = await channel.CreateThreadAsync(ThreadName, ThreadType.PublicThread, ThreadArchiveDuration.OneWeek);
                 var (stocks, slot) = _stockService.SnapshotForCharts();
                 var entry = new LiveStockThread { GuildId = channel.GuildId, ParentChannelId = channel.Id, ThreadId = thread.Id, LastSlot = slot };
-                entry.HeaderMessageId = (await thread.SendMessageAsync(HeaderText())).Id;
-                await PostTickers(thread, entry, stocks, slot);
+                await PostBoard(thread, entry, stocks, slot);
 
                 var old = _state.Threads.FirstOrDefault(t => t.GuildId == channel.GuildId);
                 if (old != null)
@@ -152,43 +151,31 @@ namespace DiscordBot.Services
                 if (thread.IsArchived)
                     await thread.ModifyAsync(p => p.Archived = false);
 
-                var symbols = stocks.Select(s => s.Symbol).ToList();
-                bool repost = entry.NeedsRepost(symbols);
-                if (!repost)
+                bool repost = entry.IsOldLayout;
+                if (repost)
                 {
-                    var bySymbol = stocks.ToDictionary(s => s.Symbol);
-                    foreach (var ticker in entry.Tickers)
+                    //made before the single-image board: its header and one message per stock go
+                    foreach (ulong id in entry.Tickers.Select(t => t.MessageId).Append(entry.HeaderMessageId).Where(id => id != 0))
                     {
-                        try
-                        {
-                            await EditTicker(thread, ticker, bySymbol[ticker.Symbol], slot);
-                        }
-                        catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
-                        {
-                            //someone deleted a ticker, so post them all again to keep the order
-                            repost = true;
-                            break;
-                        }
+                        try { await thread.DeleteMessageAsync(id); }
+                        catch (Exception) { /* already gone */ }
+                    }
+                    entry.Tickers = new List<TickerMessage>();
+                    entry.HeaderMessageId = 0;
+                }
+                else
+                {
+                    try
+                    {
+                        await EditBoard(thread, entry, stocks, slot);
+                    }
+                    catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
+                    {
+                        repost = true; //someone deleted the board
                     }
                 }
                 if (repost)
-                {
-                    foreach (var ticker in entry.Tickers)
-                    {
-                        try { await thread.DeleteMessageAsync(ticker.MessageId); }
-                        catch (Exception) { /* already gone */ }
-                    }
-                    await PostTickers(thread, entry, stocks, slot);
-                }
-
-                try
-                {
-                    await thread.ModifyMessageAsync(entry.HeaderMessageId, m => m.Content = HeaderText());
-                }
-                catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
-                {
-                    //the header is only a timestamp, so it isn't worth reposting everything for
-                }
+                    await PostBoard(thread, entry, stocks, slot);
             }
             catch (HttpException ex) when (IsGone(ex))
             {
@@ -205,34 +192,29 @@ namespace DiscordBot.Services
             || ex.DiscordCode == DiscordErrorCode.InsufficientPermissions || ex.HttpCode == System.Net.HttpStatusCode.Forbidden
             || ex.HttpCode == System.Net.HttpStatusCode.NotFound && ex.DiscordCode != DiscordErrorCode.UnknownMessage;
 
-        private static async Task PostTickers(IThreadChannel thread, LiveStockThread entry, List<Stock> stocks, long slot)
+        private static async Task PostBoard(IThreadChannel thread, LiveStockThread entry, List<Stock> stocks, long slot)
         {
-            entry.Tickers = new List<TickerMessage>();
-            foreach (var (symbol, lastHour) in LiveStockThread.LayoutFor(stocks.Select(s => s.Symbol).ToList()))
+            var (embed, file) = Render(stocks, slot);
+            IUserMessage message;
+            if (file.HasValue)
             {
-                var stock = stocks.First(s => s.Symbol == symbol);
-                var (embed, file) = Render(stock, lastHour, slot);
-                IUserMessage message;
-                if (file.HasValue)
-                {
-                    using var attachment = file.Value;
-                    message = await thread.SendFileAsync(attachment, embed: embed);
-                }
-                else
-                {
-                    message = await thread.SendMessageAsync(embed: embed);
-                }
-                entry.Tickers.Add(new TickerMessage { Symbol = symbol, LastHour = lastHour, MessageId = message.Id });
+                using var attachment = file.Value;
+                message = await thread.SendFileAsync(attachment, embed: embed);
             }
+            else
+            {
+                message = await thread.SendMessageAsync(embed: embed);
+            }
+            entry.BoardMessageId = message.Id;
         }
 
-        private static async Task EditTicker(IThreadChannel thread, TickerMessage ticker, Stock stock, long slot)
+        private static async Task EditBoard(IThreadChannel thread, LiveStockThread entry, List<Stock> stocks, long slot)
         {
-            var (embed, file) = Render(stock, ticker.LastHour, slot);
+            var (embed, file) = Render(stocks, slot);
             var files = file.HasValue ? new List<FileAttachment> { file.Value } : new List<FileAttachment>();
             try
             {
-                await thread.ModifyMessageAsync(ticker.MessageId, m =>
+                await thread.ModifyMessageAsync(entry.BoardMessageId, m =>
                 {
                     m.Attachments = files;
                     m.Embeds = new[] { embed };
@@ -245,24 +227,19 @@ namespace DiscordBot.Services
         }
 
         /// <summary>
-        /// One ticker's embed and chart. The file name changes with each tick, so Discord clients never show a cached picture.
+        /// The board's embed and its one chart image. The file name changes with each tick, so Discord clients never show a cached picture.
         /// </summary>
-        private static (Embed Embed, FileAttachment? File) Render(Stock stock, bool lastHour, long slot)
+        private static (Embed Embed, FileAttachment? File) Render(IEnumerable<Stock> stocks, long slot)
         {
-            var card = lastHour
-                ? StockTickerCard.Build(stock, RecentWindow, colourByWindow: true, footer: "*Live: the last 3 hours, one point per 5 minute tick.*")
-                : StockTickerCard.Build(stock, null, footer: "*Live: all the history kept, one point per 5 minute tick.*");
-            string title = $"{stock.Symbol} · {(lastHour ? "last 3 hours" : "all time")}";
-            var builder = DiscordHelper.GetEmbedBuilder(title, card.Text);
-            if (card.Png == null) return (builder.Build(), null);
+            var (text, png) = StockTickerCard.BuildBoard(stocks, RecentWindow);
+            var builder = DiscordHelper.GetEmbedBuilder("Live stock market",
+                text + $"\n\n*Each stock's chart: all time on the left, the last 3 hours on the right, as % change. Updated every 5 minutes, last <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>.*");
+            if (png == null) return (builder.Build(), null);
 
-            string fileName = $"{stock.Symbol.ToLowerInvariant()}-{(lastHour ? "3h" : "all")}-{slot}.png";
+            string fileName = $"stocks-{slot}.png";
             builder.WithImageUrl($"attachment://{fileName}");
-            return (builder.Build(), new FileAttachment(new MemoryStream(card.Png), fileName));
+            return (builder.Build(), new FileAttachment(new MemoryStream(png), fileName));
         }
-
-        private static string HeaderText() =>
-            $"**Live stock tickers**, updated every 5 minutes. Each stock over all time, then each over the last 3 hours. Last update <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>.";
 
         /// <summary>
         /// Runs the one-off deletion of every old ticker thread if it hasn't run yet (<see cref="StockThreads.CleanupVersion"/>).

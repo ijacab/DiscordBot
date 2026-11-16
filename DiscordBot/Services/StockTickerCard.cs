@@ -79,6 +79,49 @@ namespace DiscordBot.Services
             return new Card { Title = title, Text = text, Png = chart.ToArray(), Points = points };
         }
 
+        /// <summary>
+        /// The whole market on one image for the live thread: a row per ordinary stock with its all-time chart on the left and
+        /// its last <paramref name="recent"/> on the right, both as % change like `.stocks`. Gold and bonds barely move, so they
+        /// are listed in the text only. The text has one line per stock. Png is null when nothing has two price points yet.
+        /// </summary>
+        public static (string Text, byte[] Png) BuildBoard(IEnumerable<Stock> stocks, TimeSpan recent)
+        {
+            var ordered = Ordered(stocks);
+            var lines = new List<string>();
+            var charts = new List<MemoryStream>();
+            var labels = new List<string>();
+            try
+            {
+                foreach (var stock in ordered)
+                {
+                    var recentPoints = Window(stock.History, recent);
+                    lines.Add($"{stock.TypeEmoji ?? "•"} **{stock.Symbol}** ${stock.Price:N2} · 5m {stock.PercentChange:+0.00;-0.00;0.00}% · {StockChart.FormatSpan(recentPoints.Count, Tick)} {ChangeOf(recentPoints):+0.00;-0.00;0.00}% · all time {stock.AllTimeChange:+0.00;-0.00;0.00}%");
+
+                    if (stock.Role != StockRole.Normal || stock.History.Count < 2) continue;
+                    charts.Add(PercentChart(stock.History, StockChart.ColourForChange(stock.AllTimeChange)));
+                    labels.Add($"{stock.Symbol.ToUpperInvariant()} ALL");
+                    charts.Add(PercentChart(recentPoints, StockChart.ColourForChange(ChangeOf(recentPoints))));
+                    labels.Add($"{stock.Symbol.ToUpperInvariant()} {StockChart.FormatSpan(recentPoints.Count, Tick)}");
+                }
+
+                if (charts.Count == 0) return (string.Join("\n", lines), null);
+                using var grid = StockChart.RenderGridPng(charts, labels, 2);
+                return (string.Join("\n", lines), grid.ToArray());
+            }
+            finally
+            {
+                foreach (var chart in charts) chart.Dispose();
+            }
+        }
+
+        /// <summary>A chart of % change since the first point, so stocks of very different prices read the same.</summary>
+        private static MemoryStream PercentChart(IReadOnlyList<double> points, Rgba32 colour)
+        {
+            double first = points[0];
+            var series = new List<IReadOnlyList<double>> { points.Select(p => first <= 0 ? 0 : (p - first) / first * 100).ToList() };
+            return StockChart.RenderMultiPng(series, Tick, v => $"{v:+0;-0;0}%", colour);
+        }
+
         private static string NameLine(Stock stock)
         {
             string name = stock.TypeEmoji == null ? stock.Name : $"{stock.TypeEmoji} {stock.Name}";
