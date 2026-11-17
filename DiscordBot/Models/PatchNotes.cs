@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-17", "You can now trade by percentage: `.buy MOONX 50%` uses half your cash, `.sell MOONX 50%` sells half your shares. Works for .short, .cover, .call and .put too."),
             new PatchNote("2026-11-16", "Calls can now pay up to 20x their strike (was 10x). Higher would make crypto calls dearer than the coin itself, so buying would always beat them."),
             new PatchNote("2026-11-16", "Crypto can now mega boom or crash 10x to 100,000x about every 2 days each way (min price 1 cent). Big trades move it much more. Calls are capped at 10x their strike."),
             new PatchNote("2026-11-16", "Sped up for a 2-4 week season: a crash now lasts a week, property booms/busts 4-8 days, bonds pay 0.1% an hour and house upkeep is 1% an hour with the rent."),

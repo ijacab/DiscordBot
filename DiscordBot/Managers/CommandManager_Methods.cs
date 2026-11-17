@@ -662,13 +662,14 @@ namespace DiscordBot.Managers
         {
             if (args.Count != 3 || !DurationParser.TryParse(args[2], out TimeSpan duration))
                 throw new BadSyntaxException();
-            bool useMax = args[1].Equals("max", StringComparison.OrdinalIgnoreCase);
+            bool isPercent = StockService.TryParsePercent(args[1], out double cashShare);
+            bool useMax = isPercent || args[1].Equals("max", StringComparison.OrdinalIgnoreCase);
             if (!useMax && (!int.TryParse(args[1], out int typed) || typed < 1))
                 throw new BadSyntaxException();
             EnsureNotBetting(message);
 
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], isCall, duration) : int.Parse(args[1]);
+            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], isCall, duration, isPercent ? cashShare : 1) : int.Parse(args[1]);
             var (option, premium, fee) = _stockService.BuyOption(account, args[0], isCall, contracts, duration);
 
             string kind = isCall ? "call" : "put";

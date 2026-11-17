@@ -158,18 +158,18 @@ namespace DiscordBot.Managers
                 }
                 case "buy":
                     if (args.Length < 1) break;
-                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "buyamt", args[0]), $"Buy {args[0]}", "Shares", "100 or max"));
+                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "buyamt", args[0]), $"Buy {args[0]}", "Shares", "100, 50% or max"));
                     return;
                 case "sell":
                     if (args.Length < 1) break;
-                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "sellamt", args[0]), $"Sell {args[0]}", "Shares", "100 or all"));
+                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "sellamt", args[0]), $"Sell {args[0]}", "Shares", "100, 50% or all"));
                     return;
                 case "sellpick":
                 {
                     if (!await IsOwner(component, args)) return;
                     string symbol = component.Data.Values?.FirstOrDefault();
                     if (string.IsNullOrEmpty(symbol)) break;
-                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "sellamt", symbol), $"Sell {symbol}", "Shares", "100 or all"));
+                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Stock, "sellamt", symbol), $"Sell {symbol}", "Shares", "100, 50% or all"));
                     return;
                 }
                 case "buymax":
@@ -211,7 +211,7 @@ namespace DiscordBot.Managers
             }
             catch (BadSyntaxException)
             {
-                await ReplyPrivately(modal, $"That amount doesn't look right. Use a whole number of shares, or {(action == "buyamt" ? "max" : "all")}.");
+                await ReplyPrivately(modal, $"That amount doesn't look right. Use a whole number of shares, a percentage like 50%, or {(action == "buyamt" ? "max" : "all")}.");
             }
         }
 

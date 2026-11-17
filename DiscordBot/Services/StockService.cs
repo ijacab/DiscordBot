@@ -171,13 +171,16 @@ namespace DiscordBot.Services
                 //a holding can't pass int.MaxValue shares, so that's the most that can be added to it
                 int room = int.MaxValue - _market.GetShares(account.UserId, stock.Symbol);
                 if (room < 1) throw StockMarket.TooManyShares(stock.Symbol);
-                int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? stock.MaxAffordableShares(account.NetWorth, spread, room)
+                bool isPercent = TryParsePercent(amount, out double share);
+                int shares = isPercent ? stock.MaxAffordableShares(account.NetWorth * share, spread, room)
+                    : amount.Equals("max", StringComparison.OrdinalIgnoreCase) ? stock.MaxAffordableShares(account.NetWorth, spread, room)
                     : ParseShares(amount);
                 if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
-                    throw new BadInputException($"You can't afford even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}).");
+                    throw new BadInputException(isPercent
+                        ? $"{amount} of your cash (${account.NetWorth * share:N2}) can't buy even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)})."
+                        : $"You can't afford even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}).");
 
                 double fill = stock.PreviewTrade(shares, spread).Fill;
                 double cost = Math.Round(shares * fill, 2);
@@ -201,10 +204,12 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 int owned = _market.GetShares(account.UserId, stock.Symbol);
-                int shares = IsAllOrMax(amount) ? owned : ParseShares(amount);
+                int shares = IsAllOrMax(amount) ? owned : SharesFromAmount(amount, owned);
 
-                if (shares < 1 || owned < 1)
+                if (owned < 1)
                     throw new BadInputException($"You don't own any {stock.Symbol}.");
+                if (shares < 1)
+                    throw new BadInputException($"{amount} of your {owned} {stock.Symbol} is less than one share.");
                 if (shares > owned)
                     throw new BadInputException($"You only own {owned} shares of {stock.Symbol}.");
 
@@ -245,13 +250,14 @@ namespace DiscordBot.Services
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 int room = int.MaxValue - (_market.GetShort(account.UserId, stock.Symbol)?.Shares ?? 0);
                 if (room < 1) throw StockMarket.TooManyShares(stock.Symbol);
-                int shares = amount.Equals("max", StringComparison.OrdinalIgnoreCase)
-                    ? stock.MaxShortableShares(account.NetWorth, room)
+                bool isPercent = TryParsePercent(amount, out double share);
+                int shares = isPercent ? stock.MaxShortableShares(account.NetWorth * share, room)
+                    : amount.Equals("max", StringComparison.OrdinalIgnoreCase) ? stock.MaxShortableShares(account.NetWorth, room)
                     : ParseShares(amount);
                 if (shares > room) throw StockMarket.TooManyShares(stock.Symbol);
 
                 if (shares < 1)
-                    throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}).");
+                    throw new BadInputException($"You can't afford the margin for even one share of {stock.Symbol} (${Stock.FormatPrice(stock.Price)}){(isPercent ? $" with {amount} of your cash" : "")}.");
 
                 double fill = stock.PreviewTrade(-shares).Fill;
                 double margin = Math.Round(shares * fill, 2);
@@ -277,7 +283,9 @@ namespace DiscordBot.Services
             {
                 var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
                 var position = _market.GetShort(account.UserId, stock.Symbol) ?? throw new BadInputException($"You aren't short any {stock.Symbol}.");
-                int shares = IsAllOrMax(amount) ? position.Shares : ParseShares(amount);
+                int shares = IsAllOrMax(amount) ? position.Shares : SharesFromAmount(amount, position.Shares);
+                if (shares < 1)
+                    throw new BadInputException($"{amount} of your {position.Shares} shorted {stock.Symbol} is less than one share.");
                 if (shares > position.Shares)
                     throw new BadInputException($"You're only short {position.Shares} shares of {stock.Symbol}.");
 
@@ -303,7 +311,7 @@ namespace DiscordBot.Services
         }
 
         /// <summary>The most option contracts the account can pay for (premium plus fee) at this duration.</summary>
-        public int MaxAffordableContracts(CoinAccount account, string symbol, bool isCall, TimeSpan duration)
+        public int MaxAffordableContracts(CoinAccount account, string symbol, bool isCall, TimeSpan duration, double cashShare = 1)
         {
             lock (_lock)
             {
@@ -312,9 +320,10 @@ namespace DiscordBot.Services
                     throw new BadInputException("Options last between 15m and 3d.");
 
                 double perShare = stock.OptionPremiumPerShare(duration, isCall, CurrentDrift(stock));
-                int contracts = Stock.MaxAffordableContracts(account.NetWorth, perShare);
+                double budget = account.NetWorth * cashShare;
+                int contracts = Stock.MaxAffordableContracts(budget, perShare);
                 if (contracts < 1)
-                    throw new BadInputException($"One contract of {stock.Symbol} costs ${Stock.OptionCost(perShare, 1):N2} (premium plus fee) and you only have ${account.NetWorth:N2}.");
+                    throw new BadInputException($"One contract of {stock.Symbol} costs ${Stock.OptionCost(perShare, 1):N2} (premium plus fee) and you only have ${budget:N2}{(cashShare < 1 ? $" ({cashShare:P0} of your cash)" : "")}.");
                 return contracts;
             }
         }
@@ -416,6 +425,25 @@ namespace DiscordBot.Services
                     stock.FairPrice = stock.Price;
             }
         }
+
+        /// <summary>
+        /// A share of something written like "50%" (or "12.5%"): 0 to 100, as a fraction. False for anything else, and a "%" amount that isn't
+        /// a number from above 0 to 100 is a syntax error.
+        /// </summary>
+        public static bool TryParsePercent(string amount, out double fraction)
+        {
+            fraction = 0;
+            if (amount == null || !amount.EndsWith("%")) return false;
+            if (!double.TryParse(amount.TrimEnd('%'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double percent)
+                || double.IsNaN(percent) || percent <= 0 || percent > 100)
+                throw new BadSyntaxException();
+            fraction = percent / 100;
+            return true;
+        }
+
+        /// <summary>Shares for an amount of a holding: a whole number, or a percentage of it rounded down (50% of 7 is 3).</summary>
+        private static int SharesFromAmount(string amount, int held) =>
+            TryParsePercent(amount, out double share) ? (int)Math.Floor(held * share + 1e-9) : ParseShares(amount);
 
         private static int ParseShares(string amount)
         {
