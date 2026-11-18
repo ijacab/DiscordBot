@@ -59,6 +59,13 @@ namespace DiscordBot.Games.Managers
         {
         }
 
+        /// <summary>
+        /// True when a game's animation is long (seconds). Typed commands run on the gateway task, so awaiting it there stops every
+        /// other command and the heartbeats, and it would hold the game lock too. The animation, and whatever follows it, then run
+        /// in the background and the command returns straight away.
+        /// </summary>
+        protected virtual bool AnimateInBackground => false;
+
         /// <summary>Runs after the game is animated and before the first turn. Can be overridden to post extra messages.</summary>
         protected virtual Task PostStartAsync(TGame game, IEnumerable<TPlayer> players)
         {
@@ -246,6 +253,13 @@ namespace DiscordBot.Games.Managers
 
                 //normally nothing, but can be overridden in child classes
                 PostStartActions(game, players);
+                if (AnimateInBackground)
+                {
+                    var playerList = players.ToList();
+                    _ = Task.Run(() => AnimateAndContinueAsync(game, playerList, player));
+                    return;
+                }
+
                 await AnimateGame(game, players);
                 await PostStartAsync(game, players);
 
@@ -258,6 +272,42 @@ namespace DiscordBot.Games.Managers
             {
                 string playCommands = $"{PlayCommands.CombineListToString(" or ", wordPrefix: $".{BaseCommand} ", wordSurrounder: "`")}";
                 await context.SendEmbed("Error", $"The game you are in is already started. Type {playCommands} to play.", PlayButtons);
+            }
+        }
+
+        /// <summary>
+        /// The slow part of starting a game, off the command: animates it without the lock (so other commands and clicks aren't held up),
+        /// then takes the lock for the rest. A failed animation must not strand the players' bets, so the game carries on to its end.
+        /// </summary>
+        private async Task AnimateAndContinueAsync(TGame game, List<TPlayer> players, TPlayer starter)
+        {
+            try
+            {
+                await AnimateGame(game, players);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"{GameName} animation failed: {ex}");
+            }
+
+            try
+            {
+                await Locked(async () =>
+                {
+                    //the force-end timer may have ended it meanwhile
+                    if (!TryGetExisitingGame(game.GameGuid, out _))
+                        return;
+
+                    await PostStartAsync(game, players);
+                    if (await EndGameIfAllPlayersFinished(starter.UserId))
+                        return;
+
+                    await AnnounceStart(game, players, starter);
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"{GameName} could not finish after starting: {ex}");
             }
         }
 

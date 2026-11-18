@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using DiscordBot.Games.Models;
 using DiscordBot.Managers;
 using DiscordBot.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -21,6 +22,9 @@ namespace DiscordBot.Games.Managers
             : base(client, betManager, coinService)
         {
         }
+
+        //the replay takes about 1.5 seconds a frame, which must not hold up the gateway
+        protected override bool AnimateInBackground => true;
 
         protected override MessageComponent ResultButtons => LobbyButtons("Play again…");
 
@@ -51,7 +55,16 @@ namespace DiscordBot.Games.Managers
                 await Task.Delay(MillisecondsBetweenTicks);
                 var embed = BuildRaceEmbed(game, frame);
                 foreach (var message in messages)
-                    await message.ModifyAsync(m => m.Embed = embed);
+                {
+                    try
+                    {
+                        await message.ModifyAsync(m => m.Embed = embed);
+                    }
+                    catch (Exception)
+                    {
+                        //a deleted message or a rate limit costs a frame, not the race: the results still come
+                    }
+                }
             }
         }
 
