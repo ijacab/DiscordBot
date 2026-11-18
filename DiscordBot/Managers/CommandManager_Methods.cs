@@ -1082,7 +1082,7 @@ namespace DiscordBot.Managers
                 output += "You have no power-ups.\n";
             else
             {
-                output += "**Kept power-ups** (these couldn't go off when won; press Use, or `.pu use <number>`):\n";
+                output += "**Kept power-ups** (these couldn't go off when won; each goes off by itself as soon as it can, or press Use / `.pu use <number>` to try now):\n";
                 for (int i = 0; i < account.HeldPowerUps.Count; i++)
                 {
                     var held = account.HeldPowerUps[i];

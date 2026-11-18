@@ -288,6 +288,70 @@ namespace Tests
             Assert.Equal(1000 + NetRent(PropertyKind.House), w[1].NetWorth, 2);
         }
 
+        // ---------- kept power-ups go off by themselves ----------
+
+        [Fact]
+        public void AKeptPowerUp_GoesOffAsSoonAsItsConditionIsMet()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[4].Grant(PowerUpIds.Squatters, Now);
+            Assert.Throws<BadInputException>(() => w.Raffle.ApplyUse(w[4], 1, Now, () => 0.5)); //1st owns no property to squat in
+
+            Assert.Empty(w.Raffle.ActivateKept(Now, () => 0.5)); //still can't, stays held
+            Assert.Single(w[4].HeldPowerUps);
+
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            var went = w.Raffle.ActivateKept(Now.AddMinutes(1), () => 0.5);
+
+            Assert.Single(went);
+            Assert.Equal(4UL, went[0].Owner.UserId);
+            Assert.Contains("Squatters", went[0].Effect);
+            Assert.Empty(w[4].HeldPowerUps);
+            Assert.Single(w[1].Running(PowerUpIds.Squatted, Now.AddMinutes(1)));
+        }
+
+        [Fact]
+        public void KeptPowerUps_AreLeftAloneWhileTheOwnerHasABetOpenOrIsFrozen()
+        {
+            var w = Board((1, 1000), (4, 0), (5, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[4].Grant(PowerUpIds.Squatters, Now);
+            w[5].Grant(PowerUpIds.Squatters, Now);
+            Running(w[5], PowerUpIds.Frozen);
+
+            Assert.Empty(w.Raffle.ActivateKept(Now, () => 0.5, new ulong[] { 4 })); //4 has a bet open, 5 is frozen
+            Assert.Single(w[4].HeldPowerUps);
+            Assert.Single(w[5].HeldPowerUps);
+
+            var went = w.Raffle.ActivateKept(Now, () => 0.5); //the bet closed
+            Assert.Single(went);
+            Assert.Equal(4UL, went[0].Owner.UserId);
+            Assert.Single(w[5].HeldPowerUps); //still frozen
+        }
+
+        [Fact]
+        public void EveryKeptPowerUpIsTried_ABlockedOneDoesNotHoldUpTheOnesBehindIt()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[4].Grant(PowerUpIds.Squatters, Now); //blocked: 1st has no property
+            w[4].Grant(PowerUpIds.Shield, Now);    //can always go off
+
+            var went = w.Raffle.ActivateKept(Now, () => 0.5);
+
+            Assert.Single(went);
+            Assert.Contains("Shield", went[0].Effect);
+            Assert.Single(w[4].HeldPowerUps);
+            Assert.Equal(PowerUpIds.Squatters, w[4].HeldPowerUps[0].Id);
+        }
+
+        [Fact]
+        public void KeptAnnouncement_NamesTheOwnerAndFitsInAMessage()
+        {
+            var text = RaffleService.KeptAnnouncement(new CoinAccount { UserId = 42 }, new[] { new string('x', 3000) });
+            Assert.StartsWith("⏱️ <@42>", text);
+            Assert.True(text.Length <= 1901);
+        }
+
         // ---------- a squatted property can't be sold ----------
 
         private static PropertyService Properties(World w) => new PropertyService(w.Coins);

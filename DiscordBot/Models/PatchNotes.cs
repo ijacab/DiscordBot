@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", "Every power-up now goes off by itself: when won, or as soon as it can (a target appears, a freeze ends, a bet closes). No more `.pu use` needed."),
             new PatchNote("2026-11-18", "Auto-sell now keeps selling until your debt is fully cleared, instead of stopping a little short when its own sales pushed the price down."),
             new PatchNote("2026-11-18", "House prices have no limit now: they can rise or fall as far as they go, and the odd day moves them 10% to 30% or more either way."),
             new PatchNote("2026-11-18", "A property with squatters in can't be sold until they leave (12 hours), so selling and rebuying no longer shakes them off. Auto-sell skips it too."),

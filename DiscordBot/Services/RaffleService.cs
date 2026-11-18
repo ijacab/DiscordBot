@@ -12,7 +12,7 @@ namespace DiscordBot.Services
 {
     /// <summary>
     /// A raffle every hour. Anyone who did something with money in the 6 hours before the draw is entered, and the winner's
-    /// power-up goes off the moment it's won (one that can't be used right then is kept for `.pu use`). The draw rubber-bands like kart racing items: the top of the leaderboard only draws boosts,
+    /// power-up goes off the moment it's won (one that can't be used right then is kept and goes off by itself as soon as it can, see `ActivateKept`). The draw rubber-bands like kart racing items: the top of the leaderboard only draws boosts,
     /// and the further down you are the more likely attacks and catch-up items are (more so when 1st place runs away).
     /// Also handles using held power-ups.
     /// </summary>
@@ -84,7 +84,7 @@ namespace DiscordBot.Services
         /// <summary>
         /// Draws the raffle for the current slot if it hasn't been drawn. Returns null when it was already drawn or nobody is
         /// entered. The winner's prize goes off straight away (<see cref="Activate"/>); one that can't be used right now, or
-        /// while the winner has a bet open (<paramref name="betOpenUserIds"/>), is kept for `.pu use`. The caller saves and
+        /// while the winner has a bet open (<paramref name="betOpenUserIds"/>), is kept until `ActivateKept` can set it off. The caller saves and
         /// announces. An entrant holding a Rigged Raffle wins.
         /// </summary>
         public DrawResult Draw(DateTime now, Func<double> random, IEnumerable<ulong> betOpenUserIds = null)
@@ -124,7 +124,7 @@ namespace DiscordBot.Services
             public int Entrants { get; set; }
             /// <summary>What the prize did when it went off, or null if it was kept.</summary>
             public string Effect { get; set; }
-            /// <summary>Why the prize couldn't go off and was kept for `.pu use`, or null.</summary>
+            /// <summary>Why the prize couldn't go off and was kept until it can, or null.</summary>
             public string Kept { get; set; }
         }
 
@@ -142,6 +142,42 @@ namespace DiscordBot.Services
             {
                 return (null, ex.Message);
             }
+        }
+
+        /// <summary>The most power-ups tried for one player in one pass, so a loop of steals can't run away.</summary>
+        public const int MaxActivationsPerPass = 40;
+
+        /// <summary>
+        /// Called every minute: tries every kept power-up and sets off the ones that can go off now (a target appeared, a freeze
+        /// ended, a bet closed...), so nothing waits for `.pu use`. Players with a bet open are skipped, as at the draw. A power-up
+        /// that still can't go off stays held and is tried again next minute. Returns what went off, in order, for the caller to
+        /// save and announce.
+        /// </summary>
+        public List<(CoinAccount Owner, string Effect)> ActivateKept(DateTime now, Func<double> random, IEnumerable<ulong> betOpenUserIds = null)
+        {
+            var busy = new HashSet<ulong>(betOpenUserIds ?? Enumerable.Empty<ulong>());
+            var went = new List<(CoinAccount, string)>();
+            foreach (var account in _coinService.GetAll().Accounts.Where(a => a.HeldPowerUps.Count > 0 && !busy.Contains(a.UserId)).ToList())
+            {
+                account.Prune(now);
+                if (account.Running(PowerUpIds.Frozen, now).Count > 0) continue; //frozen: nothing can be used until it ends
+
+                int number = 1;
+                for (int attempts = 0; number <= account.HeldPowerUps.Count && attempts < MaxActivationsPerPass; attempts++)
+                {
+                    int before = account.HeldPowerUps.Count;
+                    try
+                    {
+                        went.Add((account, UseAndFollowCopy(account, number, now, random)));
+                        //the one used is gone, so the next one is now at this number
+                    }
+                    catch (BadInputException)
+                    {
+                        if (account.HeldPowerUps.Count >= before) number++; //still held; one removed as obsolete leaves the next at this number
+                    }
+                }
+            }
+            return went;
         }
 
         /// <summary>As <see cref="ApplyUse"/>, and a Copycat's copy (added to the end of the held list) goes off straight away too.</summary>
@@ -197,6 +233,27 @@ namespace DiscordBot.Services
             await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: mine);
         }
 
+        /// <summary>Called every minute after the raffle: sets off kept power-ups that can go off now and announces each in the last active channel.</summary>
+        public async Task ActivateKeptAndAnnounce(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)
+        {
+            var went = ActivateKept(DateTime.UtcNow, _random.NextDouble, betOpenUserIds);
+            if (went.Count == 0) return;
+            await _coinService.Update();
+
+            if (!(client.GetChannel(_coinService.GetAll().LastActiveChannelId) is IMessageChannel channel)) return;
+            foreach (var group in went.GroupBy(w => w.Owner.UserId))
+            {
+                string text = KeptAnnouncement(group.First().Owner, group.Select(g => g.Effect));
+                await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
+            }
+        }
+
+        public static string KeptAnnouncement(CoinAccount owner, IEnumerable<string> effects)
+        {
+            string text = $"⏱️ <@{owner.UserId}>'s kept power-up went off:\n{string.Join("\n", effects)}";
+            return text.Length > 1900 ? text.Substring(0, 1900) + "…" : text;
+        }
+
         public static string Announcement(DrawResult result)
         {
             var prize = result.Prize;
@@ -205,7 +262,7 @@ namespace DiscordBot.Services
             if (result.Kept == null)
                 return $"{line} and it went off: {result.Effect}";
             string reason = result.Kept.Replace(" Keep it for later.", "").Trim();
-            return $"{line}. It couldn't go off yet, so it's kept: {reason} `.pu use` it when you can.";
+            return $"{line}. It couldn't go off yet, so it's kept: {reason} It goes off by itself as soon as it can.";
         }
 
         private List<CoinAccount> Ranked()

@@ -331,6 +331,16 @@ namespace DiscordBot.Managers
             {
                 _logger.LogError(ex, $"Error while running the raffle {nameof(CommandManager)}: {ex.Message}");
             }
+
+            try
+            {
+                //kept power-ups go off by themselves the moment they can
+                await _raffleService.ActivateKeptAndAnnounce(client, _betManager.InitiatedBetUserIds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error while setting off kept power-ups {nameof(CommandManager)}: {ex.Message}");
+            }
         }
 
         private async Task SendReminders(DiscordSocketClient client)
