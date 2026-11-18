@@ -83,8 +83,10 @@ namespace Tests
             foreach (var duration in new[] { TimeSpan.FromHours(6), TimeSpan.FromHours(24) })
             {
                 double put = stock.OptionPremiumPerShare(duration, false, crash);
-                Assert.True(put > 2 * stock.OptionPremiumPerShare(duration, false), $"{duration}: put {put:F2}");
-                Assert.True(put > 1.2 * stock.OptionPremiumPerShare(duration, true, crash), $"{duration}: put {put:F2}");
+                double normalPut = stock.OptionPremiumPerShare(duration, false);
+                Assert.True(put > 1.5 * normalPut, $"{duration}: crash put {put:F2}, normal put {normalPut:F2}");
+                double call = stock.OptionPremiumPerShare(duration, true, crash);
+                Assert.True(put > 1.05 * call, $"{duration}: put {put:F2}, call {call:F2}");
             }
         }
 

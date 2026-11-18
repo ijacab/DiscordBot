@@ -132,6 +132,11 @@ namespace DiscordBot.Models
         public int MegaTicks { get; set; }
         /// <summary>The log move each tick of the running mega event (always positive; the sign is on <see cref="MegaTicks"/>).</summary>
         public double MegaStep { get; set; }
+        /// <summary>
+        /// During a market crisis, the price an ordinary stock is pulled towards instead of <see cref="BasePrice"/>: where it was when
+        /// the crisis began, moved by the crisis drift each tick. 0 outside a crisis (and on saves from before).
+        /// </summary>
+        public double CrisisAnchor { get; set; }
         /// <summary>Quoted price at each tick, oldest first.</summary>
         public List<double> History { get; set; } = new List<double>();
 
@@ -254,17 +259,44 @@ namespace DiscordBot.Models
             }
 
             moved *= Math.Exp(drift.LogPerTick);
+            double target = BasePrice;
+            if (drift.AllowReversion)
+                CrisisAnchor = 0;
+            else if (IsCrypto)
+                reversion = 0; //crypto just follows the drift: its noise has no downward pull and its bursts are meant to run
+            else
+            {
+                //during a crisis the price is pulled towards a price that itself follows the crisis drift, not towards the old base,
+                //so the typical stock falls by its stated amount and the spread stays as narrow as in normal trading. Without that
+                //pull a stock random-walks for days, and the noise's own downward pull in log terms (a +30% then a -30% leaves it
+                //lower) took a mild crash far past its stated fall; that pull is cancelled here, as the reversion does in normal times
+                if (CrisisAnchor <= 0) CrisisAnchor = FairPrice;
+                CrisisAnchor = Math.Max(FloorPrice, CrisisAnchor * Math.Exp(drift.LogPerTick));
+                target = CrisisAnchor;
+                moved *= Math.Exp(-NoiseDrag(MaxSwingByTier[RiskTier] * drift.SwingScale));
+            }
             moved = Math.Max(FloorPrice, moved);
-            if (!drift.AllowReversion) reversion = 0; //during a crisis the price follows the drift, not the old base
             //a fixed percentage move up or down has a negative average log change, so the price would slowly decay without this
-            if (BasePrice > 0 && reversion > 0)
-                moved *= Math.Pow(BasePrice / moved, reversion);
+            if (target > 0 && reversion > 0)
+                moved *= Math.Pow(target / moved, reversion);
 
             PreviousPrice = Price;
             //four decimals, so a slow crisis drift on a cheap stock isn't rounded away every tick (the quote is still shown to the cent)
             FairPrice = Math.Max(FloorPrice, Math.Round(moved, 4));
             Impact *= ImpactDecayPerTick;
             RefreshQuote();
+        }
+
+        /// <summary>
+        /// The average log move of one tick of plain noise (a uniform percentage in ±<paramref name="swing"/>), which is below zero:
+        /// a +30% then a -30% leaves the price lower. <see cref="ApplyTick(Func{double}, MarketDrift)"/> adds its opposite during a
+        /// crisis, so the price follows the crisis drift and nothing more.
+        /// </summary>
+        public static double NoiseDrag(double swing)
+        {
+            if (swing < 1e-9) return 0;
+            if (swing >= 1) throw new ArgumentOutOfRangeException(nameof(swing), "A swing of 100% or more can take the price to zero.");
+            return ((1 + swing) * Math.Log(1 + swing) - (1 - swing) * Math.Log(1 - swing)) / (2 * swing) - 1;
         }
 
         /// <summary>The log size of a mega event for a uniform draw <paramref name="u"/> in [0, 1): at least ln 10, an exponential tail, cut off at ln 100,000.</summary>

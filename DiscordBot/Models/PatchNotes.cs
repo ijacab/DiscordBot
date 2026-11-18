@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", "Market crashes now take stocks down by the stated amount. Before, they fell far further (a mild one could wipe out a high-risk stock) and some stocks even rose."),
             new PatchNote("2026-11-18", "Fixed the duck race freezing the bot while it ran: other commands now work during a race."),
             new PatchNote("2026-11-17", "You can now trade by percentage: `.buy MOONX 50%` uses half your cash, `.sell MOONX 50%` sells half your shares. Works for .short, .cover, .call and .put too."),
             new PatchNote("2026-11-16", "Calls can now pay up to 20x their strike (was 10x). Higher would make crypto calls dearer than the coin itself, so buying would always beat them."),

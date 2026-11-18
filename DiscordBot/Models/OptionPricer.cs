@@ -24,17 +24,21 @@ namespace DiscordBot.Models
         private const int MaxCached = 4_000;
 
         private readonly record struct Key(string Symbol, int RiskTier, StockRole Role, bool IsCall, int Ticks, double Fair, double Base,
-            int Momentum, int Recovery, int MegaTicks, double MegaStep, double DriftLog, double DriftSwing, bool DriftReverts);
+            int Momentum, int Recovery, int MegaTicks, double MegaStep, double DriftLog, double DriftSwing, bool DriftReverts, double AnchorRatio);
 
         private static readonly Dictionary<Key, double> _cache = new Dictionary<Key, double>();
         private static readonly object _lock = new object();
+
+        /// <summary>Where the crisis anchor sits against the price (1 when there is none), rounded so quotes still cache.</summary>
+        private static double AnchorRatio(Stock stock) =>
+            stock.CrisisAnchor > 0 && stock.FairPrice > 0 ? Math.Round(stock.CrisisAnchor / stock.FairPrice, 3) : 0;
 
         /// <summary>The average payoff per share of an at-the-money option over <paramref name="ticks"/> 5 minute ticks, before any house edge.</summary>
         public static double FairValuePerShare(Stock stock, bool isCall, int ticks, MarketDrift drift)
         {
             ticks = Math.Clamp(ticks, 1, MaxPricedTicks);
             var key = new Key(stock.Symbol, stock.RiskTier, stock.Role, isCall, ticks, stock.FairPrice, stock.BasePrice,
-                stock.MomentumTicks, stock.CrashRecoveryTicks, stock.MegaTicks, stock.MegaStep, drift.LogPerTick, drift.SwingScale, drift.AllowReversion);
+                stock.MomentumTicks, stock.CrashRecoveryTicks, stock.MegaTicks, stock.MegaStep, drift.LogPerTick, drift.SwingScale, drift.AllowReversion, AnchorRatio(stock));
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out double cached)) return cached;
@@ -71,6 +75,7 @@ namespace DiscordBot.Models
                 scratch.CrashRecoveryTicks = stock.CrashRecoveryTicks;
                 scratch.MegaTicks = stock.MegaTicks;
                 scratch.MegaStep = stock.MegaStep;
+                scratch.CrisisAnchor = strike * AnchorRatio(stock); //the crisis pull, relative to where the option starts
                 for (int tick = 0; tick < ticks; tick++)
                     scratch.ApplyTick(next, drift);
                 double end = scratch.FairPrice;

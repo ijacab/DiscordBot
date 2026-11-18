@@ -138,17 +138,33 @@ namespace Tests
                 PhaseLogMove(recovery, MarketCycle.RecoveryDays), 6);
         }
 
+        /// <summary>The typical (median) log move over a whole phase for a stock, over many seeded paths.</summary>
+        private static double MedianLogMove(Func<Stock> make, MarketDrift drift, int ticks, int paths = 400)
+        {
+            var random = new Random(4321);
+            var moves = new double[paths];
+            for (int p = 0; p < paths; p++)
+            {
+                var stock = make();
+                double start = stock.FairPrice;
+                for (int i = 0; i < ticks; i++)
+                    stock.ApplyTick(random.NextDouble, drift);
+                moves[p] = Math.Log(stock.FairPrice / start);
+            }
+            Array.Sort(moves);
+            return moves[paths / 2];
+        }
+
         [Fact]
         public void ApplyTick_ADeclineActuallyPullsACheapStockDown()
         {
             //the old cent rounding used to swallow these small moves, so check a full decline through the tick
-            var stock = Listing("CHEAP", 5, 10);
-            var drift = MarketCycle.DriftFor(stock, CrisisPhase.Decline);
+            var cheap = Listing("CHEAP", 4, 1000);
+            var drift = MarketCycle.DriftFor(cheap, CrisisPhase.Decline);
 
-            for (int i = 0; i < MarketCycle.DeclineDays * Stock.TicksPerDay; i++)
-                stock.ApplyTick(() => 0.5, drift);
+            double move = MedianLogMove(() => Listing("CHEAP", 4, 1000), drift, MarketCycle.DeclineDays * Stock.TicksPerDay);
 
-            AssertClose(10 * (1 - MarketCycle.FallFor(stock)), stock.FairPrice, 0.05);
+            AssertClose(Math.Log(1 - MarketCycle.FallFor(cheap)), move, 0.1);
         }
 
         [Fact]
@@ -157,10 +173,9 @@ namespace Tests
             var gold = Listing("GOLD", 2, 150, StockRole.SafeHaven);
             var drift = MarketCycle.DriftFor(gold, CrisisPhase.Decline);
 
-            for (int i = 0; i < MarketCycle.DeclineDays * Stock.TicksPerDay; i++)
-                gold.ApplyTick(() => 0.5, drift);
+            double move = MedianLogMove(() => Listing("GOLD", 2, 150, StockRole.SafeHaven), drift, MarketCycle.DeclineDays * Stock.TicksPerDay);
 
-            AssertClose(150 * (1 + MarketCycle.GoldRise), gold.FairPrice, 0.5);
+            AssertClose(Math.Log(1 + MarketCycle.GoldRise), move, 0.1);
         }
 
         [Fact]

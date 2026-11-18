@@ -131,6 +131,89 @@ namespace Tests
             Assert.Equal((mild + worst) / 2, MarketCycle.FallFor(stock, 0.5), 9);
         }
 
+        [Theory]
+        [InlineData(0.01)]
+        [InlineData(0.07)]
+        [InlineData(0.30)]
+        [InlineData(0.60)]
+        public void NoiseDrag_IsTheAverageLogMoveOfOneTick(double swing)
+        {
+            //integrate ln(1 + swing * u) over u in [-1, 1)
+            const int steps = 200_000;
+            double sum = 0;
+            for (int i = 0; i < steps; i++) sum += Math.Log(1 + swing * ((i + 0.5) / steps * 2 - 1));
+            Assert.Equal(sum / steps, Stock.NoiseDrag(swing), 6);
+            Assert.True(Stock.NoiseDrag(swing) < 0);
+        }
+
+        [Theory]
+        [InlineData(3, 0)]
+        [InlineData(3, 1)]
+        [InlineData(4, 0.25)]
+        [InlineData(5, 0)]
+        [InlineData(5, 0.5)]
+        public void ADecline_FallsByItsStatedAmount_AndTheSpreadStaysNarrow(int tier, double severity)
+        {
+            //before this, a mild decline took a tier 3 stock down about 65% and a tier 5 stock to the floor, with some paths ending far above the start
+            var random = new Random(1234);
+            const int paths = 1500;
+            var stock = Listing("X", tier, price: 100_000);
+            var drift = MarketCycle.DriftFor(stock, CrisisPhase.Decline, severity);
+            var ends = new double[paths];
+            for (int p = 0; p < paths; p++)
+            {
+                var s = Listing("X", tier, price: 100_000);
+                for (int t = 0; t < MarketCycle.DeclineDays * Stock.TicksPerDay; t++)
+                    s.ApplyTick(random.NextDouble, drift);
+                ends[p] = Math.Log(s.FairPrice / 100_000);
+            }
+            Array.Sort(ends);
+            double expected = Math.Log(1 - MarketCycle.FallFor(stock, severity));
+            Assert.InRange(ends[paths / 2], expected - 0.1, expected + 0.1); //the typical stock lands on the stated fall
+            Assert.True(ends[paths * 95 / 100] < Math.Log(1.5), "a crash left a typical stock's good luck far above where it started");
+        }
+
+        [Fact]
+        public void TheBottom_HasNoTrend_EvenWithDoubleSwings()
+        {
+            var random = new Random(99);
+            var stock = Listing("X", 5);
+            var bottom = MarketCycle.DriftFor(stock, CrisisPhase.Bottom, 0);
+            var ends = new double[800];
+            for (int p = 0; p < ends.Length; p++)
+            {
+                var s = Listing("X", 5, price: 100_000);
+                for (int t = 0; t < MarketCycle.BottomDays * Stock.TicksPerDay; t++) s.ApplyTick(random.NextDouble, bottom);
+                ends[p] = Math.Log(s.FairPrice / 100_000);
+            }
+            Array.Sort(ends);
+            Assert.InRange(ends[ends.Length / 2], -0.15, 0.15); //the typical stock ends about where it started
+        }
+
+        [Fact]
+        public void TheCrisisAnchor_FollowsTheDriftThenClearsWhenTradingIsNormalAgain()
+        {
+            var stock = Listing("X", 4, price: 100);
+            var decline = MarketCycle.DriftFor(stock, CrisisPhase.Decline, 0);
+            var random = new Random(5);
+
+            stock.ApplyTick(random.NextDouble, decline);
+            Assert.InRange(stock.CrisisAnchor, 99, 100); //started at the price and moved by one tick of drift
+            for (int i = 0; i < 100; i++) stock.ApplyTick(random.NextDouble, decline);
+            Assert.True(stock.CrisisAnchor < 99);
+
+            stock.ApplyTick(random.NextDouble, MarketDrift.None);
+            Assert.Equal(0, stock.CrisisAnchor);
+        }
+
+        [Fact]
+        public void Crypto_HasNoAnchor_ItFollowsTheDriftAlone()
+        {
+            var coin = Listing("COIN", Stock.CryptoTier, price: 100);
+            coin.ApplyTick(new Random(1).NextDouble, MarketCycle.DriftFor(coin, CrisisPhase.Decline, 0));
+            Assert.Equal(0, coin.CrisisAnchor);
+        }
+
         [Fact]
         public void PropertyFall_RunsFromAQuarterToSeventyPercent()
         {
