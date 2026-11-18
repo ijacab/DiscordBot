@@ -1501,7 +1501,50 @@ namespace DiscordBot.Managers
         //    await message.Channel.SendMessageAsync(convo);
         //}
 
+        /// <summary>
+        /// `.convo`: in the scraped server, a conversation from <see cref="ConvoModel"/> (instant, no LLM). Elsewhere, or before the
+        /// history is scraped, the old local LLM continues the last few messages.
+        /// </summary>
         private async Task Convo(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            bool inServer = (message.Channel as SocketGuildChannel)?.Guild.Id == ConvoCorpusService.GuildId;
+            var model = _convoCorpus.Model;
+            if (inServer && model != null)
+            {
+                var lines = model.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args));
+                if (lines != null && lines.Count > 0)
+                {
+                    await message.Channel.SendMessageAsync(ConvoModel.Format(lines), allowedMentions: AllowedMentions.None);
+                    return;
+                }
+            }
+            if (inServer && _convoCorpus.IsLoading)
+                throw new BadInputException("The convo brain is still warming up. Try again in a minute.");
+            await ConvoFromLlm(message);
+        }
+
+        private async Task ScrapeConvo(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            string action = args.FirstOrDefault()?.ToLowerInvariant();
+            if (action == "status")
+            {
+                await message.Channel.SendMessageAsync(_convoCorpus.Status());
+                return;
+            }
+            if (action == "stop")
+            {
+                await message.Channel.SendMessageAsync(_convoCorpus.StopScrape() ? "Stopping the scrape after this page." : "No scrape is running.");
+                return;
+            }
+            if (!_convoCorpus.StartScrape(client, message.Channel))
+            {
+                await message.Channel.SendMessageAsync($"A scrape is already running.\n{_convoCorpus.Status()}");
+                return;
+            }
+            await message.Channel.SendMessageAsync("Scraping the server's history in the background (it can take a few hours the first time). `.scrapeconvo status` shows how far it's got, and I'll post here when it's done.");
+        }
+
+        private async Task ConvoFromLlm(SocketMessage message)
         {
             var channel = message.Channel as IMessageChannel;
             if (channel == null)

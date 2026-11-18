@@ -70,6 +70,7 @@ namespace DiscordBot
             services.AddSingleton<GPTService>();
             services.AddSingleton<OllamaInstaller>();
             services.AddSingleton<ConvoService>();
+            services.AddSingleton<ConvoCorpusService>();
             services.AddTransient<BanService>();
 
             services.AddControllers();

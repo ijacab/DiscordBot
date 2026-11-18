@@ -35,6 +35,7 @@ namespace DiscordBot.Managers
         private readonly SlotMachineManager _slotMachineManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
+        private readonly ConvoCorpusService _convoCorpus;
         private readonly TranslationService _translationService;
         private readonly BanService _banService;
         private HashSet<ulong> _bannedUserIds;
@@ -56,7 +57,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService,
+            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
             TranslationService translationService, BanService banService)
         {
             _logger = logger;
@@ -79,6 +80,7 @@ namespace DiscordBot.Managers
             _slotMachineManager = slotMachineManager;
             _gptService = gptService;
             _convoService = convoService;
+            _convoCorpus = convoCorpus;
             _translationService = translationService;
             _banService = banService;
             _bannedUserIds = new HashSet<ulong>(banService.GetAll().GetAwaiter().GetResult());
@@ -144,7 +146,8 @@ namespace DiscordBot.Managers
                 new Command("start", Start, hidden: true, requiresAdmin: true),
                 new Command("stop", Stop, hidden: true, requiresAdmin: true),
                 new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
-                new Command("convo", Convo),
+                new Command("convo", Convo) { Description = "Makes up a 3 to 10 line conversation between people from this server, learned from the server's chat history. Add some words to start it off.", Syntax = "`.convo` or `.convo pizza time`" },
+                new Command("scrapeconvo", ScrapeConvo) { Description = "Bot admins only. Downloads the server's chat history (in the background, onto the Pi) for `.convo`; later runs only fetch new messages.", Syntax = "`.scrapeconvo`, `.scrapeconvo status` or `.scrapeconvo stop`", Hidden = true, RequiresAdmin = true },
                 new Command("lang", Lang) { Description = "Mangles your text by bouncing it through 8 random far-flung languages (Yoruba, Khmer, Latin, Hmong and friends) and back to English.", Syntax = "`.lang some text to mangle`" },
                 new Command("ban", Ban) { Syntax = "`.ban @someone`", Hidden = true, RequiresAdmin = true },
                 new Command("unban", Unban) { Syntax = "`.unban @someone`", Hidden = true, RequiresAdmin = true },
@@ -295,6 +298,9 @@ namespace DiscordBot.Managers
             Task stockTask = _stockService.TickIfDue();
             Task propertyTask = _propertyService.TickIfDue(_stockService.RiskyAssetShare);
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
+
+            //the .convo model loads in the background once after a start
+            _convoCorpus.EnsureLoadStarted();
 
             //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
             _ = _stockThreadService.RefreshIfDue(client);

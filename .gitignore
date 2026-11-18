@@ -31,3 +31,5 @@ _ReSharper*/
 #Nuget packages folder
 packages/
 token.txt
+# scraped server history for .convo (private, stays on the Pi)
+convo_data/

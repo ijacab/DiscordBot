@@ -63,7 +63,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     FaceOffRenderer.cs         Face Off arena picture: card art, rarity borders, HP bars, picked/reveal/winner states
     LiveMessage.cs             a dashboard message edited in place: images swapped per frame, embeds, buttons, bump
     LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
-    ConvoService.cs            LLM conversation (Ollama)
+    ConvoService.cs            LLM conversation (Ollama), the `.convo` fallback outside the scraped server
+    ConvoCorpusService.cs      `.scrapeconvo`: background, resumable scrape of the server's history to convo_data/ on the Pi; loads the ConvoModel
     GPTService.cs              GPT/LLM calls
     DuckDuckGoService.cs       image search
     FaceService.cs             thispersondoesnotexist
@@ -79,6 +80,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     StockThread.cs             saved `.stocksthread` state: thread and board message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
+    ConvoModel.cs              `.convo` generator: word Markov chain over the scraped messages, "user: text" lines
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts
     Property.cs                house prices, costs, rent and the shared market index (apartments: old saves only)
     ConvoService/LLMOptions.cs
@@ -108,5 +110,6 @@ Tests/                         xunit: BlackjackTests, GPTHelperTests, WebAlerter
 | Blackjack / roulette / arena logic | `Games/<Game>.cs`, `Games/Managers/` |
 | Persistence (Gist/local) | `Common/Services/` |
 | Env var access | `Common/Helpers/EnvironmentHelper.cs` |
+| `.convo` / server history | `Models/ConvoModel.cs`, `Services/ConvoCorpusService.cs` |
 | LLM chat | `Services/ConvoService.cs`, `GPTService.cs`, `Common/Helpers/GPTHelper.cs`, `Installers/OllamaInstaller.cs` |
 | Deploy | `azure-pipelines.yml`, `DiscordBot/DiscordBot.service` |
