@@ -11,8 +11,8 @@ namespace DiscordBot.Models
         public ulong Id { get; set; }
         public string Speaker { get; set; }
         public string Text { get; set; }
-        /// <summary>How many times this message counts: a favoured channel's messages count more, in word choice and in who talks.</summary>
-        public int Weight { get; set; } = 1;
+        /// <summary>From a favoured channel: those make up <see cref="ConvoModel.DefaultFavouredShare"/> of word choices and of who talks.</summary>
+        public bool Favoured { get; set; }
     }
 
     /// <summary>One generated line of a `.convo`.</summary>
@@ -44,6 +44,11 @@ namespace DiscordBot.Models
         public const int MaxWords = 40;
         public const int MaxLineChars = 160;
         public const int MaxTotalChars = 1900;
+        /// <summary>How much of each choice (who talks, opening words, every next word) comes from the favoured channels when they have one.</summary>
+        public const double DefaultFavouredShare = 0.95;
+
+        private const int OtherPool = 0;
+        private const int FavouredPool = 1;
 
         private const int StartToken = 0;
         private const int EndToken = 1;
@@ -60,7 +65,7 @@ namespace DiscordBot.Models
         private readonly Dictionary<string, int> _ids = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _lowerIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>Each person's own two-word chain: lines are built from what that person says.</summary>
+        /// <summary>Each person's own two-word chain: lines are built from what that person says. Grouped by person and pool (<see cref="Group"/>).</summary>
         private Chain<long> _speakerTri;
         /// <summary>Each person's own one-word chain, for the chaos steps, so they stay in character even when scrambled.</summary>
         private Chain<int> _speakerBi;
@@ -71,9 +76,12 @@ namespace DiscordBot.Models
         private int[] _msgSpeaker;
         private int[] _msgChannel;
         private int[] _msgFirst;
+        /// <summary>Each person's messages, by <see cref="Group"/> (person and pool), for their opening words.</summary>
         private int[][] _speakerMsgs;
-        /// <summary>Running total of message weights, so a run of speakers starts at a message picked by weight.</summary>
-        private long[] _msgCumulativeWeight;
+        /// <summary>Messages from the favoured channels and from the rest, for where a run of speakers starts.</summary>
+        private int[] _favouredMsgs;
+        private int[] _otherMsgs;
+        private double _favouredShare;
 
         public int MessageCount => _msgSpeaker.Length;
         public int SpeakerCount => _speakers.Length;
@@ -84,10 +92,13 @@ namespace DiscordBot.Models
 
         private ConvoModel() { }
 
-        /// <summary>Builds the model from each channel's messages, oldest first.</summary>
-        public static ConvoModel Build(IEnumerable<IReadOnlyList<ConvoMessage>> channels)
+        /// <summary>
+        /// Builds the model from each channel's messages, oldest first. Favoured messages make up <paramref name="favouredShare"/> of
+        /// every choice whenever they have something to offer, however few there are.
+        /// </summary>
+        public static ConvoModel Build(IEnumerable<IReadOnlyList<ConvoMessage>> channels, double favouredShare = DefaultFavouredShare)
         {
-            var model = new ConvoModel();
+            var model = new ConvoModel { _favouredShare = favouredShare };
             var speakerIds = new Dictionary<string, int>(StringComparer.Ordinal);
             var speakers = new List<string>();
             var triSpeaker = new List<int>();
@@ -99,7 +110,7 @@ namespace DiscordBot.Models
             var msgSpeaker = new List<int>();
             var msgChannel = new List<int>();
             var msgFirst = new List<int>();
-            var msgWeight = new List<int>();
+            var msgPool = new List<int>();
 
             int channelIndex = 0;
             foreach (var channel in channels)
@@ -115,25 +126,22 @@ namespace DiscordBot.Models
                         speakers.Add(message.Speaker);
                     }
 
-                    //a weighted message's entries go in that many times, which is how the chain counts frequency
-                    int weight = Math.Max(1, message.Weight);
+                    int pool = message.Favoured ? FavouredPool : OtherPool;
+                    int group = Group(speaker, pool);
                     int a = StartToken, b = StartToken;
                     for (int i = 0; i <= tokens.Length; i++)
                     {
                         int c = i < tokens.Length ? model.IdOf(tokens[i]) : EndToken;
-                        for (int w = 0; w < weight; w++)
-                        {
-                            triSpeaker.Add(speaker);
-                            triKey.Add(Pack(a, b));
-                            triNext.Add(c);
-                            biSpeaker.Add(speaker);
-                            biKey.Add(b);
-                            biNext.Add(c);
-                        }
+                        triSpeaker.Add(group);
+                        triKey.Add(Pack(a, b));
+                        triNext.Add(c);
+                        biSpeaker.Add(group);
+                        biKey.Add(b);
+                        biNext.Add(c);
                         a = b;
                         b = c;
                     }
-                    msgWeight.Add(weight);
+                    msgPool.Add(pool);
 
                     msgSpeaker.Add(speaker);
                     msgChannel.Add(channelIndex);
@@ -142,25 +150,22 @@ namespace DiscordBot.Models
                 channelIndex++;
             }
 
-            model._speakerTri = new Chain<long>(triSpeaker, triKey, triNext, speakers.Count);
+            model._speakerTri = new Chain<long>(triSpeaker, triKey, triNext, speakers.Count * 2);
             triSpeaker = null; triKey = null; triNext = null;
-            model._speakerBi = new Chain<int>(biSpeaker, biKey, biNext, speakers.Count);
+            model._speakerBi = new Chain<int>(biSpeaker, biKey, biNext, speakers.Count * 2);
             model._bi = new Chain<int>(null, biKey, biNext, 1);
 
             model._speakers = speakers.ToArray();
             model._msgSpeaker = msgSpeaker.ToArray();
             model._msgChannel = msgChannel.ToArray();
             model._msgFirst = msgFirst.ToArray();
-            var bySpeaker = new List<int>[speakers.Count];
-            for (int i = 0; i < bySpeaker.Length; i++) bySpeaker[i] = new List<int>();
-            model._msgCumulativeWeight = new long[msgWeight.Count];
-            long cumulative = 0;
+            var byGroup = new List<int>[speakers.Count * 2];
+            for (int i = 0; i < byGroup.Length; i++) byGroup[i] = new List<int>();
             for (int m = 0; m < model._msgSpeaker.Length; m++)
-            {
-                for (int w = 0; w < msgWeight[m]; w++) bySpeaker[model._msgSpeaker[m]].Add(m);
-                model._msgCumulativeWeight[m] = cumulative += msgWeight[m];
-            }
-            model._speakerMsgs = bySpeaker.Select(l => l.ToArray()).ToArray();
+                byGroup[Group(model._msgSpeaker[m], msgPool[m])].Add(m);
+            model._speakerMsgs = byGroup.Select(l => l.ToArray()).ToArray();
+            model._favouredMsgs = Enumerable.Range(0, msgPool.Count).Where(m => msgPool[m] == FavouredPool).ToArray();
+            model._otherMsgs = Enumerable.Range(0, msgPool.Count).Where(m => msgPool[m] == OtherPool).ToArray();
             return model;
         }
 
@@ -182,6 +187,21 @@ namespace DiscordBot.Models
             _ids.TryGetValue(word, out int id) ? id : _lowerIds.TryGetValue(word, out id) ? id : (int?)null;
 
         private static long Pack(int a, int b) => ((long)a << 32) | (uint)b;
+
+        /// <summary>A person's entries from one pool (the favoured channels or the rest).</summary>
+        private static int Group(int speaker, int pool) => speaker * 2 + pool;
+
+        /// <summary>The favoured pool <see cref="_favouredShare"/> of the time, else the rest.</summary>
+        private int PickPool(Random random) => random.NextDouble() < _favouredShare ? FavouredPool : OtherPool;
+
+        private int MessagesBy(int speaker) => _speakerMsgs[Group(speaker, FavouredPool)].Length + _speakerMsgs[Group(speaker, OtherPool)].Length;
+
+        /// <summary>The speaker's next word from the pool picked for this step, or from their other pool when it has nothing.</summary>
+        private bool TryPickOwn<TKey>(Chain<TKey> chain, int speaker, TKey key, Random random, out int next) where TKey : struct, IComparable<TKey>
+        {
+            int pool = PickPool(random);
+            return chain.TryPick(Group(speaker, pool), key, random, out next) || chain.TryPick(Group(speaker, 1 - pool), key, random, out next);
+        }
 
         /// <summary>
         /// A conversation of <see cref="MinLines"/> to <see cref="MaxLines"/> lines. With a <paramref name="seed"/> the first line
@@ -214,7 +234,9 @@ namespace DiscordBot.Models
                         prefix.Add(hook);
                     else if (attempt < 4 && random.NextDouble() < OwnStartChance)
                     {
-                        var own = _speakerMsgs[speakers[i]];
+                        int pool = PickPool(random);
+                        var own = _speakerMsgs[Group(speakers[i], pool)];
+                        if (own.Length == 0) own = _speakerMsgs[Group(speakers[i], 1 - pool)];
                         prefix.Add(_words[_msgFirst[own[random.Next(own.Length)]]]);
                     }
                     text = Line(random, speakers[i], prefix, hidden);
@@ -241,7 +263,7 @@ namespace DiscordBot.Models
         {
             for (int attempt = 0; attempt < 40 && MessageCount >= count; attempt++)
             {
-                int start = Math.Min(WeightedMessage(random), MessageCount - count);
+                int start = Math.Min(RunStart(random), MessageCount - count);
                 if (_msgChannel[start] != _msgChannel[start + count - 1])
                     continue;
                 var run = Enumerable.Range(start, count).Select(m => _msgSpeaker[m]).ToList();
@@ -251,25 +273,19 @@ namespace DiscordBot.Models
             return Enumerable.Range(0, count).Select(_ => _msgSpeaker[random.Next(MessageCount)]).ToList();
         }
 
-        /// <summary>A message picked in proportion to its weight.</summary>
-        private int WeightedMessage(Random random)
+        /// <summary>Where a run of speakers starts: a favoured channel's message <see cref="_favouredShare"/> of the time, if there are any.</summary>
+        private int RunStart(Random random)
         {
-            long total = _msgCumulativeWeight[^1];
-            long target = (long)(random.NextDouble() * total);
-            int lo = 0, hi = _msgCumulativeWeight.Length - 1;
-            while (lo < hi)
-            {
-                int mid = (lo + hi) >> 1;
-                if (_msgCumulativeWeight[mid] <= target) lo = mid + 1; else hi = mid;
-            }
-            return lo;
+            var from = PickPool(random) == FavouredPool ? _favouredMsgs : _otherMsgs;
+            if (from.Length == 0) from = from == _favouredMsgs ? _otherMsgs : _favouredMsgs;
+            return from[random.Next(from.Length)];
         }
 
         /// <summary>A word from the line before worth replying to: three letters or more, not filler, and one the replier uses too.</summary>
         private string PickHook(Random random, string previous, int speaker)
         {
             var candidates = Tokenize(previous)
-                .Where(w => w.Length >= 3 && !StopWords.Contains(w) && Find(w) is int id && _speakerBi.Has(speaker, id))
+                .Where(w => w.Length >= 3 && !StopWords.Contains(w) && Find(w) is int id && (_speakerBi.Has(Group(speaker, FavouredPool), id) || _speakerBi.Has(Group(speaker, OtherPool), id)))
                 .ToList();
             return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
         }
@@ -297,15 +313,15 @@ namespace DiscordBot.Models
                 }
             }
 
-            bool rare = _speakerMsgs[speaker].Length < MinOwnMessages;
+            bool rare = MessagesBy(speaker) < MinOwnMessages;
             int length = words.Sum(w => w.Length + 1);
             while (words.Count < MaxWords)
             {
                 int next = EndToken;
                 bool chaos = b != StartToken && random.NextDouble() < Chaos;
-                bool found = !chaos && _speakerTri.TryPick(speaker, Pack(a, b), random, out next);
+                bool found = !chaos && TryPickOwn(_speakerTri, speaker, Pack(a, b), random, out next);
                 if (!found && !(chaos && rare))
-                    found = _speakerBi.TryPick(speaker, b, random, out next);
+                    found = TryPickOwn(_speakerBi, speaker, b, random, out next);
                 if (!found && !_bi.TryPick(0, b, random, out next))
                     next = EndToken;
                 if (next == EndToken || next == StartToken)
