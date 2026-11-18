@@ -34,7 +34,7 @@ namespace DiscordBot.Models
     public sealed class ConvoModel
     {
         /// <summary>How often a word is picked from one word of context instead of two. Higher is crazier.</summary>
-        public const double Chaos = 0.6;
+        public const double Chaos = 0.75;
         /// <summary>How often a reply picks up a word from the line before it.</summary>
         public const double ReplyHookChance = 0.35;
         /// <summary>How often a line starts with a word its speaker really starts messages with.</summary>
