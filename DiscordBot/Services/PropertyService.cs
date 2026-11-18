@@ -47,9 +47,18 @@ namespace DiscordBot.Services
         }
 
         /// <summary>Sells the <paramref name="number"/>th property (1 is the first) at market value less selling costs.</summary>
-        public async Task<(PropertyHolding Holding, double Proceeds)> Sell(CoinAccount account, int number)
+        /// <exception cref="BadInputException">Squatters are in it (see <see cref="SquatIn"/>): it can't be sold until they leave.</exception>
+        public async Task<(PropertyHolding Holding, double Proceeds)> Sell(CoinAccount account, int number, DateTime? now = null)
         {
             var holding = Get(account, number);
+            var squat = SquatIn(account, holding, now ?? DateTime.UtcNow);
+            if (squat != null)
+            {
+                //otherwise the owner could sell it to shake the squatters off, and the squat would be wasted
+                long leaves = new DateTime(squat.ExpiresAtTicks, DateTimeKind.Utc).Subtract(DateTime.UnixEpoch).Ticks / TimeSpan.TicksPerSecond;
+                throw new BadInputException($"Squatters are living in your {PropertyCatalog.DisplayName(holding.Kind).ToLower()}, so you can't sell it until they leave <t:{leaves}:R>.");
+            }
+
             double index = _coinService.GetAll().PropertyIndex;
             double proceeds = PropertyCatalog.SaleValue(holding.Kind, index);
 
@@ -62,11 +71,11 @@ namespace DiscordBot.Services
         }
 
         /// <summary>Sells the property with this <see cref="PropertyHolding.Id"/>, so a list that has changed since it was shown can't sell the wrong one.</summary>
-        public Task<(PropertyHolding Holding, double Proceeds)> SellById(CoinAccount account, string holdingId)
+        public Task<(PropertyHolding Holding, double Proceeds)> SellById(CoinAccount account, string holdingId, DateTime? now = null)
         {
             int index = account.Properties.FindIndex(p => p.Id == holdingId);
             if (index < 0) throw new BadInputException("You don't own that property any more.");
-            return Sell(account, index + 1);
+            return Sell(account, index + 1, now);
         }
 
         public PropertyHolding Get(CoinAccount account, int number)
@@ -164,6 +173,13 @@ namespace DiscordBot.Services
                 }
             }
         }
+
+        /// <summary>The squat running in this property (the one that ends last), or null. A squatted property can't be sold.</summary>
+        public static ActivePowerUp SquatIn(CoinAccount landlord, PropertyHolding holding, DateTime now) =>
+            landlord.Running(PowerUpIds.Squatted, now)
+                .Where(s => SquattedPropertyId(landlord, s) == holding.Id)
+                .OrderByDescending(s => s.ExpiresAtTicks)
+                .FirstOrDefault();
 
         /// <summary>The property a squat is in. Squats saved before they named one are in the first property.</summary>
         public static string SquattedPropertyId(CoinAccount landlord, ActivePowerUp squat) =>

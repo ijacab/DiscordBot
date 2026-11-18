@@ -1,8 +1,12 @@
-﻿using DiscordBot.Models;
+﻿using Common.Services;
+using DiscordBot;
+using DiscordBot.Models;
 using DiscordBot.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
+using static DiscordBot.Models.CoinAccounts;
 
 namespace Tests
 {
@@ -61,6 +65,26 @@ namespace Tests
             var plan = DebtService.Plan(10_000_000, new[] { Lot("AAA", 100, 10) }, new[] { Home(PropertyKind.House, 900_000) });
             Assert.Equal(100, plan.Stocks.Single().Shares);
             Assert.Single(plan.Properties);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task AutoSell_LeavesAPropertyWithSquattersInAlone()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            coins.GetAll().Accounts.Clear();
+            var account = new CoinAccount { UserId = 1, Name = "owner", NetWorth = 0, Debt = 50_000, AutoSellForDebt = true };
+            var squatted = new PropertyHolding { Kind = PropertyKind.House };
+            var free = new PropertyHolding { Kind = PropertyKind.House };
+            account.Properties.Add(squatted);
+            account.Properties.Add(free);
+            account.AddDebuff(PowerUpIds.Squatted, DateTime.UtcNow, 2, squatted.Id);
+            coins.GetAll().Accounts.Add(account);
+            var debts = new DebtService(coins, new StockService(new LocalFileService(), coins), new PropertyService(coins));
+
+            await debts.AutoSellForDebts(new ulong[0]);
+
+            Assert.Single(account.Properties);
+            Assert.Same(squatted, account.Properties[0]); //the one the squatters are in is kept, the other was sold
         }
     }
 }

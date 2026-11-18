@@ -288,6 +288,72 @@ namespace Tests
             Assert.Equal(1000 + NetRent(PropertyKind.House), w[1].NetWorth, 2);
         }
 
+        // ---------- a squatted property can't be sold ----------
+
+        private static PropertyService Properties(World w) => new PropertyService(w.Coins);
+
+        [Fact]
+        public async System.Threading.Tasks.Task ASquattedProperty_CantBeSold_UntilTheSquattersLeave()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            Use(w, 4, PowerUpIds.Squatters);
+
+            var refused = await Assert.ThrowsAsync<BadInputException>(() => Properties(w).Sell(w[1], 1, Now.AddHours(1)));
+            Assert.Contains("Squatters", refused.Message);
+            Assert.Single(w[1].Properties);
+            Assert.Equal(1000, w[1].NetWorth, 2);
+
+            //still refused through the by-id route the buttons use
+            await Assert.ThrowsAsync<BadInputException>(() => Properties(w).SellById(w[1], w[1].Properties[0].Id, Now.AddHours(11)));
+
+            //once the 12 hours are over it sells like any other
+            await Properties(w).Sell(w[1], 1, Now.AddHours(13));
+            Assert.Empty(w[1].Properties);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task OnlyTheSquattedPropertyIsLocked_TheOwnersOtherPropertiesCanBeSold()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House }); //the best rental, so the one squatted
+            Use(w, 4, PowerUpIds.Squatters);
+
+            await Assert.ThrowsAsync<BadInputException>(() => Properties(w).Sell(w[1], 2, Now.AddHours(1)));
+            await Properties(w).Sell(w[1], 1, Now.AddHours(1));
+
+            Assert.Single(w[1].Properties);
+            Assert.Equal(PropertyKind.House, w[1].Properties[0].Kind);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task ASquatSavedWithoutAProperty_LocksTheFirstOne()
+        {
+            var w = Board((1, 1000), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            w[1].AddDebuff(PowerUpIds.Squatted, Now, 4); //an old save: no property named
+
+            await Assert.ThrowsAsync<BadInputException>(() => Properties(w).Sell(w[1], 1, Now.AddHours(1)));
+            await Properties(w).Sell(w[1], 2, Now.AddHours(1));
+        }
+
+        [Fact]
+        public void Squatters_StayUntilTheyLeave_SoBuyingANewHouseDoesNothing()
+        {
+            var w = Board((1, 100_000), (4, 0));
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            Use(w, 4, PowerUpIds.Squatters);
+
+            //a second house bought meanwhile pays its owner; only the squatted one pays the squatter
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
+            PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
+
+            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Equal(100_000 + NetRent(PropertyKind.House), w[1].NetWorth, 2);
+        }
+
         // ---------- power-ups go off when they're won ----------
 
         [Fact]

@@ -93,7 +93,11 @@ namespace DiscordBot.Services
                         Shares = h.Value,
                         NetPerShare = (market.Find(h.Key)?.Price ?? 0) * (1 - Stock.SellTaxRate - Stock.Spread),
                     }).ToList();
-                var plan = Plan(account.Debt, lots, account.Properties.Select(p => (p, PropertyCatalog.SaleValue(p.Kind, index))));
+                //a property with squatters in can't be sold until they leave, so it is left out (the rest still covers what it can)
+                var now = DateTime.UtcNow;
+                var plan = Plan(account.Debt, lots, account.Properties
+                    .Where(p => PropertyService.SquatIn(account, p, now) == null)
+                    .Select(p => (p, PropertyCatalog.SaleValue(p.Kind, index))));
                 if (plan.IsEmpty) continue;
 
                 double debtBefore = account.Debt;
@@ -112,7 +116,11 @@ namespace DiscordBot.Services
                     if (account.Debt <= 0) break;
                     int number = account.Properties.IndexOf(holding) + 1;
                     if (number < 1) continue;
-                    await _propertyService.Sell(account, number);
+                    try
+                    {
+                        await _propertyService.Sell(account, number);
+                    }
+                    catch (BadInputException) { continue; } //squatters moved in since the plan; the next minute tries again
                     sold.Add($"a {PropertyCatalog.DisplayName(holding.Kind).ToLower()}");
                 }
 
