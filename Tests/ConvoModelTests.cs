@@ -190,6 +190,27 @@ namespace Tests
         }
 
         [Fact]
+        public void LongLines_AreRarelyWordForWordCopiesOfRealMessages()
+        {
+            var model = Model();
+            int lines = 0, copies = 0;
+            for (int seed = 0; seed < 300; seed++)
+            {
+                foreach (var line in model.Generate(new Random(seed)))
+                {
+                    if (ConvoModel.Tokenize(line.Text).Length <= ConvoModel.MaxCopiedWords) continue;
+                    lines++;
+                    if (model.IsCopy(line.Text)) copies++;
+                }
+            }
+            _output.WriteLine($"{copies} copies in {lines} longer lines");
+            //this tiny corpus has few other ways to say things, so a copy is only kept after six tries
+            Assert.True(copies < lines / 10, $"{copies} copies in {lines} lines");
+            Assert.True(model.IsCopy("pineapple on pizza is a crime"));
+            Assert.False(model.IsCopy("eating what"));
+        }
+
+        [Fact]
         public void SeedWords_SteerTheFirstLineButArentShown()
         {
             var model = Model();

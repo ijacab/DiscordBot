@@ -34,7 +34,7 @@ namespace DiscordBot.Models
     public sealed class ConvoModel
     {
         /// <summary>How often a word is picked from one word of context instead of two. Higher is crazier.</summary>
-        public const double Chaos = 0.4;
+        public const double Chaos = 0.6;
         /// <summary>How often a reply picks up a word from the line before it.</summary>
         public const double ReplyHookChance = 0.35;
         /// <summary>How often a line starts with a word its speaker really starts messages with.</summary>
@@ -82,6 +82,11 @@ namespace DiscordBot.Models
         private int[] _favouredMsgs;
         private int[] _otherMsgs;
         private double _favouredShare;
+        /// <summary>Hashes of every real message, so a line that just repeats one word for word is made again.</summary>
+        private readonly HashSet<long> _realMessages = new HashSet<long>();
+
+        /// <summary>Lines this long or shorter may repeat a real message ("lol", "no way"); longer copies are made again.</summary>
+        public const int MaxCopiedWords = 2;
 
         public int MessageCount => _msgSpeaker.Length;
         public int SpeakerCount => _speakers.Length;
@@ -146,6 +151,7 @@ namespace DiscordBot.Models
                     msgSpeaker.Add(speaker);
                     msgChannel.Add(channelIndex);
                     msgFirst.Add(model.IdOf(tokens[0]));
+                    model._realMessages.Add(HashOf(string.Join(" ", tokens)));
                 }
                 channelIndex++;
             }
@@ -240,6 +246,9 @@ namespace DiscordBot.Models
                         prefix.Add(_words[_msgFirst[own[random.Next(own.Length)]]]);
                     }
                     text = Line(random, speakers[i], prefix, hidden);
+                    //a word-for-word copy of something someone really said is too accurate: try again (and keep it if nothing else comes)
+                    if (attempt < 6 && IsCopy(text))
+                        text = null;
                 }
                 if (string.IsNullOrEmpty(text))
                     continue;
@@ -252,6 +261,22 @@ namespace DiscordBot.Models
                 lines.Add(line);
             }
             return lines;
+        }
+
+        /// <summary>Whether a line is a real message repeated word for word (short ones don't count).</summary>
+        public bool IsCopy(string text) =>
+            !string.IsNullOrEmpty(text) && Tokenize(text).Length > MaxCopiedWords && _realMessages.Contains(HashOf(string.Join(" ", Tokenize(text))));
+
+        /// <summary>A stable 64-bit hash (FNV-1a) of a message's text.</summary>
+        private static long HashOf(string text)
+        {
+            ulong hash = 14695981039346656037UL;
+            foreach (char c in text)
+            {
+                hash ^= c;
+                hash *= 1099511628211UL;
+            }
+            return (long)hash;
         }
 
         /// <summary>The lines as one message: "user: words", one per line.</summary>
