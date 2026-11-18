@@ -88,9 +88,13 @@ namespace DiscordBot.Games.Managers
         /// <summary>Component id prefix for this game's buttons: the base command, like "bj".</summary>
         public string ButtonPrefix => BaseCommand;
 
-        /// <summary>Join… and Start, under a lobby message, and Play again… under the results.</summary>
+        /// <summary>Joins with all your cash (the same as typing `max`), without asking for an amount.</summary>
+        public const string JoinMaxLabel = "Join max";
+
+        /// <summary>Join…, Join max and Start, under a lobby message, and Play again… under the results.</summary>
         public MessageComponent LobbyButtons(string joinLabel = "Join…") => new ComponentBuilder()
             .WithButton(joinLabel, DiscordBot.Models.ComponentId.Build(ButtonPrefix, "join"), ButtonStyle.Success)
+            .WithButton(JoinMaxLabel, DiscordBot.Models.ComponentId.Build(ButtonPrefix, "joinmax"), ButtonStyle.Danger)
             .WithButton("Start", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "start"), ButtonStyle.Primary)
             .Build();
 

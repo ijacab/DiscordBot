@@ -24,10 +24,11 @@ namespace DiscordBot.Games.Managers
         {
         }
 
-        /// <summary>Play again deals a new game at once with the clicker's last bet; New bet… opens the amount form instead.</summary>
+        /// <summary>Play again deals a new game at once with the clicker's last bet; New bet… opens the amount form instead; Join max bets all their cash.</summary>
         protected override MessageComponent ResultButtons => new ComponentBuilder()
             .WithButton("Play again", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "again"), ButtonStyle.Success)
             .WithButton("New bet…", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "join"), ButtonStyle.Secondary)
+            .WithButton(JoinMaxLabel, DiscordBot.Models.ComponentId.Build(ButtonPrefix, "joinmax"), ButtonStyle.Danger)
             .Build();
 
         /// <summary>

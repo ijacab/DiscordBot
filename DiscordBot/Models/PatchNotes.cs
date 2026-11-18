@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", "Blackjack and duck race lobbies (and blackjack results) have a Join max button: one click bets all your cash, no form."),
             new PatchNote("2026-11-18", "Every power-up now goes off by itself: when won, or as soon as it can (a target appears, a freeze ends, a bet closes). No more `.pu use` needed."),
             new PatchNote("2026-11-18", "Auto-sell now keeps selling until your debt is fully cleared, instead of stopping a little short when its own sales pushed the price down."),
             new PatchNote("2026-11-18", "House prices have no limit now: they can rise or fall as far as they go, and the odd day moves them 10% to 30% or more either way."),

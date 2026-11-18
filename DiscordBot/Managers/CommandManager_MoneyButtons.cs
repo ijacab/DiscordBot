@@ -288,7 +288,7 @@ namespace DiscordBot.Managers
         /// <summary>True when the click or form belongs to blackjack or the duck race.</summary>
         private bool IsLobbyGame(string game) => game == _blackjackManager.ButtonPrefix || game == _duckRaceManager.ButtonPrefix;
 
-        /// <summary>Join…, Start, and for blackjack Hit and Stay. They act for whoever clicks; the game posts its own messages.</summary>
+        /// <summary>Join…, Join max, Start, and for blackjack Hit and Stay. They act for whoever clicks; the game posts its own messages.</summary>
         private async Task LobbyGameComponent(SocketMessageComponent component, string game, string action)
         {
             bool blackjack = game == _blackjackManager.ButtonPrefix;
@@ -306,6 +306,16 @@ namespace DiscordBot.Managers
                 case "join":
                     await component.RespondWithModalAsync(AmountModal(Id(game, "joinamt"), $"Join {gameName}", "Your bet"));
                     return;
+                case "joinmax":
+                {
+                    //all your cash, like typing max: no form to fill in
+                    CoinAccount account = await _coinService.Get(userId, component.User.Username);
+                    await component.DeferAsync();
+                    if (blackjack) await _blackjackManager.CreateOrJoin(userId, account.NetWorth, context);
+                    else await _duckRaceManager.CreateOrJoin(userId, account.NetWorth, context);
+                    MarkActiveFromInteraction(component);
+                    return;
+                }
                 case "again":
                 {
                     //Play again: a new game at once with your last bet. With no last bet to go on, ask for one

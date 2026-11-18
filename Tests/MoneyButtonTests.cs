@@ -119,7 +119,7 @@ namespace Tests
                 var send = Assert.Single(sends);
                 var components = send.Arguments.OfType<MessageComponent>().Single();
                 var ids = components.Components.OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().Select(b => b.CustomId).ToList();
-                Assert.Equal(new[] { "bj:join", "bj:start" }, ids);
+                Assert.Equal(new[] { "bj:join", "bj:joinmax", "bj:start" }, ids);
                 Assert.Single(table.Invocations, i => i.Method.Name == nameof(IUserMessage.ModifyAsync));
 
                 //a second join and a hit before the start are refused

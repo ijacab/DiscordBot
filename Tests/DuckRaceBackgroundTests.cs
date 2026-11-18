@@ -119,5 +119,35 @@ namespace Tests
             Assert.Empty(duck.Games);
             Assert.Empty(bets.InitiatedBetUserIds);
         }
+
+        // ---- the Join max button
+
+        private static System.Collections.Generic.List<string> ButtonIds(MessageComponent components) =>
+            components.Components.OfType<ActionRowComponent>().SelectMany(row => row.Components).OfType<ButtonComponent>().Select(b => b.CustomId).ToList();
+
+        [Fact]
+        public void LobbiesAndDuckRaceResults_OfferJoinMax()
+        {
+            var (duck, bets, coins) = Setup();
+            Assert.Contains("duck:joinmax", ButtonIds(duck.LobbyButtons()));
+            Assert.Contains("duck:join", ButtonIds(duck.LobbyButtons())); //the amount form is still there
+            Assert.Contains("duck:start", ButtonIds(duck.LobbyButtons()));
+
+            var blackjack = new BlackjackManager(new DiscordSocketClient(), bets, coins);
+            Assert.Contains("bj:joinmax", ButtonIds(blackjack.LobbyButtons()));
+        }
+
+        [Fact]
+        public async Task JoiningWithAllYourCash_TakesTheWholeBet()
+        {
+            var (duck, bets, coins) = Setup();
+            var account = coins.GetAll().Accounts.First(a => a.UserId == 1);
+
+            await duck.CreateOrJoin(1, account.NetWorth, Context(1)); //what Join max does
+
+            Assert.Equal(0, account.NetWorth, 2);
+            Assert.Contains(1UL, bets.InitiatedBetUserIds);
+            Assert.Single(duck.Games);
+        }
     }
 }
