@@ -21,10 +21,23 @@ namespace DiscordBot.Managers
         private readonly Dictionary<ulong, DailyRollResult> _pendingDailyRolls = new Dictionary<ulong, DailyRollResult>();
         private const int StealRollNeeded = 10;
         private const double StealPercent = 0.10;
-        /// <summary>Chance that an all-in bet (the whole net worth) wins the jackpot pool.</summary>
+        /// <summary>Chance that a qualifying bet (see <see cref="QualifiesForJackpot"/>) wins the jackpot pool, per roll.</summary>
         public const double JackpotWinChance = 0.03;
         /// <summary>A player gets this many jackpot rolls in each UTC hour.</summary>
-        public const int JackpotRollsPerHour = 2;
+        public const int JackpotRollsPerHour = 10;
+        /// <summary>A bet up to this size qualifies only if it is all the player's cash; a bigger one needs <see cref="JackpotBigBetShare"/> of it.</summary>
+        public const double JackpotSmallBetLimit = 10_000;
+        public const double JackpotBigBetShare = 0.5;
+
+        /// <summary>
+        /// Whether a bet can roll for the jackpot, from its size and the player's cash before it was placed. A bet of
+        /// <see cref="JackpotSmallBetLimit"/> or less must be all their cash; a bigger bet needs half their cash or more
+        /// (a dollar of slack for rounding).
+        /// </summary>
+        public static bool QualifiesForJackpot(double betAmount, double cashBeforeBet) =>
+            betAmount > JackpotSmallBetLimit
+                ? betAmount >= JackpotBigBetShare * cashBeforeBet - 1
+                : betAmount >= cashBeforeBet - 1;
         /// <summary>The share of money lost on a bet that goes into the jackpot.</summary>
         public const double JackpotLossShare = 0.75;
         private static readonly Random _random = new Random();
@@ -67,9 +80,9 @@ namespace DiscordBot.Managers
             if (_pendingJackpotWins.Remove(userId, out double won))
             {
                 _pendingJackpotNotes.Remove(userId);
-                return $"💰 **JACKPOT!** You went all in and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} jackpot!";
+                return $"💰 **JACKPOT!** You bet big and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} jackpot!";
             }
-            //an all-in bet that couldn't roll because the hour's rolls were used up
+            //a qualifying bet that couldn't roll because the hour's rolls were used up
             return _pendingJackpotNotes.Remove(userId, out string note) ? note : null;
         }
 
@@ -96,7 +109,7 @@ namespace DiscordBot.Managers
             lost > 0 ? Math.Floor(lost * JackpotLossShare * 100) / 100 : 0;
 
         /// <summary>
-        /// An all-in bet has a small chance to take the whole pool, up to <see cref="JackpotRollsPerHour"/> rolls an hour.
+        /// A qualifying bet has a small chance to take the whole pool, up to <see cref="JackpotRollsPerHour"/> rolls an hour.
         /// The win is paid to the gambler.
         /// </summary>
         private void RollJackpot(CoinAccount gambler)
@@ -238,10 +251,10 @@ namespace DiscordBot.Managers
                 coinAccount.Stats.DailyRolls++;
             }
 
-            //an all-in bet is every dollar they have, with everything in cash, whether it wins or loses.
+            //a qualifying bet is all their cash up to $10,000, or half their cash or more above that, whether it wins or loses.
             //trading is blocked while a bet is open, so their holdings are the same as when the bet was placed
             //property counts the same as stocks: owning any blocks the jackpot
-            bool allInWithNothingElseInvested = betAmount >= netWorthBeforeBet - 1
+            bool allInWithNothingElseInvested = QualifiesForJackpot(betAmount, netWorthBeforeBet)
                 && !_stockService.HasPositions(userId)
                 && coinAccount.Properties.Count == 0;
             if (allInWithNothingElseInvested)

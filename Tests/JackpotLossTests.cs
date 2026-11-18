@@ -12,7 +12,7 @@ using static DiscordBot.Models.CoinAccounts;
 
 namespace Tests
 {
-    /// <summary>75% of lost bets go into the jackpot, and each player gets 2 jackpot rolls an hour.</summary>
+    /// <summary>75% of lost bets go into the jackpot, and each player gets 10 jackpot rolls an hour.</summary>
     public class JackpotLossTests
     {
         private static (CoinService Coins, BetManager Bets, CoinAccount Account) Setup(double cash = 10_000, double pool = 0)
@@ -86,36 +86,74 @@ namespace Tests
         }
 
         [Fact]
-        public void JackpotRolls_AreTwoAnHourAndResetEachHour()
+        public void JackpotRolls_AreTenAnHourAndResetEachHour()
         {
             var account = new CoinAccount { UserId = 1 };
             var noon = new DateTime(2026, 11, 15, 12, 5, 0, DateTimeKind.Utc);
 
-            Assert.True(BetManager.TryUseJackpotRoll(account, noon));
-            Assert.True(BetManager.TryUseJackpotRoll(account, noon.AddMinutes(30)));
+            for (int i = 0; i < 10; i++)
+                Assert.True(BetManager.TryUseJackpotRoll(account, noon.AddMinutes(i * 5)), $"roll {i + 1}");
             Assert.False(BetManager.TryUseJackpotRoll(account, noon.AddMinutes(50)));
             Assert.True(BetManager.TryUseJackpotRoll(account, noon.AddHours(1)));
-            Assert.Equal(2, BetManager.JackpotRollsPerHour);
+            Assert.Equal(10, BetManager.JackpotRollsPerHour);
+        }
+
+        [Theory]
+        [InlineData(10_000, 10_000, true)]   //up to $10,000: only all your cash
+        [InlineData(9_000, 10_000, false)]
+        [InlineData(5_000, 5_000, true)]
+        [InlineData(5_000, 6_000, false)]
+        [InlineData(10_000, 20_000, false)]  //exactly $10,000 still counts as a small bet
+        [InlineData(10_001, 20_000, true)]   //over $10,000: half your cash or more
+        [InlineData(10_001, 30_000, false)]
+        [InlineData(15_000, 30_000, true)]
+        [InlineData(20_000, 30_000, true)]
+        [InlineData(14_000, 30_000, false)]
+        [InlineData(11_000, 100_000, false)]
+        public void WhichBetsCanRollForTheJackpot(double bet, double cash, bool qualifies) =>
+            Assert.Equal(qualifies, BetManager.QualifiesForJackpot(bet, cash));
+
+        [Fact]
+        public async Task ABigBetOfHalfYourCash_RollsTheJackpotWithoutGoingAllIn()
+        {
+            var (coins, bets, account) = Setup(cash: 40_000, pool: 1_000);
+            bets.NextJackpotRoll = () => 0.0; //a roll wins
+
+            await Play(bets, account, 20_000, 20_000); //half the cash, bet back
+            Assert.Contains("JACKPOT", bets.TakeJackpotWin(account.UserId));
         }
 
         [Fact]
-        public async Task AllInBets_GetTwoRollsAnHour_ThenAreToldTheyAreOut()
+        public async Task ABigBetUnderHalfYourCash_DoesNotRoll()
+        {
+            var (coins, bets, account) = Setup(cash: 40_000, pool: 1_000);
+            bets.NextJackpotRoll = () => 0.0;
+
+            await Play(bets, account, 15_000, 15_000);
+            Assert.Equal(0, account.JackpotRollsThisHour);
+            Assert.Null(bets.TakeJackpotWin(account.UserId));
+        }
+
+        [Fact]
+        public async Task QualifyingBets_GetTenRollsAnHour_ThenAreToldTheyAreOut()
         {
             var (coins, bets, account) = Setup(cash: 10_000, pool: 1_000);
-            bets.NextJackpotRoll = () => 0.0; //every roll wins
+            bets.NextJackpotRoll = () => 1.0; //no roll wins, so the cash stays and the rolls are counted
 
+            for (int i = 0; i < BetManager.JackpotRollsPerHour; i++)
+            {
+                await Play(bets, account, account.NetWorth, account.NetWorth); //all-in, bet back
+                Assert.Null(bets.TakeJackpotWin(account.UserId));
+            }
+            Assert.Equal(BetManager.JackpotRollsPerHour, account.JackpotRollsThisHour);
+
+            await Play(bets, account, account.NetWorth, account.NetWorth);
+            Assert.Contains("No jackpot rolls left", bets.TakeJackpotWin(account.UserId));
+
+            bets.NextJackpotRoll = () => 0.0;
+            account.JackpotRollsThisHour = 0;
             await Play(bets, account, account.NetWorth, 0);
             Assert.Contains("JACKPOT", bets.TakeJackpotWin(account.UserId));
-
-            await Play(bets, account, account.NetWorth, 0);
-            Assert.Contains("JACKPOT", bets.TakeJackpotWin(account.UserId)); //the first loss fed the pool, so there was one to win
-
-            double before = account.NetWorth;
-            await Play(bets, account, account.NetWorth, 0);
-            string note = bets.TakeJackpotWin(account.UserId);
-            Assert.Contains("No jackpot rolls left", note);
-            Assert.Equal(0, account.NetWorth, 2); //lost it all and the jackpot was not rolled
-            Assert.True(before > 0);
         }
 
         [Fact]

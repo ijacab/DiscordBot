@@ -1142,7 +1142,7 @@ namespace DiscordBot.Managers
         private Task Jackpot(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. 75% of every lost bet, every sell tax, donation tax and debt repayment goes in (Face Off excepted). " +
-                $"Bet `max` on a game with all your money in cash (no stocks or property) and you have a {BetManager.JackpotWinChance:P0} chance to win it all, with {BetManager.JackpotRollsPerHour} rolls per hour each. " +
+                $"Bet all your cash (`max`) up to ${BetManager.JackpotSmallBetLimit:N0}, or {BetManager.JackpotBigBetShare:P0} of your cash or more on a bigger bet, with no stocks or property held, and you have a {BetManager.JackpotWinChance:P0} chance to win it all, with {BetManager.JackpotRollsPerHour} rolls per hour each. " +
                 "Three 💎 on the `.slots` machine win it too.");
         }
 
