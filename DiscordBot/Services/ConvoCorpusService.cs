@@ -30,7 +30,7 @@ namespace DiscordBot.Services
         public const string MessagesDir = "messages";
         public const string StateFile = "scrape_state.json";
         /// <summary>The most messages the model learns from; with more, an even random sample is kept (memory on the Pi).</summary>
-        public const int MaxMessages = 750_000;
+        public const int MaxMessages = 600_000;
         public const int MaxMessageChars = 300;
         /// <summary>Pause between pages so the scrape never crowds out the bot's own requests.</summary>
         public static readonly TimeSpan PagePause = TimeSpan.FromMilliseconds(250);

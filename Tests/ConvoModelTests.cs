@@ -80,6 +80,36 @@ namespace Tests
         }
 
         [Fact]
+        public void EachLine_IsBuiltFromItsSpeakersOwnWords()
+        {
+            //alice and bob share no words, so any line mixing them would show it
+            var alice = new[] { "omg", "the", "cat", "is", "so", "fluffy", "today", "and", "sleepy", "lol" };
+            var bob = new[] { "bro", "my", "car", "needs", "new", "tyres", "mate", "fuel", "costs", "heaps" };
+            var random = new Random(5);
+            var messages = new List<ConvoMessage>();
+            for (int i = 0; i < 200; i++)
+            {
+                bool isAlice = i % 2 == 0;
+                var words = isAlice ? alice : bob;
+                messages.Add(new ConvoMessage
+                {
+                    Id = (ulong)(i + 1),
+                    Speaker = isAlice ? "alice" : "bob",
+                    Text = string.Join(" ", Enumerable.Range(0, random.Next(2, 8)).Select(_ => words[random.Next(words.Length)])),
+                });
+            }
+            var model = ConvoModel.Build(new[] { messages });
+            for (int seed = 0; seed < 300; seed++)
+            {
+                foreach (var line in model.Generate(new Random(seed)))
+                {
+                    var own = line.Speaker == "alice" ? alice : bob;
+                    Assert.All(ConvoModel.Tokenize(line.Text), w => Assert.Contains(w, own));
+                }
+            }
+        }
+
+        [Fact]
         public void SeedWords_SteerTheFirstLineButArentShown()
         {
             var model = Model();

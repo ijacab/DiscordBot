@@ -22,10 +22,11 @@ namespace DiscordBot.Models
     }
 
     /// <summary>
-    /// The `.convo` generator: a word-level Markov chain over the server's scraped messages (two words of context, falling back to
-    /// one word <see cref="Chaos"/> of the time, which is what makes it go off the rails). The speakers come from a real run of
+    /// The `.convo` generator: a word-level Markov chain over the server's scraped messages, one per person, so each line sounds like
+    /// whoever it's from (two words of context, falling back to one word <see cref="Chaos"/> of the time, which is what makes it go
+    /// off the rails; everyone's words only bridge a word the speaker never used). The speakers come from a real run of
     /// messages in one channel, each line starts the way that person really starts messages or picks up a word from the line
-    /// before, so it reads like people talking to each other. Tokens are kept in sorted arrays (about 20 bytes a word), so a
+    /// before, so it reads like people talking to each other. Tokens are kept in sorted arrays (about 30 bytes a word), so a
     /// million messages fit comfortably on the Pi. Pure: the caller passes the <see cref="Random"/>.
     /// </summary>
     public sealed class ConvoModel
@@ -57,10 +58,12 @@ namespace DiscordBot.Models
         private readonly Dictionary<string, int> _ids = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _lowerIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        private long[] _triKey;
-        private int[] _triNext;
-        private int[] _biKey;
-        private int[] _biNext;
+        /// <summary>Each person's own two-word chain: lines are built from what that person says.</summary>
+        private Chain<long> _speakerTri;
+        /// <summary>Each person's own one-word chain, for the chaos steps, so they stay in character even when scrambled.</summary>
+        private Chain<int> _speakerBi;
+        /// <summary>Everyone's one-word chain: only to get past a word the speaker never used (a seed or a reply hook).</summary>
+        private Chain<int> _bi;
 
         private string[] _speakers;
         private int[] _msgSpeaker;
@@ -70,7 +73,10 @@ namespace DiscordBot.Models
 
         public int MessageCount => _msgSpeaker.Length;
         public int SpeakerCount => _speakers.Length;
-        public int WordCount => _biKey.Length;
+        public int WordCount => _bi.Length;
+
+        /// <summary>People with fewer messages than this borrow everyone's words for the chaos steps, or they'd only quote themselves.</summary>
+        public const int MinOwnMessages = 20;
 
         private ConvoModel() { }
 
@@ -80,8 +86,10 @@ namespace DiscordBot.Models
             var model = new ConvoModel();
             var speakerIds = new Dictionary<string, int>(StringComparer.Ordinal);
             var speakers = new List<string>();
+            var triSpeaker = new List<int>();
             var triKey = new List<long>();
             var triNext = new List<int>();
+            var biSpeaker = new List<int>();
             var biKey = new List<int>();
             var biNext = new List<int>();
             var msgSpeaker = new List<int>();
@@ -106,8 +114,10 @@ namespace DiscordBot.Models
                     for (int i = 0; i <= tokens.Length; i++)
                     {
                         int c = i < tokens.Length ? model.IdOf(tokens[i]) : EndToken;
+                        triSpeaker.Add(speaker);
                         triKey.Add(Pack(a, b));
                         triNext.Add(c);
+                        biSpeaker.Add(speaker);
                         biKey.Add(b);
                         biNext.Add(c);
                         a = b;
@@ -121,12 +131,10 @@ namespace DiscordBot.Models
                 channelIndex++;
             }
 
-            model._triKey = triKey.ToArray();
-            model._triNext = triNext.ToArray();
-            Array.Sort(model._triKey, model._triNext);
-            model._biKey = biKey.ToArray();
-            model._biNext = biNext.ToArray();
-            Array.Sort(model._biKey, model._biNext);
+            model._speakerTri = new Chain<long>(triSpeaker, triKey, triNext, speakers.Count);
+            triSpeaker = null; triKey = null; triNext = null;
+            model._speakerBi = new Chain<int>(biSpeaker, biKey, biNext, speakers.Count);
+            model._bi = new Chain<int>(null, biKey, biNext, 1);
 
             model._speakers = speakers.ToArray();
             model._msgSpeaker = msgSpeaker.ToArray();
@@ -185,14 +193,14 @@ namespace DiscordBot.Models
                         prefix.AddRange(seedWords);
                         hidden = seedWords.Length;
                     }
-                    else if (i > 0 && attempt < 4 && random.NextDouble() < ReplyHookChance && PickHook(random, lines[i - 1].Text) is string hook)
+                    else if (i > 0 && attempt < 4 && random.NextDouble() < ReplyHookChance && PickHook(random, lines[i - 1].Text, speakers[i]) is string hook)
                         prefix.Add(hook);
                     else if (attempt < 4 && random.NextDouble() < OwnStartChance)
                     {
                         var own = _speakerMsgs[speakers[i]];
                         prefix.Add(_words[_msgFirst[own[random.Next(own.Length)]]]);
                     }
-                    text = Line(random, prefix, hidden);
+                    text = Line(random, speakers[i], prefix, hidden);
                 }
                 if (string.IsNullOrEmpty(text))
                     continue;
@@ -226,20 +234,21 @@ namespace DiscordBot.Models
             return Enumerable.Range(0, count).Select(_ => _msgSpeaker[random.Next(MessageCount)]).ToList();
         }
 
-        /// <summary>A word from the line before worth replying to: three letters or more and not filler.</summary>
-        private string PickHook(Random random, string previous)
+        /// <summary>A word from the line before worth replying to: three letters or more, not filler, and one the replier uses too.</summary>
+        private string PickHook(Random random, string previous, int speaker)
         {
             var candidates = Tokenize(previous)
-                .Where(w => w.Length >= 3 && !StopWords.Contains(w) && Find(w) != null)
+                .Where(w => w.Length >= 3 && !StopWords.Contains(w) && Find(w) is int id && _speakerBi.Has(speaker, id))
                 .ToList();
             return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
         }
 
         /// <summary>
-        /// One message: the prefix, then words from the chain until it ends or gets too long. The first <paramref name="hidden"/>
-        /// words of the prefix steer the chain but are left out of the text (a `.convo` seed).
+        /// One message by <paramref name="speaker"/>: the prefix, then words from their own chain until it ends or gets too long.
+        /// Everyone's chain is only used when they have no word to follow the last one. The first <paramref name="hidden"/> words
+        /// of the prefix steer the chain but are left out of the text (a `.convo` seed).
         /// </summary>
-        private string Line(Random random, IList<string> prefix, int hidden = 0)
+        private string Line(Random random, int speaker, IList<string> prefix, int hidden = 0)
         {
             var words = new List<string>(prefix);
             int a = StartToken, b = StartToken;
@@ -257,16 +266,17 @@ namespace DiscordBot.Models
                 }
             }
 
+            bool rare = _speakerMsgs[speaker].Length < MinOwnMessages;
             int length = words.Sum(w => w.Length + 1);
             while (words.Count < MaxWords)
             {
-                int next;
+                int next = EndToken;
                 bool chaos = b != StartToken && random.NextDouble() < Chaos;
-                if (chaos || !TryPick(_triKey, _triNext, Pack(a, b), random, out next))
-                {
-                    if (!TryPick(_biKey, _biNext, b, random, out next))
-                        next = EndToken;
-                }
+                bool found = !chaos && _speakerTri.TryPick(speaker, Pack(a, b), random, out next);
+                if (!found && !(chaos && rare))
+                    found = _speakerBi.TryPick(speaker, b, random, out next);
+                if (!found && !_bi.TryPick(0, b, random, out next))
+                    next = EndToken;
                 if (next == EndToken || next == StartToken)
                     break;
                 string word = _words[next];
@@ -280,40 +290,76 @@ namespace DiscordBot.Models
             return string.Join(" ", words.Skip(hidden)).Trim();
         }
 
-        private static bool TryPick(long[] keys, int[] values, long key, Random random, out int next)
+        /// <summary>
+        /// A Markov table split by person: every (context → next word) seen, grouped by who said it and sorted by context inside each
+        /// group, so picking a next word is a binary search and duplicates keep their real frequency. About 12 bytes an entry.
+        /// </summary>
+        private sealed class Chain<TKey> where TKey : struct, IComparable<TKey>
         {
-            int lo = Lower(keys, key), hi = Lower(keys, key + 1);
-            next = lo < hi ? values[lo + random.Next(hi - lo)] : EndToken;
-            return lo < hi;
-        }
+            private readonly TKey[] _keys;
+            private readonly int[] _next;
+            private readonly int[] _start;
 
-        private static bool TryPick(int[] keys, int[] values, int key, Random random, out int next)
-        {
-            int lo = Lower(keys, key), hi = Lower(keys, key + 1);
-            next = lo < hi ? values[lo + random.Next(hi - lo)] : EndToken;
-            return lo < hi;
-        }
+            public int Length => _keys.Length;
 
-        private static int Lower(long[] a, long key)
-        {
-            int lo = 0, hi = a.Length;
-            while (lo < hi)
+            /// <param name="groups">Who said each entry, or null for one group.</param>
+            public Chain(List<int> groups, List<TKey> keys, List<int> next, int groupCount)
             {
-                int mid = (lo + hi) >> 1;
-                if (a[mid] < key) lo = mid + 1; else hi = mid;
+                _start = new int[groupCount + 1];
+                _keys = new TKey[keys.Count];
+                _next = new int[keys.Count];
+                if (groups == null)
+                {
+                    keys.CopyTo(_keys);
+                    next.CopyTo(_next);
+                    _start[1] = keys.Count;
+                }
+                else
+                {
+                    foreach (int g in groups) _start[g + 1]++;
+                    for (int g = 0; g < groupCount; g++) _start[g + 1] += _start[g];
+                    var position = (int[])_start.Clone();
+                    for (int i = 0; i < keys.Count; i++)
+                    {
+                        int p = position[groups[i]]++;
+                        _keys[p] = keys[i];
+                        _next[p] = next[i];
+                    }
+                }
+                for (int g = 0; g < groupCount; g++)
+                    Array.Sort(_keys, _next, _start[g], _start[g + 1] - _start[g]);
             }
-            return lo;
-        }
 
-        private static int Lower(int[] a, int key)
-        {
-            int lo = 0, hi = a.Length;
-            while (lo < hi)
+            public bool Has(int group, TKey key) => Range(group, key, out _, out _);
+
+            public bool TryPick(int group, TKey key, Random random, out int next)
             {
-                int mid = (lo + hi) >> 1;
-                if (a[mid] < key) lo = mid + 1; else hi = mid;
+                if (!Range(group, key, out int lo, out int hi))
+                {
+                    next = EndToken;
+                    return false;
+                }
+                next = _next[lo + random.Next(hi - lo)];
+                return true;
             }
-            return lo;
+
+            private bool Range(int group, TKey key, out int lo, out int hi)
+            {
+                lo = Bound(_start[group], _start[group + 1], key, upper: false);
+                hi = Bound(lo, _start[group + 1], key, upper: true);
+                return lo < hi;
+            }
+
+            private int Bound(int lo, int hi, TKey key, bool upper)
+            {
+                while (lo < hi)
+                {
+                    int mid = (lo + hi) >> 1;
+                    int c = _keys[mid].CompareTo(key);
+                    if (c < 0 || (upper && c == 0)) lo = mid + 1; else hi = mid;
+                }
+                return lo;
+            }
         }
     }
 }
