@@ -86,5 +86,34 @@ namespace Tests
             Assert.Single(account.Properties);
             Assert.Same(squatted, account.Properties[0]); //the one the squatters are in is kept, the other was sold
         }
+
+        private static (DebtService Debts, CoinAccount Account, StockService Stocks) Indebted(double invested, double debt, ulong id)
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var stocks = new StockService(new LocalFileService(), coins);
+            stocks.ClearAll().Wait();
+            coins.GetAll().Accounts.Clear();
+            var account = new CoinAccount { UserId = id, Name = "debtor", NetWorth = invested, AutoSellForDebt = true };
+            coins.GetAll().Accounts.Add(account);
+            stocks.Buy(account, stocks.GetMarket().Stocks.First(x => x.Role == StockRole.Normal).Symbol, "max");
+            account.NetWorth = 0;
+            account.Debt = debt;
+            return (new DebtService(coins, stocks, new PropertyService(coins)), account, stocks);
+        }
+
+        [Theory]
+        [InlineData(1_000_000, 5_000)]
+        [InlineData(1_000_000, 400_000)]
+        [InlineData(50_000, 40_000)]
+        [InlineData(10_000_000, 3_000_000)]
+        public async System.Threading.Tasks.Task AutoSell_SellsEnoughStocksToClearTheDebtExactly(double invested, double debt)
+        {
+            var (debts, account, stocks) = Indebted(invested, debt, 920_000 + (ulong)debt % 1000);
+
+            await debts.AutoSellForDebts(new ulong[0]);
+
+            Assert.Equal(0, account.Debt, 2); //not a small remainder left over from the price moving as it sold
+            Assert.True(stocks.GetMarket().GetHoldings(account.UserId).Any(), "it sold everything instead of only what was needed");
+        }
     }
 }

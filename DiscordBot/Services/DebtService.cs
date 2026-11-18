@@ -17,6 +17,8 @@ namespace DiscordBot.Services
     {
         /// <summary>Stock sales aim this much over the debt, since selling pushes the price down as it goes.</summary>
         public const double StockSaleBuffer = 1.02;
+        /// <summary>The most times one account is planned and sold again in a minute. Each round closes most of what was left.</summary>
+        public const int MaxRounds = 12;
 
         private readonly CoinService _coinService;
         private readonly StockService _stockService;
@@ -86,45 +88,19 @@ namespace DiscordBot.Services
 
             foreach (var account in _coinService.GetAll().Accounts.Where(a => a.AutoSellForDebt && a.Debt > 0 && !skip.Contains(a.UserId)).ToList())
             {
-                var lots = market.GetHoldings(account.UserId)
-                    .Select(h => new StockLot
-                    {
-                        Symbol = h.Key,
-                        Shares = h.Value,
-                        NetPerShare = (market.Find(h.Key)?.Price ?? 0) * (1 - Stock.SellTaxRate - Stock.Spread),
-                    }).ToList();
-                //a property with squatters in can't be sold until they leave, so it is left out (the rest still covers what it can)
-                var now = DateTime.UtcNow;
-                var plan = Plan(account.Debt, lots, account.Properties
-                    .Where(p => PropertyService.SquatIn(account, p, now) == null)
-                    .Select(p => (p, PropertyCatalog.SaleValue(p.Kind, index))));
-                if (plan.IsEmpty) continue;
-
                 double debtBefore = account.Debt;
-                var sold = new List<string>();
-                foreach (var (symbol, shares) in plan.Stocks)
+                var stocksSold = new Dictionary<string, int>();
+                var propertiesSold = new List<string>();
+
+                //selling pushes the price down as it goes, so one plan can fall short; plan again from the new prices until the
+                //debt is gone or there is nothing left that can be sold
+                for (int round = 0; round < MaxRounds && account.Debt > 0; round++)
                 {
-                    try
-                    {
-                        var result = _stockService.Sell(account, symbol, shares.ToString());
-                        sold.Add($"{result.Shares} {result.Stock.Symbol}");
-                    }
-                    catch (BadInputException) { } //the holding changed since the plan; the next minute tries again
-                }
-                foreach (var holding in plan.Properties)
-                {
-                    if (account.Debt <= 0) break;
-                    int number = account.Properties.IndexOf(holding) + 1;
-                    if (number < 1) continue;
-                    try
-                    {
-                        await _propertyService.Sell(account, number);
-                    }
-                    catch (BadInputException) { continue; } //squatters moved in since the plan; the next minute tries again
-                    sold.Add($"a {PropertyCatalog.DisplayName(holding.Kind).ToLower()}");
+                    if (!await SellRound(account, market, index, stocksSold, propertiesSold)) break;
                 }
 
-                if (sold.Count == 0) continue;
+                if (stocksSold.Count == 0 && propertiesSold.Count == 0) continue;
+                var sold = stocksSold.Select(s => $"{s.Value} {s.Key}").Concat(propertiesSold).ToList();
                 double paid = Math.Round(debtBefore - account.Debt, 2);
                 string left = account.Debt > 0 ? $" ${FormatHelper.GetCommaNumber(account.Debt)} still owed." : " Debt cleared.";
                 lines.Add($"💳 Auto-sell for {account.Name}: sold {string.Join(", ", sold)} and paid ${FormatHelper.GetCommaNumber(paid)} of debt.{left}");
@@ -132,6 +108,50 @@ namespace DiscordBot.Services
 
             if (lines.Count > 0) await _coinService.Update();
             return lines;
+        }
+
+        /// <summary>One plan and its sales for an account, from today's prices. False when nothing could be sold.</summary>
+        private async Task<bool> SellRound(CoinAccount account, StockMarket market, double index, Dictionary<string, int> stocksSold, List<string> propertiesSold)
+        {
+            var lots = market.GetHoldings(account.UserId)
+                .Select(h => new StockLot
+                {
+                    Symbol = h.Key,
+                    Shares = h.Value,
+                    NetPerShare = (market.Find(h.Key)?.Price ?? 0) * (1 - Stock.SellTaxRate - Stock.Spread),
+                }).ToList();
+            //a property with squatters in can't be sold until they leave, so it is left out (the rest still covers what it can)
+            var now = DateTime.UtcNow;
+            var plan = Plan(account.Debt, lots, account.Properties
+                .Where(p => PropertyService.SquatIn(account, p, now) == null)
+                .Select(p => (p, PropertyCatalog.SaleValue(p.Kind, index))));
+            if (plan.IsEmpty) return false;
+
+            bool soldAny = false;
+            foreach (var (symbol, shares) in plan.Stocks)
+            {
+                try
+                {
+                    var result = _stockService.Sell(account, symbol, shares.ToString());
+                    stocksSold[result.Stock.Symbol] = stocksSold.GetValueOrDefault(result.Stock.Symbol) + result.Shares;
+                    soldAny = true;
+                }
+                catch (BadInputException) { } //the holding changed since the plan; the next round tries again
+            }
+            foreach (var holding in plan.Properties)
+            {
+                if (account.Debt <= 0) break;
+                int number = account.Properties.IndexOf(holding) + 1;
+                if (number < 1) continue;
+                try
+                {
+                    await _propertyService.Sell(account, number);
+                }
+                catch (BadInputException) { continue; } //squatters moved in since the plan
+                propertiesSold.Add($"a {PropertyCatalog.DisplayName(holding.Kind).ToLower()}");
+                soldAny = true;
+            }
+            return soldAny;
         }
     }
 }
