@@ -146,7 +146,7 @@ namespace DiscordBot.Managers
                 new Command("start", Start, hidden: true, requiresAdmin: true),
                 new Command("stop", Stop, hidden: true, requiresAdmin: true),
                 new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
-                new Command("convo", Convo) { Description = "Makes up a 3 to 10 line conversation between people from this server, learned from the server's chat history. Add some words to start it off.", Syntax = "`.convo` or `.convo pizza time`" },
+                new Command("convo", Convo) { Description = "Makes up a 3 to 10 line conversation between people from this server, learned from the server's chat history. Add some words to steer how it starts (they aren't repeated in the chat).", Syntax = "`.convo` or `.convo pizza time`" },
                 new Command("scrapeconvo", ScrapeConvo) { Description = "Bot admins only. Downloads the server's chat history (in the background, onto the Pi) for `.convo`; later runs only fetch new messages.", Syntax = "`.scrapeconvo`, `.scrapeconvo status` or `.scrapeconvo stop`", Hidden = true, RequiresAdmin = true },
                 new Command("lang", Lang) { Description = "Mangles your text by bouncing it through 8 random far-flung languages (Yoruba, Khmer, Latin, Hmong and friends) and back to English.", Syntax = "`.lang some text to mangle`" },
                 new Command("ban", Ban) { Syntax = "`.ban @someone`", Hidden = true, RequiresAdmin = true },

@@ -31,7 +31,7 @@ namespace DiscordBot.Models
     public sealed class ConvoModel
     {
         /// <summary>How often a word is picked from one word of context instead of two. Higher is crazier.</summary>
-        public const double Chaos = 0.3;
+        public const double Chaos = 0.4;
         /// <summary>How often a reply picks up a word from the line before it.</summary>
         public const double ReplyHookChance = 0.35;
         /// <summary>How often a line starts with a word its speaker really starts messages with.</summary>
@@ -160,7 +160,7 @@ namespace DiscordBot.Models
 
         /// <summary>
         /// A conversation of <see cref="MinLines"/> to <see cref="MaxLines"/> lines. With a <paramref name="seed"/> the first line
-        /// starts with it. Null when the model has no messages.
+        /// carries on from it, as if it had been said first, but the seed itself isn't shown. Null when the model has no messages.
         /// </summary>
         public List<ConvoLine> Generate(Random random, string seed = null)
         {
@@ -179,8 +179,12 @@ namespace DiscordBot.Models
                 for (int attempt = 0; attempt < 8 && string.IsNullOrEmpty(text); attempt++)
                 {
                     var prefix = new List<string>();
-                    if (i == 0 && seedWords.Length > 0 && attempt == 0)
+                    int hidden = 0;
+                    if (i == 0 && seedWords.Length > 0 && attempt < 4)
+                    {
                         prefix.AddRange(seedWords);
+                        hidden = seedWords.Length;
+                    }
                     else if (i > 0 && attempt < 4 && random.NextDouble() < ReplyHookChance && PickHook(random, lines[i - 1].Text) is string hook)
                         prefix.Add(hook);
                     else if (attempt < 4 && random.NextDouble() < OwnStartChance)
@@ -188,7 +192,7 @@ namespace DiscordBot.Models
                         var own = _speakerMsgs[speakers[i]];
                         prefix.Add(_words[_msgFirst[own[random.Next(own.Length)]]]);
                     }
-                    text = Line(random, prefix);
+                    text = Line(random, prefix, hidden);
                 }
                 if (string.IsNullOrEmpty(text))
                     continue;
@@ -231,8 +235,11 @@ namespace DiscordBot.Models
             return candidates.Count == 0 ? null : candidates[random.Next(candidates.Count)];
         }
 
-        /// <summary>One message: the prefix, then words from the chain until it ends or gets too long.</summary>
-        private string Line(Random random, IList<string> prefix)
+        /// <summary>
+        /// One message: the prefix, then words from the chain until it ends or gets too long. The first <paramref name="hidden"/>
+        /// words of the prefix steer the chain but are left out of the text (a `.convo` seed).
+        /// </summary>
+        private string Line(Random random, IList<string> prefix, int hidden = 0)
         {
             var words = new List<string>(prefix);
             int a = StartToken, b = StartToken;
@@ -270,7 +277,7 @@ namespace DiscordBot.Models
                 a = b;
                 b = next;
             }
-            return string.Join(" ", words).Trim();
+            return string.Join(" ", words.Skip(hidden)).Trim();
         }
 
         private static bool TryPick(long[] keys, int[] values, long key, Random random, out int next)

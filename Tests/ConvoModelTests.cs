@@ -80,15 +80,23 @@ namespace Tests
         }
 
         [Fact]
-        public void SeedWords_StartTheFirstLine()
+        public void SeedWords_SteerTheFirstLineButArentShown()
         {
             var model = Model();
+            int carriedOn = 0;
             for (int seed = 0; seed < 50; seed++)
             {
-                Assert.StartsWith("pizza", model.Generate(new Random(seed), "pizza")[0].Text);
-                //a word nobody ever said still starts it, and the chain carries on after it
-                Assert.StartsWith("zorblax", model.Generate(new Random(seed), "zorblax")[0].Text);
+                var first = model.Generate(new Random(seed), "pineapple on")[0].Text;
+                Assert.False(first.StartsWith("pineapple on"));
+                Assert.False(string.IsNullOrWhiteSpace(first));
+                //"pineapple on" is only ever followed by "pizza", so the line usually carries on from it
+                if (first.StartsWith("pizza")) carriedOn++;
+                //a word nobody ever said is left out too, and the line still has words
+                var odd = model.Generate(new Random(seed), "zorblax")[0].Text;
+                Assert.DoesNotContain("zorblax", odd);
+                Assert.False(string.IsNullOrWhiteSpace(odd));
             }
+            Assert.True(carriedOn > 25, $"carried on {carriedOn}/50");
         }
 
         [Fact]
