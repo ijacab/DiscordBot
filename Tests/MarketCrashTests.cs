@@ -281,16 +281,16 @@ namespace Tests
         }
 
         [Fact]
-        public void OrdinaryPropertyMarket_LetsAnIndexBelowTheFloorRiseButNotFallFurther()
+        public void OrdinaryPropertyMarket_ABustKeepsFallingPastTheOldFloorAndABoomRises()
         {
             double index = 0.3;
             int direction = -1, daysLeft = 10;
             PropertyMarket.Step(ref index, ref direction, ref daysLeft, () => 0.5);
-            Assert.Equal(0.3, index, 9); //a bust doesn't push it lower, and it isn't snapped up to 0.6
+            Assert.Equal(0.3 * (1 - PropertyCatalog.TrendPerDay), index, 9); //no floor at 0.6, and it isn't snapped up to it
 
             index = 0.3; direction = 1; daysLeft = 10;
             PropertyMarket.Step(ref index, ref direction, ref daysLeft, () => 0.5);
-            Assert.True(index > 0.3 && index < 0.6);
+            Assert.Equal(0.3 * (1 + PropertyCatalog.TrendPerDay), index, 9);
         }
 
         // ---- patch notes and channels

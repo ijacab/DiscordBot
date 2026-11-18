@@ -130,7 +130,7 @@ namespace DiscordBot.Models
 
         /// <summary>
         /// Moves the property index for one day of a crisis of this severity. The recovery gives back <see cref="RecoveryShare"/> of
-        /// the fall in log terms, like stocks. The index can go as low as <see cref="PropertyCatalog.CrisisIndexMin"/>.
+        /// the fall in log terms, like stocks. The index has no limit but <see cref="PropertyCatalog.IndexFloor"/>.
         /// </summary>
         public static void StepProperty(ref double index, CrisisPhase phase, double severity = 0)
         {
@@ -138,7 +138,7 @@ namespace DiscordBot.Models
             double factor = 1;
             if (phase == CrisisPhase.Decline) factor = Math.Pow(kept, 1.0 / DeclineDays);
             else if (phase == CrisisPhase.Recovery) factor = Math.Pow(Math.Pow(1 / kept, RecoveryShare), 1.0 / RecoveryDays);
-            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(PropertyCatalog.CrisisIndexMin, index * factor));
+            index = Math.Max(PropertyCatalog.IndexFloor, index * factor);
         }
 
         /// <summary>The days a phase lasts.</summary>

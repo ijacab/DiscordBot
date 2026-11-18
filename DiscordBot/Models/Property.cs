@@ -48,15 +48,21 @@ namespace DiscordBot.Models
         /// </summary>
         public const double HoldingCostPerHour = 0.01;
 
-        /// <summary>The market index can't go below or above these, so prices can't run away.</summary>
-        public const double IndexMin = 0.6;
-        public const double IndexMax = 1.6;
-        /// <summary>A market crash can take the index lower than the ordinary floor (up to a 70% fall).</summary>
-        public const double CrisisIndexMin = 0.15;
+        /// <summary>
+        /// The market index has no ceiling and no ordinary floor: it can run as far as the daily moves take it. This is only a
+        /// safety net so a price can never reach zero (a 99% fall in one day is still possible).
+        /// </summary>
+        public const double IndexFloor = 0.01;
         /// <summary>Daily drift of the index in the current boom or bust, as a share of the index. A season is 2 to 4 weeks, so a boom or bust lasts days.</summary>
         public const double TrendPerDay = 0.02;
-        /// <summary>Daily random movement on top of the drift.</summary>
-        public const double NoisePerDay = 0.01;
+        /// <summary>
+        /// Daily random move on top of the drift, in log terms: a Laplace draw with this scale, so most days move a couple of percent
+        /// and the odd day moves a lot, up or down. There is no limit on a day's move.
+        /// </summary>
+        public const double NoisePerDay = 0.02;
+        /// <summary>Chance per day of a shock day, whose random move is <see cref="ShockScale"/> instead: 10% to 30% or more, either way.</summary>
+        public const double ShockChance = 0.04;
+        public const double ShockScale = 0.12;
         public const int MinTrendDays = 4;
         public const int MaxTrendDays = 8;
         /// <summary>Apartments move this much more, in percent, than houses.</summary>
@@ -108,11 +114,18 @@ namespace DiscordBot.Models
                 trendDaysLeft = PropertyCatalog.MinTrendDays + (int)(random() * (PropertyCatalog.MaxTrendDays - PropertyCatalog.MinTrendDays + 1));
             }
 
-            double noise = (random() * 2 - 1) * PropertyCatalog.NoisePerDay;
-            double move = trendDirection * PropertyCatalog.TrendPerDay + noise;
-            //an index a crash left below the floor can rise but not fall further, and isn't snapped up to the floor
-            index = Math.Min(PropertyCatalog.IndexMax, Math.Max(Math.Min(PropertyCatalog.IndexMin, index), index * (1 + move)));
+            //a shock day (rare) swings far harder; draws are the shock roll, then the move (0.5 is no move)
+            bool shock = random() < PropertyCatalog.ShockChance;
+            double noise = Laplace(random(), shock ? PropertyCatalog.ShockScale : PropertyCatalog.NoisePerDay);
+            index = Math.Max(PropertyCatalog.IndexFloor, index * (1 + trendDirection * PropertyCatalog.TrendPerDay) * Math.Exp(noise));
             trendDaysLeft--;
+        }
+
+        /// <summary>A symmetric, fat-tailed log move for a uniform draw <paramref name="u"/> in [0, 1): 0 at 0.5, and as far as the draw is extreme.</summary>
+        public static double Laplace(double u, double scale)
+        {
+            double centred = Math.Clamp(u - 0.5, -0.499999999, 0.499999999);
+            return -scale * Math.Sign(centred) * Math.Log(1 - 2 * Math.Abs(centred));
         }
 
         /// <summary>A trend saved when booms and busts lasted months is cut to the current length, or it would run at today's speed for ages.</summary>

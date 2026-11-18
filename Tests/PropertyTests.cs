@@ -78,25 +78,49 @@ namespace Tests
         }
 
         [Fact]
-        public void Step_StaysInsideTheIndexBounds()
+        public void Step_HasNoCeilingOrOrdinaryFloor_ButNeverReachesZero()
         {
+            //the old bounds were 0.6 and 1.6 of the start
             double index = 1.0;
             int direction = 1, daysLeft = 100_000;
-            for (int i = 0; i < 2_000; i++)
-                PropertyMarket.Step(ref index, ref direction, ref daysLeft, Fixed(0.999999));
-            Assert.Equal(PropertyCatalog.IndexMax, index, 10);
+            for (int i = 0; i < 100; i++)
+                PropertyMarket.Step(ref index, ref direction, ref daysLeft, Fixed(0.99));
+            Assert.True(index > 1.6, $"index {index}");
 
             direction = -1;
-            for (int i = 0; i < 5_000; i++)
-                PropertyMarket.Step(ref index, ref direction, ref daysLeft, Fixed(0.000001));
-            Assert.Equal(PropertyCatalog.IndexMin, index, 10);
+            for (int i = 0; i < 100_000; i++)
+                PropertyMarket.Step(ref index, ref direction, ref daysLeft, Fixed(0.01));
+            Assert.True(index < 0.6);
+            Assert.True(index >= PropertyCatalog.IndexFloor);
         }
 
         [Fact]
-        public void DailyMove_IsSmall()
+        public void Laplace_IsZeroAtTheMiddleSymmetricAndHasNoLimit()
         {
-            //the most a day can move is the trend plus the noise, so a day is never a casino swing
-            Assert.True(PropertyCatalog.TrendPerDay + PropertyCatalog.NoisePerDay <= 0.03);
+            Assert.Equal(0, PropertyMarket.Laplace(0.5, 0.02), 12);
+            Assert.Equal(-PropertyMarket.Laplace(0.9, 0.02), PropertyMarket.Laplace(0.1, 0.02), 12);
+            Assert.True(PropertyMarket.Laplace(0.99999, 0.02) > PropertyMarket.Laplace(0.999, 0.02));
+            Assert.True(double.IsFinite(PropertyMarket.Laplace(1, 0.02)) && double.IsFinite(PropertyMarket.Laplace(0, 0.02)));
+        }
+
+        [Fact]
+        public void DailyMoves_AreUsuallySmallButAShockDayCanMoveHousesALot()
+        {
+            var random = new Random(77);
+            double index = 1.0;
+            int direction = 1, daysLeft = 100;
+            var moves = new System.Collections.Generic.List<double>();
+            for (int i = 0; i < 20_000; i++)
+            {
+                double before = index;
+                PropertyMarket.Step(ref index, ref direction, ref daysLeft, random.NextDouble);
+                moves.Add(Math.Abs(Math.Log(index / before)));
+                daysLeft = 100;
+            }
+            moves.Sort();
+            Assert.InRange(moves[moves.Count / 2], 0.01, 0.06); //a typical day
+            Assert.True(moves[moves.Count * 995 / 1000] > 0.10, "no day moved more than 10%");
+            Assert.True(moves[moves.Count - 1] > 0.30, "no day moved more than 30%");
         }
 
         [Fact]

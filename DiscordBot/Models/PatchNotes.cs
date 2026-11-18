@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", "House prices have no limit now: they can rise or fall as far as they go, and the odd day moves them 10% to 30% or more either way."),
             new PatchNote("2026-11-18", "A property with squatters in can't be sold until they leave (12 hours), so selling and rebuying no longer shakes them off. Auto-sell skips it too."),
             new PatchNote("2026-11-18", "Market crashes now take stocks down by the stated amount. Before, they fell far further (a mild one could wipe out a high-risk stock) and some stocks even rose."),
             new PatchNote("2026-11-18", "Fixed the duck race freezing the bot while it ran: other commands now work during a race."),

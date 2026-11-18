@@ -216,11 +216,15 @@ namespace Tests
         }
 
         [Fact]
-        public void StepProperty_StaysInsideTheIndexClamp()
+        public void StepProperty_CanGoBelowTheOldFloorButNeverToZero()
         {
-            double index = PropertyCatalog.CrisisIndexMin + 0.01;
+            double index = 0.5; //below the old 0.6 floor
             for (int i = 0; i < 100; i++) MarketCycle.StepProperty(ref index, CrisisPhase.Decline, severity: 1);
-            Assert.Equal(PropertyCatalog.CrisisIndexMin, index, 6);
+            Assert.Equal(PropertyCatalog.IndexFloor, index, 6);
+
+            index = 2.0; //above the old 1.6 ceiling stays put through a recovery step rather than being cut
+            MarketCycle.StepProperty(ref index, CrisisPhase.Recovery, severity: 1);
+            Assert.True(index > 2.0);
         }
 
         [Fact]
