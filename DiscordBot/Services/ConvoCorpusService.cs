@@ -35,6 +35,10 @@ namespace DiscordBot.Services
         /// <summary>Pause between pages so the scrape never crowds out the bot's own requests.</summary>
         public static readonly TimeSpan PagePause = TimeSpan.FromMilliseconds(250);
         private const int PageSize = 100;
+        /// <summary>The quick first pass takes this many pages (the newest ~1,000 messages) of every channel, so `.convo` works within minutes.</summary>
+        public const int QuickPassPages = 10;
+        /// <summary>How often the model is rebuilt while a scrape runs, so `.convo` keeps learning as the history comes in.</summary>
+        public static readonly TimeSpan ReloadDuringScrape = TimeSpan.FromMinutes(15);
 
         private readonly ILogger<ConvoCorpusService> _logger;
         private readonly object _gate = new object();
@@ -48,6 +52,9 @@ namespace DiscordBot.Services
         private int _channelTotal;
         private string _currentChannel;
         private long _savedThisRun;
+        private string _pass;
+        private bool _autoScrapeTried;
+        private DateTime _lastReload = DateTime.MinValue;
 
         public ConvoCorpusService(ILogger<ConvoCorpusService> logger)
         {
@@ -58,6 +65,26 @@ namespace DiscordBot.Services
         public ConvoModel Model => _model;
         public bool IsLoading => !_loadTask.IsCompleted;
         public bool IsScraping => _scraping;
+        /// <summary>Messages saved by the scrape that's running (or the last one).</summary>
+        public long SavedThisRun => Interlocked.Read(ref _savedThisRun);
+
+        /// <summary>
+        /// Whether to start the first scrape by itself: once per process, only when nothing was ever scraped (a later refresh is
+        /// `.scrapeconvo`), the bot can see the server and no scrape is running.
+        /// </summary>
+        public static bool ShouldAutoScrape(bool stateExists, bool canSeeGuild, bool scraping, bool alreadyTried) =>
+            !stateExists && canSeeGuild && !scraping && !alreadyTried;
+
+        /// <summary>Called every minute: starts the very first scrape on its own once the bot is connected to the server.</summary>
+        public void EnsureScrapeStarted(DiscordSocketClient client)
+        {
+            bool canSee = client.ConnectionState == ConnectionState.Connected && client.GetGuild(GuildId) != null;
+            if (!ShouldAutoScrape(File.Exists(StatePath), canSee, _scraping, _autoScrapeTried))
+                return;
+            _autoScrapeTried = true;
+            if (StartScrape(client, null))
+                _logger.LogInformation("Convo scrape started by itself: nothing scraped yet");
+        }
 
         public static string DataPath => Path.Join(Directory.GetCurrentDirectory(), DataDir);
 
@@ -219,12 +246,12 @@ namespace DiscordBot.Services
                 ? (IsLoading ? "The `.convo` model is loading." : "No `.convo` model yet.")
                 : $"`.convo` knows {model.MessageCount:N0} messages from {model.SpeakerCount:N0} people{(IsLoading ? " (reloading)" : "")}.";
             string scrapeText = _scraping
-                ? $"Scraping channel {_channelIndex}/{_channelTotal} (#{_currentChannel}), {_savedThisRun:N0} new messages this run."
+                ? $"Scraping ({_pass}) channel {_channelIndex}/{_channelTotal} (#{_currentChannel}), {SavedThisRun:N0} new messages this run."
                 : "Not scraping.";
             return $"{scrapeText}\nSaved: {saved:N0} messages, {done}/{state.Count} channels finished.\n{modelText}";
         }
 
-        /// <summary>Starts a scrape in the background and returns at once. False when one is already running.</summary>
+        /// <summary>Starts a scrape in the background and returns at once; the result is posted to <paramref name="reportTo"/> (or only logged). False when one is already running.</summary>
         public bool StartScrape(DiscordSocketClient client, IMessageChannel reportTo)
         {
             lock (_gate)
@@ -257,7 +284,9 @@ namespace DiscordBot.Services
 
                 lock (_gate) _loadStarted = true;
                 await StartReload();
-                await Say(reportTo, $"{summary}\n{Status()}");
+                _logger.LogInformation("Convo scrape: {Summary}", summary);
+                if (reportTo != null)
+                    await Say(reportTo, $"{summary}\n{Status()}");
             });
             return true;
         }
@@ -293,9 +322,24 @@ namespace DiscordBot.Services
             var state = LoadState();
             var channels = await ListChannels(guild, token);
             _channelTotal = channels.Count;
-            _channelIndex = 0;
             _logger.LogInformation("Convo scrape: {Count} channels", channels.Count);
 
+            //first the newest messages of every channel, so .convo has something from everywhere within minutes, then all the way back
+            _pass = "quick pass";
+            await ScrapeChannels(channels, state, QuickPassPages, token);
+            if (!token.IsCancellationRequested)
+            {
+                lock (_gate) _loadStarted = true;
+                _lastReload = DateTime.UtcNow;
+                _ = StartReload();
+            }
+            _pass = "full history";
+            await ScrapeChannels(channels, state, int.MaxValue, token);
+        }
+
+        private async Task ScrapeChannels(List<IMessageChannel> channels, Dictionary<ulong, ChannelProgress> state, int maxPages, CancellationToken token)
+        {
+            _channelIndex = 0;
             foreach (var channel in channels)
             {
                 if (token.IsCancellationRequested)
@@ -309,7 +353,7 @@ namespace DiscordBot.Services
                     continue;
                 try
                 {
-                    await ScrapeChannel(channel, progress, state, token);
+                    await ScrapeChannel(channel, progress, state, maxPages, token);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -329,13 +373,13 @@ namespace DiscordBot.Services
             SaveState(state);
         }
 
-        private async Task ScrapeChannel(IMessageChannel channel, ChannelProgress progress, Dictionary<ulong, ChannelProgress> state, CancellationToken token)
+        private async Task ScrapeChannel(IMessageChannel channel, ChannelProgress progress, Dictionary<ulong, ChannelProgress> state, int maxPages, CancellationToken token)
         {
             string file = Path.Join(DataPath, MessagesDir, $"{channel.Id}.tsv");
             var options = new RequestOptions { CancelToken = token, RetryMode = RetryMode.AlwaysRetry };
 
-            //back through the history to the first message
-            while (!progress.Done && !token.IsCancellationRequested)
+            //back through the history to the first message (or only a few pages on the quick pass)
+            for (int pages = 0; pages < maxPages && !progress.Done && !token.IsCancellationRequested; pages++)
             {
                 var page = (progress.OldestId == 0
                     ? await channel.GetMessagesAsync(PageSize, CacheMode.AllowDownload, options).FlattenAsync()
@@ -349,6 +393,7 @@ namespace DiscordBot.Services
                 if (page.Count < PageSize)
                     progress.Done = true;
                 SaveState(state);
+                ReloadIfDue();
                 await Task.Delay(PagePause, token);
             }
 
@@ -366,6 +411,16 @@ namespace DiscordBot.Services
                     break;
                 await Task.Delay(PagePause, token);
             }
+        }
+
+        /// <summary>Rebuilds the model in the background every <see cref="ReloadDuringScrape"/> while the history comes in.</summary>
+        private void ReloadIfDue()
+        {
+            if (DateTime.UtcNow - _lastReload < ReloadDuringScrape)
+                return;
+            _lastReload = DateTime.UtcNow;
+            lock (_gate) _loadStarted = true;
+            _ = StartReload();
         }
 
         private void Save(string file, List<IMessage> page, ChannelProgress progress)

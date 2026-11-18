@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", ".convo fix: no more robot essays. It now only posts \"user: words\" chats and starts reading the server's history by itself, so it works a few minutes after a restart."),
             new PatchNote("2026-11-18", ".convo now makes up 3 to 10 line chats between server members, learned from the server's own history, and it's deliberately unhinged. Add words to start it: `.convo pizza`."),
             new PatchNote("2026-11-18", "Jackpot: bets over $10,000 now qualify with half your cash or more (up to $10,000 it's still all your cash), and you get 10 rolls an hour, up from 2."),
             new PatchNote("2026-11-18", "Blackjack and duck race lobbies (and blackjack results) have a Join max button: one click bets all your cash, no form."),

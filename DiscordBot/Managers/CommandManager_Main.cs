@@ -299,8 +299,9 @@ namespace DiscordBot.Managers
             Task propertyTask = _propertyService.TickIfDue(_stockService.RiskyAssetShare);
             await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
 
-            //the .convo model loads in the background once after a start
+            //the .convo model loads in the background once after a start, and the first scrape of the server's history starts by itself
             _convoCorpus.EnsureLoadStarted();
+            _convoCorpus.EnsureScrapeStarted(client);
 
             //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
             _ = _stockThreadService.RefreshIfDue(client);

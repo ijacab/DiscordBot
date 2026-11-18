@@ -1502,25 +1502,34 @@ namespace DiscordBot.Managers
         //}
 
         /// <summary>
-        /// `.convo`: in the scraped server, a conversation from <see cref="ConvoModel"/> (instant, no LLM). Elsewhere, or before the
-        /// history is scraped, the old local LLM continues the last few messages.
+        /// `.convo`: in the scraped server, a conversation from <see cref="ConvoModel"/> (instant, no LLM, always "user: text"
+        /// lines). Before the history is in, it says so (and starts the scrape if nothing is running); it never falls back to the
+        /// LLM there. In other servers the local LLM continues the last few messages, in the background, keeping only lines in the
+        /// right format.
         /// </summary>
         private async Task Convo(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             bool inServer = (message.Channel as SocketGuildChannel)?.Guild.Id == ConvoCorpusService.GuildId;
-            var model = _convoCorpus.Model;
-            if (inServer && model != null)
+            if (!inServer)
             {
-                var lines = model.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args));
-                if (lines != null && lines.Count > 0)
-                {
-                    await message.Channel.SendMessageAsync(ConvoModel.Format(lines), allowedMentions: AllowedMentions.None);
-                    return;
-                }
+                _ = Task.Run(() => ConvoFromLlm(message));
+                return;
             }
-            if (inServer && _convoCorpus.IsLoading)
-                throw new BadInputException("The convo brain is still warming up. Try again in a minute.");
-            await ConvoFromLlm(message);
+
+            var model = _convoCorpus.Model;
+            var lines = model?.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args));
+            if (lines != null && lines.Count > 0)
+            {
+                await message.Channel.SendMessageAsync(ConvoModel.Format(lines), allowedMentions: AllowedMentions.None);
+                return;
+            }
+
+            if (_convoCorpus.IsLoading)
+                throw new BadInputException("The convo brain is loading the server's history. Try again in a minute.");
+            if (_convoCorpus.IsScraping)
+                throw new BadInputException($"Still reading the server's history ({_convoCorpus.SavedThisRun:N0} messages so far). Try again in a few minutes.");
+            _convoCorpus.StartScrape(client, message.Channel);
+            throw new BadInputException("I haven't read the server's history yet, so I've started now. Try `.convo` again in a few minutes.");
         }
 
         private async Task ScrapeConvo(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -1544,36 +1553,38 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync("Scraping the server's history in the background (it can take a few hours the first time). `.scrapeconvo status` shows how far it's got, and I'll post here when it's done.");
         }
 
+        public const int LlmConvoTries = 3;
+
+        /// <summary>The old `.convo` for other servers: the local LLM continues the last 10 messages. Run off the gateway task.</summary>
         private async Task ConvoFromLlm(SocketMessage message)
         {
-            var channel = message.Channel as IMessageChannel;
-            if (channel == null)
-                return;
-            
-            // Fetch the last 11 messages (to have 10 + the triggering one)
-            var messages = await channel.GetMessagesAsync(limit: 30)
-                .FlattenAsync();
+            try
+            {
+                var messages = await message.Channel.GetMessagesAsync(limit: 30).FlattenAsync();
+                List<string> formattedMessages = messages
+                    .Where(m => m.Id != message.Id && !string.IsNullOrWhiteSpace(m.Content) && !m.Author.IsBot)
+                    .OrderBy(m => m.Timestamp)
+                    .TakeLast(10)
+                    .Select(m => $"{m.Author.Username}: {m.Content}")
+                    .ToList();
 
-            // Exclude the triggering message
-            var filtered = messages
-                .Where(m => m.Id != message.Id && !string.IsNullOrWhiteSpace(m.Content))
-                .Where(f => !f.Author.IsBot);
-
-            // Order oldest → newest
-            var ordered = filtered.OrderBy(m => m.Timestamp);
-
-            // Take the last 10 (in case there were more than 11 returned)
-            var lastTen = ordered.TakeLast(10);
-
-            // Format as "username: message"
-            List<string> formattedMessages = lastTen
-                .Select(m => $"{m.Author.Username}: {m.Content}")
-                .ToList();
-
-            // Call your convo service
-            string convo = await _convoService.ProduceConvo(formattedMessages);
-
-            await message.Channel.SendMessageAsync(convo);
+                for (int attempt = 0; attempt < LlmConvoTries; attempt++)
+                {
+                    var lines = ConvoService.KeepChatLines(await _convoService.ProduceConvo(formattedMessages));
+                    if (lines.Count >= ConvoModel.MinLines)
+                    {
+                        await message.Channel.SendMessageAsync(string.Join("\n", lines), allowedMentions: AllowedMentions.None);
+                        return;
+                    }
+                }
+                await message.Channel.SendMessageAsync("Couldn't come up with a convo, try again.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "LLM convo failed");
+                try { await message.Channel.SendMessageAsync("The convo brain isn't answering right now, try again later."); }
+                catch (Exception) { }
+            }
         }
 
         private async Task Lang(DiscordSocketClient client, SocketMessage message, List<string> args)

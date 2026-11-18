@@ -118,6 +118,36 @@ namespace Tests
         }
 
         [Theory]
+        [InlineData("Here's how I would iterate through the conversation messages to extract the details of a message, formatted with appropriate explanation for each message, such as:")]
+        [InlineData("Here is the output of the chatbot in a format called \"text message \":")]
+        [InlineData("The key to a complete and accurate email address can be seen in the format `username: message`, where `username` and `message` are enclosed with angle brackets.")]
+        [InlineData("username:")]
+        [InlineData("a: too short a name")]
+        public void KeepChatLines_ThrowsAwayProse(string text)
+        {
+            Assert.Empty(ConvoService.KeepChatLines(text));
+        }
+
+        [Fact]
+        public void KeepChatLines_KeepsUserColonSentenceLinesOnly()
+        {
+            var lines = ConvoService.KeepChatLines("Here is a convo:\njohn123: yo im eating\n  bruce77: eating what  \nkris.k: watermelon juicy juicy YEAHH\nand that is the end of the chat");
+            Assert.Equal(new[] { "john123: yo im eating", "bruce77: eating what", "kris.k: watermelon juicy juicy YEAHH" }, lines);
+            Assert.Equal(ConvoService.MaxLines, ConvoService.KeepChatLines(string.Join("\n", Enumerable.Repeat("kris: hi", 20))).Count);
+        }
+
+        [Theory]
+        [InlineData(false, true, false, false, true)]
+        [InlineData(true, true, false, false, false)]
+        [InlineData(false, false, false, false, false)]
+        [InlineData(false, true, true, false, false)]
+        [InlineData(false, true, false, true, false)]
+        public void AutoScrape_StartsOnlyTheVeryFirstTime(bool stateExists, bool canSeeGuild, bool scraping, bool alreadyTried, bool expected)
+        {
+            Assert.Equal(expected, ConvoCorpusService.ShouldAutoScrape(stateExists, canSeeGuild, scraping, alreadyTried));
+        }
+
+        [Theory]
         [InlineData("yo im eating", "yo im eating")]
         [InlineData("look https://example.com/x lol", "look lol")]
         [InlineData("line one\nline two", "line one line two")]

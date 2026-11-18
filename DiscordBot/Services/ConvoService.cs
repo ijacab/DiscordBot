@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using Microsoft.VisualBasic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace DiscordBot.Services
 {
@@ -28,9 +29,25 @@ namespace DiscordBot.Services
             _localFileService = localFileService;
         }
 
+        /// <summary>How long the local model gets before `.convo` gives up on it.</summary>
+        public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+        public const int MaxLines = 10;
+        private static readonly Regex ChatLine = new Regex(@"^[\w.\-]{2,32}: \S.*$");
+
+        /// <summary>
+        /// Only the lines in the "user: text" format: a username without spaces, a colon, then words. Anything else the model writes
+        /// ("Here is the output of the chatbot...:") is thrown away. At most <see cref="MaxLines"/>.
+        /// </summary>
+        public static List<string> KeepChatLines(string text) =>
+            (text ?? "").Split('\n')
+                .Select(l => l.Trim())
+                .Where(l => ChatLine.IsMatch(l))
+                .Take(MaxLines)
+                .ToList();
+
         public async Task<string> ProduceConvo(List<string> formattedMessages)
         {
-            _cts = new CancellationTokenSource();
+            _cts = new CancellationTokenSource(Timeout);
             var llmOptions = await _localFileService.GetContent<LLMOptions>(_fileName);
 
             var history = string.Join("\n", formattedMessages);
@@ -80,13 +97,8 @@ Look at the below conversation messages as context:
 
             var finalText = sb.ToString();
 
-            // Remove any leading explanation lines that don't match "username: message"
-            var finalLines = finalText
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Where(l => l.Contains(":")) // keep only lines with a colon (username: message)
-                .ToList();
-
-            finalText = string.Join("\n", finalLines);
+            // keep only the lines in the "username: message" format
+            finalText = string.Join("\n", KeepChatLines(finalText));
 
 
             if (finalText.Length > 1000)
