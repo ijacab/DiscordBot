@@ -11,6 +11,8 @@ namespace DiscordBot.Models
         public ulong Id { get; set; }
         public string Speaker { get; set; }
         public string Text { get; set; }
+        /// <summary>How many times this message counts: a favoured channel's messages count more, in word choice and in who talks.</summary>
+        public int Weight { get; set; } = 1;
     }
 
     /// <summary>One generated line of a `.convo`.</summary>
@@ -70,6 +72,8 @@ namespace DiscordBot.Models
         private int[] _msgChannel;
         private int[] _msgFirst;
         private int[][] _speakerMsgs;
+        /// <summary>Running total of message weights, so a run of speakers starts at a message picked by weight.</summary>
+        private long[] _msgCumulativeWeight;
 
         public int MessageCount => _msgSpeaker.Length;
         public int SpeakerCount => _speakers.Length;
@@ -95,6 +99,7 @@ namespace DiscordBot.Models
             var msgSpeaker = new List<int>();
             var msgChannel = new List<int>();
             var msgFirst = new List<int>();
+            var msgWeight = new List<int>();
 
             int channelIndex = 0;
             foreach (var channel in channels)
@@ -110,19 +115,25 @@ namespace DiscordBot.Models
                         speakers.Add(message.Speaker);
                     }
 
+                    //a weighted message's entries go in that many times, which is how the chain counts frequency
+                    int weight = Math.Max(1, message.Weight);
                     int a = StartToken, b = StartToken;
                     for (int i = 0; i <= tokens.Length; i++)
                     {
                         int c = i < tokens.Length ? model.IdOf(tokens[i]) : EndToken;
-                        triSpeaker.Add(speaker);
-                        triKey.Add(Pack(a, b));
-                        triNext.Add(c);
-                        biSpeaker.Add(speaker);
-                        biKey.Add(b);
-                        biNext.Add(c);
+                        for (int w = 0; w < weight; w++)
+                        {
+                            triSpeaker.Add(speaker);
+                            triKey.Add(Pack(a, b));
+                            triNext.Add(c);
+                            biSpeaker.Add(speaker);
+                            biKey.Add(b);
+                            biNext.Add(c);
+                        }
                         a = b;
                         b = c;
                     }
+                    msgWeight.Add(weight);
 
                     msgSpeaker.Add(speaker);
                     msgChannel.Add(channelIndex);
@@ -142,7 +153,13 @@ namespace DiscordBot.Models
             model._msgFirst = msgFirst.ToArray();
             var bySpeaker = new List<int>[speakers.Count];
             for (int i = 0; i < bySpeaker.Length; i++) bySpeaker[i] = new List<int>();
-            for (int m = 0; m < model._msgSpeaker.Length; m++) bySpeaker[model._msgSpeaker[m]].Add(m);
+            model._msgCumulativeWeight = new long[msgWeight.Count];
+            long cumulative = 0;
+            for (int m = 0; m < model._msgSpeaker.Length; m++)
+            {
+                for (int w = 0; w < msgWeight[m]; w++) bySpeaker[model._msgSpeaker[m]].Add(m);
+                model._msgCumulativeWeight[m] = cumulative += msgWeight[m];
+            }
             model._speakerMsgs = bySpeaker.Select(l => l.ToArray()).ToArray();
             return model;
         }
@@ -224,7 +241,7 @@ namespace DiscordBot.Models
         {
             for (int attempt = 0; attempt < 40 && MessageCount >= count; attempt++)
             {
-                int start = random.Next(MessageCount - count + 1);
+                int start = Math.Min(WeightedMessage(random), MessageCount - count);
                 if (_msgChannel[start] != _msgChannel[start + count - 1])
                     continue;
                 var run = Enumerable.Range(start, count).Select(m => _msgSpeaker[m]).ToList();
@@ -232,6 +249,20 @@ namespace DiscordBot.Models
                     return run;
             }
             return Enumerable.Range(0, count).Select(_ => _msgSpeaker[random.Next(MessageCount)]).ToList();
+        }
+
+        /// <summary>A message picked in proportion to its weight.</summary>
+        private int WeightedMessage(Random random)
+        {
+            long total = _msgCumulativeWeight[^1];
+            long target = (long)(random.NextDouble() * total);
+            int lo = 0, hi = _msgCumulativeWeight.Length - 1;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) >> 1;
+                if (_msgCumulativeWeight[mid] <= target) lo = mid + 1; else hi = mid;
+            }
+            return lo;
         }
 
         /// <summary>A word from the line before worth replying to: three letters or more, not filler, and one the replier uses too.</summary>

@@ -26,10 +26,13 @@ namespace DiscordBot.Services
     {
         public const ulong GuildId = 187621924342333441;
         public const ulong ExcludedChannelId = 871960465775935568;
+        /// <summary>Channels `.convo` leans on: their messages count <see cref="FavouredWeight"/> times, and they're scraped first.</summary>
+        public static readonly IReadOnlySet<ulong> FavouredChannelIds = new HashSet<ulong> { 187622109856399360, 213585904059678720 };
+        public const int FavouredWeight = 3;
         public const string DataDir = "convo_data";
         public const string MessagesDir = "messages";
         public const string StateFile = "scrape_state.json";
-        /// <summary>The most messages the model learns from; with more, an even random sample is kept (memory on the Pi).</summary>
+        /// <summary>The most messages the model learns from, a favoured one counting <see cref="FavouredWeight"/>; with more, an even random sample is kept (memory on the Pi).</summary>
         public const int MaxMessages = 600_000;
         public const int MaxMessageChars = 300;
         /// <summary>Pause between pages so the scrape never crowds out the bot's own requests.</summary>
@@ -149,15 +152,20 @@ namespace DiscordBot.Services
         {
             var dir = Path.Join(dataPath, MessagesDir);
             var files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.tsv").OrderBy(f => f).ToArray() : Array.Empty<string>();
-            long total = files.Sum(f => (long)File.ReadLines(f).Count());
+            long total = files.Sum(f => (long)File.ReadLines(f).Count() * WeightOf(f));
             double keep = total <= maxMessages ? 1.0 : (double)maxMessages / total;
             return ConvoModel.Build(Channels(files, keep, random));
         }
+
+        /// <summary>A channel file's weight, from its name (the channel id).</summary>
+        public static int WeightOf(string file) =>
+            ulong.TryParse(Path.GetFileNameWithoutExtension(file), out ulong id) && FavouredChannelIds.Contains(id) ? FavouredWeight : 1;
 
         private static IEnumerable<IReadOnlyList<ConvoMessage>> Channels(string[] files, double keep, Random random)
         {
             foreach (var file in files)
             {
+                int weight = WeightOf(file);
                 var seen = new HashSet<ulong>();
                 var messages = new List<ConvoMessage>();
                 foreach (var line in File.ReadLines(file))
@@ -165,6 +173,7 @@ namespace DiscordBot.Services
                     var message = ParseLine(line);
                     if (message == null || !seen.Add(message.Id) || (keep < 1 && random.NextDouble() >= keep))
                         continue;
+                    message.Weight = weight;
                     messages.Add(message);
                 }
                 messages.Sort((x, y) => x.Id.CompareTo(y.Id));
@@ -488,7 +497,8 @@ namespace DiscordBot.Services
                     _logger.LogInformation("Convo scrape: no archived threads for #{Channel}: {Message}", parent.Name, ex.Message);
                 }
             }
-            return found.Values.ToList();
+            //the favoured channels first, so their history is in before the rest
+            return found.Values.OrderBy(c => FavouredChannelIds.Contains(c.Id) ? 0 : 1).ToList();
         }
 
         #endregion

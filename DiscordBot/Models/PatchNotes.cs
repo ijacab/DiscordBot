@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-18", ".convo now leans on the two main chat channels: their people and phrases come up about 3 times as often."),
             new PatchNote("2026-11-18", ".convo now gives everyone their own voice: each line is made only from that person's own messages, so it sounds like them."),
             new PatchNote("2026-11-18", ".convo is a bit more unhinged, and words after it (`.convo pizza`) now steer the chat without being repeated in it."),
             new PatchNote("2026-11-18", ".convo fix: no more robot essays. It now only posts \"user: words\" chats and starts reading the server's history by itself, so it works a few minutes after a restart."),

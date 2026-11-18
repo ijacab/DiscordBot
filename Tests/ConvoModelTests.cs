@@ -109,6 +109,71 @@ namespace Tests
             }
         }
 
+        private static List<ConvoMessage> ChannelOf(int count, ulong firstId, int weight, Func<int, (string Speaker, string Text)> make) =>
+            Enumerable.Range(0, count).Select(i =>
+            {
+                var (speaker, text) = make(i);
+                return new ConvoMessage { Id = firstId + (ulong)i, Speaker = speaker, Text = text, Weight = weight };
+            }).ToList();
+
+        [Fact]
+        public void FavouredChannel_PeopleTalkAboutThreeTimesAsOften()
+        {
+            var favoured = ChannelOf(300, 1, 3, i => (i % 2 == 0 ? "fav1" : "fav2", "hello there friend"));
+            var plain = ChannelOf(300, 10_000, 1, i => (i % 2 == 0 ? "plain1" : "plain2", "hello there friend"));
+            var model = ConvoModel.Build(new[] { favoured, plain });
+            int fromFavoured = 0, convos = 2000;
+            for (int seed = 0; seed < convos; seed++)
+                if (model.Generate(new Random(seed))[0].Speaker.StartsWith("fav")) fromFavoured++;
+            double share = (double)fromFavoured / convos;
+            _output.WriteLine($"favoured share {share:P1}");
+            Assert.InRange(share, 0.68, 0.82); //3 to 1 is 75%
+        }
+
+        [Fact]
+        public void FavouredChannel_WordsArePickedAboutThreeTimesAsOften()
+        {
+            //one person says "go x" in the favoured channel and "go y" in the other, equally often
+            var favoured = ChannelOf(30, 1, 3, i => ("solo", "go x"));
+            var plain = ChannelOf(30, 10_000, 1, i => ("solo", "go y"));
+            var model = ConvoModel.Build(new[] { favoured, plain });
+            int x = 0, y = 0;
+            for (int seed = 0; seed < 1000; seed++)
+            {
+                string first = model.Generate(new Random(seed), "go")[0].Text;
+                if (first.StartsWith("x")) x++;
+                else if (first.StartsWith("y")) y++;
+            }
+            double share = (double)x / (x + y);
+            _output.WriteLine($"x share {share:P1} of {x + y}");
+            Assert.InRange(share, 0.68, 0.82);
+        }
+
+        [Fact]
+        public void LoadFrom_WeightsTheFavouredChannelsAndCountsThemAgainstTheCap()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "convo_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(dir, ConvoCorpusService.MessagesDir));
+                ulong favouredId = ConvoCorpusService.FavouredChannelIds.First();
+                Assert.Equal(ConvoCorpusService.FavouredWeight, ConvoCorpusService.WeightOf($"{favouredId}.tsv"));
+                Assert.Equal(1, ConvoCorpusService.WeightOf("12345.tsv"));
+                File.WriteAllLines(Path.Combine(dir, ConvoCorpusService.MessagesDir, $"{favouredId}.tsv"),
+                    Enumerable.Range(1, 10).Select(i => ConvoCorpusService.ToLine((ulong)i, "kris", "favoured words")));
+                File.WriteAllLines(Path.Combine(dir, ConvoCorpusService.MessagesDir, "12345.tsv"),
+                    Enumerable.Range(100, 10).Select(i => ConvoCorpusService.ToLine((ulong)i, "john123", "plain words")));
+
+                //10 favoured messages count as 30, so 40 fits everything and 20 doesn't
+                Assert.Equal(20, ConvoCorpusService.LoadFrom(dir, 40, new Random(1)).MessageCount);
+                Assert.True(ConvoCorpusService.LoadFrom(dir, 20, new Random(1)).MessageCount < 20);
+            }
+            finally
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+
         [Fact]
         public void SeedWords_SteerTheFirstLineButArentShown()
         {
