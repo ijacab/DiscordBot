@@ -35,6 +35,7 @@ namespace DiscordBot.Managers
         private readonly DuckRaceManager _duckRaceManager;
         private readonly DungeonManager _dungeonManager;
         private readonly SlotMachineManager _slotMachineManager;
+        private readonly CrashManager _crashManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
         private readonly ConvoCorpusService _convoCorpus;
@@ -50,7 +51,7 @@ namespace DiscordBot.Managers
 
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
-            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot",
+            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot", "crash",
             "buy", "sell", "short", "cover", "call", "put", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
         };
 
@@ -60,7 +61,7 @@ namespace DiscordBot.Managers
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
-            TranslationService translationService, BanService banService, RaidService raidService)
+            TranslationService translationService, BanService banService, RaidService raidService, CrashManager crashManager)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -82,6 +83,7 @@ namespace DiscordBot.Managers
             _duckRaceManager = duckRaceManager;
             _dungeonManager = dungeonManager;
             _slotMachineManager = slotMachineManager;
+            _crashManager = crashManager;
             _gptService = gptService;
             _convoService = convoService;
             _convoCorpus = convoCorpus;
@@ -106,6 +108,7 @@ namespace DiscordBot.Managers
                 new Command("dungeon", GameDungeon) { Description = "Only one dungeon session can be open at a time, across all channels. Open a lobby with a buy-in from your cash, and anyone presses Join on the dashboard within 60 seconds. Then each player presses Go to crawl their own run, floor by floor, in blocks of 10 floors. At each boss door (floors 5 and 10) you choose: fight it, sneak past (half the time it works, otherwise the boss strikes first), or drink a potion and fight. Every block is about a 50% chance, so 20 floors is about 25% and 30 floors about 12.5%. After each block you're at a checkpoint: cash out to bank your haul, or enter the PvP pool. Once every run has decided, the pool fights, the winner takes the pot of the hauls and crawls on, and the losers are out. Stalled runs are cashed out after 15 minutes. Loot and potions drop automatically. Dying loses the haul and the buy-in. Everything is on the dashboard's buttons; typed commands work too. Shorthand: `.dng`", Syntax = "`.dungeon 1000` to open a lobby with a 1000 buy-in each, then use the buttons. Typed: `.dng join`, `.dng leave`, `.dng start`, `.dng go`, `.dng boss`, `.dng sneak`, `.dng potion`, `.dng fight`, `.dng cash`, or `.dng` to bring the dashboard to the bottom" },
                 new Command("dng", GameDungeon) { Hidden = true, Syntax = "`.dng 1000` to open a lobby with a 1000 buy-in each, then use the buttons. Typed: `.dng join`, `.dng leave`, `.dng start`, `.dng go`, `.dng boss`, `.dng sneak`, `.dng potion`, `.dng fight`, `.dng cash`, or `.dng` to bring the dashboard to the bottom" },
                 new Command("slots", GameSlots) { Description = "A slot machine with buttons. Pull the lever with Spin, change the bet with Bet ½, Bet x2, Max or Bet…, and cash out when you're done. Match symbols on the middle line: three 7️⃣ pay x250, and three 💎 win the jackpot pool (at least x100 your bet). 75% of every lost bet goes into the jackpot. Shorthand: `.slot`", Syntax = "`.slots` (bets 1% of your cash), `.slots 1000`, `.slots 10%` or `.slots max`" },
+                new Command("crash", GameCrash) { Description = $"🚀 A rocket climbs from 1.00x and blows up at a random point. Hit Cash out before it does and you get your bet times the multiplier; too slow and it's gone. Add a target like `2x` to cash out by itself. Tops out at {Games.CrashGame.MaxMultiplier:0}x and pays back {1 - Games.CrashGame.HouseEdge:P0} on average whatever you do.", Syntax = "`.crash 1000`, `.crash 10% 2x`, `.crash max 1.5x`" },
                 new Command("slot", GameSlots) { Hidden = true, Syntax = "`.slots 1000`" },
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },

@@ -47,6 +47,9 @@ namespace DiscordBot.Managers
                     case MoneyComponents.Slots:
                         await SlotComponent(component, action, args);
                         break;
+                    case CrashManager.ComponentGame:
+                        await CrashComponent(component, action, args);
+                        break;
                     case MoneyComponents.Stats:
                         await StatsComponent(component, action, args);
                         break;
