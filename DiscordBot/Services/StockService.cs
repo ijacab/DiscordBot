@@ -93,7 +93,7 @@ namespace DiscordBot.Services
                         foreach (var (userId, amount) in _market.Retire(stock))
                         {
                             var account = data.Accounts.FirstOrDefault(a => a.UserId == userId);
-                            if (account != null) account.NetWorth += data.PayDebtFrom(account, amount);
+                            if (account != null) DiscordBot.Models.Money.Credit(data, account, amount);
                         }
                     }
                     _market.SchemaVersion = StockMarket.CurrentSchemaVersion;
@@ -193,7 +193,7 @@ namespace DiscordBot.Services
                     throw new BadInputException($"{shares} shares of {stock.Symbol} cost ${cost:N2} but you only have ${account.NetWorth:N2}.");
 
                 stock.ApplyTrade(shares);
-                account.NetWorth -= cost;
+                DiscordBot.Models.Money.Debit(account, cost);
                 _market.RecordPurchase(account.UserId, stock.Symbol, shares, fill);
                 account.Stats.StockBuys++;
                 account.Stats.SharesBought += shares;
@@ -224,7 +224,7 @@ namespace DiscordBot.Services
                 double costOfShares = _market.GetAverageCost(account.UserId, stock.Symbol) * shares;
                 _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
-                account.NetWorth += _coinService.GetAll().PayDebtFrom(account, gross - tax); //sale money pays any debt first, into the jackpot
+                DiscordBot.Models.Money.Credit(_coinService.GetAll(), account, gross - tax); //sale money pays any debt first, into the jackpot
                 _market.AddShares(account.UserId, stock.Symbol, -shares);
                 double profit = gross - tax - costOfShares;
                 var stats = account.Stats;
@@ -269,7 +269,7 @@ namespace DiscordBot.Services
 
                 _coinService.AddToJackpot(tax);
                 stock.ApplyTrade(-shares);
-                account.NetWorth -= margin + tax;
+                DiscordBot.Models.Money.Debit(account, margin + tax);
                 _market.AddShort(account.UserId, stock.Symbol, shares, fill, margin);
                 account.Stats.ShortsOpened++;
                 account.Stats.SellTaxPaid += tax;
@@ -297,7 +297,7 @@ namespace DiscordBot.Services
                 double returned = Math.Max(0, Math.Round(released + profit, 2));
 
                 stock.ApplyTrade(shares);
-                account.NetWorth += returned;
+                DiscordBot.Models.Money.Credit(_coinService.GetAll(), account, returned);
                 account.Stats.ShortsCovered++;
                 account.Stats.ShortProfit += returned - released;
                 Save();
@@ -385,7 +385,7 @@ namespace DiscordBot.Services
                     ExpiresUtcTicks = (DateTime.UtcNow + duration).Ticks,
                 };
                 _market.Bets.Add(bet);
-                account.NetWorth -= paid;
+                DiscordBot.Models.Money.Debit(account, paid);
                 _coinService.AddToJackpot(bet.Fee);
                 account.Stats.OptionContractsBought++;
                 account.Stats.OptionPremiumsPaid += paid;
@@ -449,7 +449,7 @@ namespace DiscordBot.Services
             var account = data.Accounts.FirstOrDefault(a => a.UserId == bet.UserId);
             if (account != null && payout > 0)
             {
-                account.NetWorth += data.PayDebtFrom(account, payout); //winnings pay any debt first
+                DiscordBot.Models.Money.Credit(data, account, payout); //winnings pay any debt first
                 account.Stats.OptionPayouts += payout;
                 if (payout > bet.Paid) account.Stats.OptionsExpiredInTheMoney++;
             }
@@ -494,7 +494,7 @@ namespace DiscordBot.Services
                 double paid = Math.Round(payout - fee, 2);
                 _market.Options.Remove(option);
                 _coinService.AddToJackpot(fee);
-                account.NetWorth += paid;
+                DiscordBot.Models.Money.Credit(_coinService.GetAll(), account, paid);
                 account.Stats.OptionPayouts += paid;
                 string kind = option.IsCall ? "call" : "put";
                 _market.AddSettledResult(option.UserId,
@@ -531,7 +531,7 @@ namespace DiscordBot.Services
                 var account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == option.UserId);
                 if (account != null && payout > 0)
                 {
-                    account.NetWorth += payout;
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), account, payout);
                     account.Stats.OptionPayouts += payout;
                     account.Stats.OptionsExpiredInTheMoney++;
                     _coinService.Update(account.UserId, account.NetWorth, account.Name).GetAwaiter().GetResult();

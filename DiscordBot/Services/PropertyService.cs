@@ -37,7 +37,7 @@ namespace DiscordBot.Services
             if (cost > account.NetWorth)
                 throw new BadInputException($"A {PropertyCatalog.DisplayName(kind).ToLower()} costs ${cost:N2} with stamp duty and conveyancing, but you only have ${account.NetWorth:N2}.");
 
-            account.NetWorth -= cost;
+            DiscordBot.Models.Money.Debit(account, cost);
             var holding = new PropertyHolding { Kind = kind, PurchaseCost = cost, PurchasedUtcTicks = DateTime.UtcNow.Ticks };
             account.Properties.Add(holding);
             account.Stats.PropertiesBought++;
@@ -65,7 +65,7 @@ namespace DiscordBot.Services
             account.Properties.Remove(holding);
             account.Stats.PropertiesSold++;
             account.Stats.PropertySaleProceeds += proceeds;
-            account.NetWorth += _coinService.GetAll().PayDebtFrom(account, proceeds); //sale money pays any debt first, into the jackpot
+            DiscordBot.Models.Money.Credit(_coinService.GetAll(), account, proceeds); //sale money pays any debt first, into the jackpot
             await _coinService.Update();
             return (holding, proceeds);
         }
@@ -168,7 +168,7 @@ namespace DiscordBot.Services
                     double net = PropertyCatalog.NetRentPerHour(property.Kind, data.PropertyIndex);
                     var squat = squats.FirstOrDefault(s => SquattedPropertyId(account, s) == property.Id);
                     var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
-                    (squatter ?? account).NetWorth += net;
+                    DiscordBot.Models.Money.Credit(data, squatter ?? account, net);
                     (squatter ?? account).Stats.RentEarned += net;
                 }
             }
@@ -199,7 +199,7 @@ namespace DiscordBot.Services
 
                 double amount = apartments.Sum(p => PropertyCatalog.Price(p.Kind, data.PropertyIndex));
                 account.Properties.RemoveAll(p => p.Kind == PropertyKind.Apartment);
-                account.NetWorth += data.PayDebtFrom(account, amount);
+                DiscordBot.Models.Money.Credit(data, account, amount);
                 paid.Add($"{account.Name} ${Common.Helpers.FormatHelper.GetCommaNumber(amount)}");
             }
             return paid;

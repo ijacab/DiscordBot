@@ -412,7 +412,7 @@ namespace DiscordBot.Services
             if (share < 1) return 0;
             foreach (var recipient in recipients)
             {
-                user.NetWorth -= share;
+                user.NetWorth -= share; //the user is holding the money being shared out
                 recipient.NetWorth += share;
             }
             return share;
@@ -675,7 +675,7 @@ namespace DiscordBot.Services
                 case PowerUpIds.Stimulus:
                 {
                     double amount = Math.Floor(Math.Max(PowerUpCatalog.StimulusMin, _totalWorth(user) * PowerUpCatalog.StimulusPercent));
-                    user.NetWorth += amount;
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, amount);
                     return $"💵 **Stimulus!** You received {Money(amount)}.";
                 }
                 case PowerUpIds.JackpotDip:
@@ -683,7 +683,7 @@ namespace DiscordBot.Services
                     double amount = _coinService.TakeFromJackpot(PowerUpCatalog.JackpotDipPercent);
                     if (amount <= 0)
                         throw new BadInputException("The jackpot is empty. Keep it for later.");
-                    user.NetWorth += amount;
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, amount);
                     return $"💰 **Jackpot Dip!** You scooped {Money(amount)} out of the jackpot.";
                 }
                 case PowerUpIds.FreeCardPull:
@@ -698,7 +698,7 @@ namespace DiscordBot.Services
                     if (!recent)
                         throw new BadInputException("You haven't lost a bet in the last hour, so there's nothing to undo. Keep it for later.");
                     double refund = Math.Floor(user.LastLossAmount);
-                    user.NetWorth += refund;
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, refund);
                     user.LastLossAmount = 0;
                     return $"⏪ **Time Machine!** You went back and undid your last loss: {Money(refund)} returned.";
                 }
@@ -728,13 +728,13 @@ namespace DiscordBot.Services
                         double jackpot = _coinService.TakeFromJackpot(1);
                         if (jackpot > 0)
                         {
-                            user.NetWorth += jackpot;
+                            DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, jackpot);
                             return $"🎫 **Scratchie: JACKPOT!!!** You scratched off the whole jackpot: {Money(jackpot)}!";
                         }
                         pick = last - 1; //an empty jackpot pays the next best prize
                     }
                     double prize = Math.Floor(Math.Max(prizes[pick].Flat, _totalWorth(user) * prizes[pick].WorthShare));
-                    user.NetWorth += prize;
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, prize);
                     return $"🎫 **Scratchie!** You scratched {Money(prize)}.";
                 }
                 default:

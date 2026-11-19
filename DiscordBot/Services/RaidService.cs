@@ -145,7 +145,7 @@ namespace DiscordBot.Services
                 attacker.LastRaidOnUtcTicks[target.UserId] = now.Ticks;
                 if (check.IsRevenge)
                     attacker.RevengeTokens.RemoveAll(t => t.UserId == target.UserId);
-                attacker.NetWorth -= stake;
+                DiscordBot.Models.Money.Debit(attacker, stake);
 
                 var result = new RaidResult { Attacker = attacker, Target = target, Check = check, Stake = stake };
                 result.Needed = NeededRoll(check.Chance);
@@ -196,13 +196,13 @@ namespace DiscordBot.Services
             result.Loot = loot = taken;
             result.LootToDebt = lootToDebt;
             result.BountySet = Math.Round(loot * RaidRules.BountyShare, 2);
-            attacker.NetWorth += result.Stake + loot - result.BountySet;
+            DiscordBot.Models.Money.Credit(_coinService.GetAll(), attacker, result.Stake + loot - result.BountySet);
             attacker.Bounty = Math.Round(attacker.Bounty + result.BountySet, 2);
 
             //beating someone with a bounty on them collects it
             result.BountyCollected = target.Bounty;
             target.Bounty = 0;
-            attacker.NetWorth += result.BountyCollected;
+            DiscordBot.Models.Money.Credit(_coinService.GetAll(), attacker, result.BountyCollected);
 
             result.ProtectedFor = target.BattlePerson?.Ability == CardAbility.Heal ? RaidRules.HealProtection : RaidRules.Protection;
             target.RaidProtectedUntilUtcTicks = (now + result.ProtectedFor).Ticks;
@@ -222,16 +222,16 @@ namespace DiscordBot.Services
         private void Lose(RaidResult result)
         {
             var (attacker, target) = (result.Attacker, result.Target);
-            target.NetWorth += result.Stake;
+            DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.Stake);
             if (target.RaidStance == RaidStance.Counter)
             {
                 (result.CounterHit, result.CounterToDebt) = Take(attacker, Math.Floor(result.Stake * RaidRules.CounterHitMultiple));
-                target.NetWorth += result.CounterHit;
+                DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.CounterHit);
             }
 
             result.BountyCollected = attacker.Bounty;
             attacker.Bounty = 0;
-            target.NetWorth += result.BountyCollected;
+            DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.BountyCollected);
 
             attacker.Stats.RaidsLost++;
             attacker.Stats.RaidMoneyLost += result.Stake + result.CounterHit;
@@ -261,7 +261,7 @@ namespace DiscordBot.Services
                 double cost = GuardsCost(account);
                 if (account.NetWorth < cost)
                     throw new BadInputException($"Guards cost {Money(cost)} (2% of your worth) and you have {Money(Math.Max(0, account.NetWorth))} in cash.");
-                account.NetWorth -= cost;
+                DiscordBot.Models.Money.Debit(account, cost);
                 account.GuardsUntilUtcTicks = from + RaidRules.GuardsDuration.Ticks;
                 account.Stats.GuardsSpent += cost;
                 _coinService.AddToJackpot(cost);
@@ -282,7 +282,7 @@ namespace DiscordBot.Services
                 if (account.NetWorth < next)
                     throw new BadInputException($"Training {card.Name} to level {card.Level + 1} costs {Money(next)} and you have {Money(Math.Max(0, account.NetWorth))} in cash.");
                 var (levels, cost) = CardLevels.Train(card, account.NetWorth, maxLevels);
-                account.NetWorth -= cost;
+                DiscordBot.Models.Money.Debit(account, cost);
                 account.Stats.CardTrainingSpent += cost;
                 _coinService.AddToJackpot(cost);
                 return (levels, cost);

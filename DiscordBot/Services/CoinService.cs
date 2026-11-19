@@ -235,7 +235,7 @@ namespace DiscordBot.Services
                     continue; //an Audit power-up stops their interest
                 double multiplier = account.IsActive(PowerUpIds.CompoundInterest, DateTime.UtcNow) ? PowerUpCatalog.CompoundInterestMultiplier : 1;
                 double interest = CalculateAddedInterest(account) * multiplier;
-                account.NetWorth += interest; //add interest per hour if they are granted the bonus
+                Money.Credit(_coinAccounts, account, interest); //interest per hour for those who bet big today
                 account.Stats.InterestEarned += interest;
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);

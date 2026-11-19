@@ -134,7 +134,7 @@ namespace DiscordBot.Managers
                 return;
 
             double won = _coinService.TakeJackpot();
-            gambler.NetWorth += won;
+            Money.Credit(_coinService.GetAll(), gambler, won);
             _pendingJackpotWins[gambler.UserId] = won;
             gambler.Stats.JackpotsWon++;
             gambler.Stats.JackpotMoneyWon += won;
@@ -256,7 +256,7 @@ namespace DiscordBot.Managers
             else
                 coinAccount.NetWinningsToday += netWinnings;
 
-            coinAccount.NetWorth += totalWinnings;
+            Money.Credit(_coinService.GetAll(), coinAccount, totalWinnings);
 
             if(coinAccount.NetWinningsToday < 0 
                 || Math.Floor(coinAccount.NetWorth) == 0)
@@ -324,8 +324,7 @@ namespace DiscordBot.Managers
             if (amount <= 0)
                 return result;
 
-            leader.NetWorth -= amount;
-            roller.NetWorth += amount;
+            Money.Seize(leader, roller, amount, debtRoom: 0); //cash only
             roller.Stats.DailyStealsWon++;
             roller.Stats.MoneyStolenByDailyRoll += amount;
             leader.Stats.TimesRobbedByDailyRoll++;

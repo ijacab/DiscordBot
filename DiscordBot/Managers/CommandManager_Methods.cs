@@ -1233,7 +1233,7 @@ namespace DiscordBot.Managers
             if (isFreePull)
                 coinAccount.LastFreePullDate = today;
             else
-                coinAccount.NetWorth -= BattlePerson.PullCost;
+                Money.Debit(coinAccount, BattlePerson.PullCost);
             await _coinService.Update();
 
             _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t => DeleteUnsavedCard(prefix));
