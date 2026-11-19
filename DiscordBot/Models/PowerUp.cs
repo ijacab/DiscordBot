@@ -192,7 +192,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.SafetyNet, Name = "Safety Net", Weight = Common, Kind = PowerUpKind.Charges, Charges = SafetyNetCharges, Duration = HoldTime,
                 Description = "Your next losing bet refunds 75% of what you lost." },
             new PowerUpDefinition { Id = PowerUpIds.JackpotFever, Name = "Jackpot Fever", Weight = Uncommon, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(6),
-                Description = "For 6 hours a jackpot-qualifying bet has a 30% chance (up from 3%) to win the jackpot (still 10 rolls an hour)." },
+                Description = "For 6 hours a jackpot-qualifying bet has a 30% chance (up from 3%) to win the jackpot (still 3 rolls an hour)." },
             new PowerUpDefinition { Id = PowerUpIds.TaxHaven, Name = "Tax Haven", Weight = Common, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(12),
                 Description = "For 12 hours you pay no sell tax on stocks." },
             new PowerUpDefinition { Id = PowerUpIds.InsiderTrader, Name = "Insider Trader", Weight = Common, Kind = PowerUpKind.Timed, Duration = TimeSpan.FromHours(12),

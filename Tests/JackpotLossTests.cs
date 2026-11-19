@@ -12,7 +12,7 @@ using static DiscordBot.Models.CoinAccounts;
 
 namespace Tests
 {
-    /// <summary>75% of lost bets go into the jackpot, and each player gets 10 jackpot rolls an hour.</summary>
+    /// <summary>75% of lost bets go into the jackpot, and each player gets 3 jackpot rolls an hour.</summary>
     public class JackpotLossTests
     {
         private static (CoinService Coins, BetManager Bets, CoinAccount Account) Setup(double cash = 10_000, double pool = 0)
@@ -86,16 +86,16 @@ namespace Tests
         }
 
         [Fact]
-        public void JackpotRolls_AreTenAnHourAndResetEachHour()
+        public void JackpotRolls_AreThreeAnHourAndResetEachHour()
         {
             var account = new CoinAccount { UserId = 1 };
             var noon = new DateTime(2026, 11, 15, 12, 5, 0, DateTimeKind.Utc);
 
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < 3; i++)
                 Assert.True(BetManager.TryUseJackpotRoll(account, noon.AddMinutes(i * 5)), $"roll {i + 1}");
             Assert.False(BetManager.TryUseJackpotRoll(account, noon.AddMinutes(50)));
             Assert.True(BetManager.TryUseJackpotRoll(account, noon.AddHours(1)));
-            Assert.Equal(10, BetManager.JackpotRollsPerHour);
+            Assert.Equal(3, BetManager.JackpotRollsPerHour);
         }
 
         [Theory]

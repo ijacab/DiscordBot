@@ -24,7 +24,7 @@ namespace DiscordBot.Managers
         /// <summary>Chance that a qualifying bet (see <see cref="QualifiesForJackpot"/>) wins the jackpot pool, per roll.</summary>
         public const double JackpotWinChance = 0.03;
         /// <summary>A player gets this many jackpot rolls in each UTC hour.</summary>
-        public const int JackpotRollsPerHour = 10;
+        public const int JackpotRollsPerHour = 3;
         /// <summary>A bet up to this size qualifies only if it is all the player's cash; a bigger one needs <see cref="JackpotBigBetShare"/> of it.</summary>
         public const double JackpotSmallBetLimit = 10_000;
         public const double JackpotBigBetShare = 0.5;
