@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-19", "Words after .convo now set the topic: the chat starts with it and keeps coming back to it, e.g. `.convo pizza`."),
             new PatchNote("2026-11-18", ".convo is even more random now."),
             new PatchNote("2026-11-18", ".convo is wilder: more scrambling, and it no longer just repeats things people actually said word for word."),
             new PatchNote("2026-11-18", ".convo now leans on the two main chat channels: about 95% of its people and phrases come from them."),

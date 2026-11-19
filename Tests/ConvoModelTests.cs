@@ -151,9 +151,10 @@ namespace Tests
             int x = 0, y = 0;
             for (int seed = 0; seed < 2000; seed++)
             {
-                string first = model.Generate(new Random(seed), "go")[0].Text;
-                if (first.StartsWith("x")) x++;
-                else if (first.StartsWith("y")) y++;
+                //"go" is the topic, so the first line is "go" and then the word picked after it
+                var words = ConvoModel.Tokenize(model.Generate(new Random(seed), "go")[0].Text);
+                if (words.Contains("x")) x++;
+                else if (words.Contains("y")) y++;
             }
             double share = (double)x / (x + y);
             _output.WriteLine($"x share {share:P1} of {x + y}");
@@ -210,24 +211,51 @@ namespace Tests
             Assert.False(model.IsCopy("eating what"));
         }
 
+        private static double TopicShare(ConvoModel model, string seed, string word, Action<List<ConvoLine>> check = null)
+        {
+            int lines = 0, about = 0;
+            for (int i = 0; i < 300; i++)
+            {
+                var convo = model.Generate(new Random(i), seed);
+                check?.Invoke(convo);
+                lines += convo.Count;
+                about += convo.Count(l => l.Text.Contains(word, StringComparison.OrdinalIgnoreCase));
+            }
+            return (double)about / lines;
+        }
+
         [Fact]
-        public void SeedWords_SteerTheFirstLineButArentShown()
+        public void SeedWords_AreTheTopicOfTheWholeConvo()
         {
             var model = Model();
-            int carriedOn = 0;
-            for (int seed = 0; seed < 50; seed++)
+            double without = TopicShare(model, null, "pizza");
+            //the first line always brings the topic in, and most of the rest mention it too
+            double with = TopicShare(model, "pizza", "pizza", convo => Assert.Contains("pizza", convo[0].Text));
+            _output.WriteLine($"lines mentioning pizza: {without:P0} without a topic, {with:P0} with");
+            Assert.True(with > 0.6, $"{with:P0}");
+            Assert.True(with > without * 2);
+        }
+
+        [Fact]
+        public void SeedWords_SkipFillerAndIgnoreWordsNobodyUsed()
+        {
+            var model = Model();
+            //"the" is filler, so "the cake" is about cake
+            Assert.True(TopicShare(model, "the cake", "cake") > 0.6);
+            //a word nobody ever said is ignored and never shown, and the convo is still made
+            TopicShare(model, "zorblax", "zorblax", convo =>
             {
-                var first = model.Generate(new Random(seed), "pineapple on")[0].Text;
-                Assert.False(first.StartsWith("pineapple on"));
-                Assert.False(string.IsNullOrWhiteSpace(first));
-                //"pineapple on" is only ever followed by "pizza", so the line usually carries on from it
-                if (first.StartsWith("pizza")) carriedOn++;
-                //a word nobody ever said is left out too, and the line still has words
-                var odd = model.Generate(new Random(seed), "zorblax")[0].Text;
-                Assert.DoesNotContain("zorblax", odd);
-                Assert.False(string.IsNullOrWhiteSpace(odd));
-            }
-            Assert.True(carriedOn > 25, $"carried on {carriedOn}/50");
+                Assert.InRange(convo.Count, ConvoModel.MinLines, ConvoModel.MaxLines);
+                Assert.All(convo, l => Assert.DoesNotContain("zorblax", l.Text));
+            });
+        }
+
+        [Fact]
+        public void TopicConvos_StillFollowTheFormatAndEachSpeakersOwnWords()
+        {
+            var model = Model();
+            TopicShare(model, "league", "league", convo =>
+                Assert.All(ConvoModel.Format(convo).Split('\n'), line => Assert.Matches(LineFormat, line)));
         }
 
         [Fact]

@@ -39,6 +39,12 @@ namespace DiscordBot.Models
         public const double ReplyHookChance = 0.35;
         /// <summary>How often a line starts with a word its speaker really starts messages with.</summary>
         public const double OwnStartChance = 0.5;
+        /// <summary>With words after `.convo`, how often a line (after the first, which always does) is built around one of them.</summary>
+        public const double TopicLineChance = 0.6;
+        /// <summary>In a line that hasn't mentioned the topic yet, how often a step takes a topic word when the speaker has one to follow.</summary>
+        public const double TopicPull = 0.5;
+        /// <summary>How many places everyone's chat leads into a topic word are kept, for speakers who never used it.</summary>
+        private const int SharedLeadIns = 64;
         public const int MinLines = 3;
         public const int MaxLines = 10;
         public const int MaxWords = 40;
@@ -210,8 +216,10 @@ namespace DiscordBot.Models
         }
 
         /// <summary>
-        /// A conversation of <see cref="MinLines"/> to <see cref="MaxLines"/> lines. With a <paramref name="seed"/> the first line
-        /// carries on from it, as if it had been said first, but the seed itself isn't shown. Null when the model has no messages.
+        /// A conversation of <see cref="MinLines"/> to <see cref="MaxLines"/> lines. A <paramref name="seed"/> (the words after `.convo`)
+        /// is the topic: the first line and about <see cref="TopicLineChance"/> of the rest are built around one of its words, led in
+        /// the way the speaker (or, failing that, anyone) really led into it, and every line leans towards the topic words
+        /// (<see cref="TopicPull"/>). Words nobody ever used are ignored. Null when the model has no messages.
         /// </summary>
         public List<ConvoLine> Generate(Random random, string seed = null)
         {
@@ -222,7 +230,9 @@ namespace DiscordBot.Models
             var speakers = PickSpeakers(random, count);
             var lines = new List<ConvoLine>();
             int total = 0;
-            string[] seedWords = Tokenize(seed);
+            var topic = TopicOf(Tokenize(seed));
+            //how anyone led into the topic is only looked up if a speaker never used it themselves (a scan of every word said)
+            var sharedLeadIns = topic == null ? null : new Lazy<List<(int Before, int Word)>>(() => SharedLeadInsTo(topic, random));
 
             for (int i = 0; i < speakers.Count; i++)
             {
@@ -230,12 +240,8 @@ namespace DiscordBot.Models
                 for (int attempt = 0; attempt < 8 && string.IsNullOrEmpty(text); attempt++)
                 {
                     var prefix = new List<string>();
-                    int hidden = 0;
-                    if (i == 0 && seedWords.Length > 0 && attempt < 4)
-                    {
-                        prefix.AddRange(seedWords);
-                        hidden = seedWords.Length;
-                    }
+                    if (topic != null && attempt < 4 && (i == 0 || random.NextDouble() < TopicLineChance))
+                        prefix.AddRange(LeadInto(topic, speakers[i], sharedLeadIns, random));
                     else if (i > 0 && attempt < 4 && random.NextDouble() < ReplyHookChance && PickHook(random, lines[i - 1].Text, speakers[i]) is string hook)
                         prefix.Add(hook);
                     else if (attempt < 4 && random.NextDouble() < OwnStartChance)
@@ -245,7 +251,7 @@ namespace DiscordBot.Models
                         if (own.Length == 0) own = _speakerMsgs[Group(speakers[i], 1 - pool)];
                         prefix.Add(_words[_msgFirst[own[random.Next(own.Length)]]]);
                     }
-                    text = Line(random, speakers[i], prefix, hidden);
+                    text = Line(random, speakers[i], prefix, topic);
                     //a word-for-word copy of something someone really said is too accurate: try again (and keep it if nothing else comes)
                     if (attempt < 6 && IsCopy(text))
                         text = null;
@@ -261,6 +267,51 @@ namespace DiscordBot.Models
                 lines.Add(line);
             }
             return lines;
+        }
+
+        /// <summary>The ids of the seed words the server has used, leaving out filler when there's anything else; null when none.</summary>
+        private int[] TopicOf(string[] seedWords)
+        {
+            var known = seedWords.Select(w => (Word: w, Id: Find(w.Trim('.', ',', '!', '?', '"', '\'')) ?? Find(w))).Where(x => x.Id != null).ToList();
+            var meaningful = known.Where(x => !StopWords.Contains(x.Word)).ToList();
+            var ids = (meaningful.Count > 0 ? meaningful : known).Select(x => x.Id.Value).Distinct().ToArray();
+            return ids.Length > 0 ? ids : null;
+        }
+
+        /// <summary>Places anyone in the server led into a topic word (the word before it, and the word), sampled once per convo.</summary>
+        private List<(int Before, int Word)> SharedLeadInsTo(int[] topic, Random random) =>
+            _bi.SampleLeadingTo(0, topic, SharedLeadIns, random);
+
+        /// <summary>
+        /// The start of a line about the topic: up to two words the speaker really said before a topic word, then the word, from the
+        /// pool picked for this line. If they never used any topic word, how someone else led into one; failing that, the word alone.
+        /// </summary>
+        private List<string> LeadInto(int[] topic, int speaker, Lazy<List<(int Before, int Word)>> sharedLeadIns, Random random)
+        {
+            int pool = PickPool(random);
+            foreach (int group in new[] { Group(speaker, pool), Group(speaker, 1 - pool) })
+            {
+                var own = _speakerTri.SampleLeadingTo(group, topic, 1, random);
+                if (own.Count > 0)
+                {
+                    var (key, word) = own[0];
+                    return new[] { (int)(key >> 32), (int)key, word }.Where(t => t != StartToken).Select(t => _words[t]).ToList();
+                }
+            }
+            var shared = sharedLeadIns.Value;
+            if (shared.Count > 0)
+            {
+                var (before, word) = shared[random.Next(shared.Count)];
+                return new[] { before, word }.Where(t => t != StartToken).Select(t => _words[t]).ToList();
+            }
+            return new List<string> { _words[topic[random.Next(topic.Length)]] };
+        }
+
+        /// <summary>The speaker's next word, only if one of <paramref name="wanted"/> can follow, from the pool picked for this step first.</summary>
+        private bool TryPickOwnFrom<TKey>(Chain<TKey> chain, int speaker, TKey key, int[] wanted, Random random, out int next) where TKey : struct, IComparable<TKey>
+        {
+            int pool = PickPool(random);
+            return chain.TryPickFrom(Group(speaker, pool), key, wanted, random, out next) || chain.TryPickFrom(Group(speaker, 1 - pool), key, wanted, random, out next);
         }
 
         /// <summary>Whether a line is a real message repeated word for word (short ones don't count).</summary>
@@ -317,11 +368,12 @@ namespace DiscordBot.Models
 
         /// <summary>
         /// One message by <paramref name="speaker"/>: the prefix, then words from their own chain until it ends or gets too long.
-        /// Everyone's chain is only used when they have no word to follow the last one. The first <paramref name="hidden"/> words
-        /// of the prefix steer the chain but are left out of the text (a `.convo` seed).
+        /// Everyone's chain is only used when they have no word to follow the last one. With a <paramref name="topic"/>, until the
+        /// line mentions it, each step takes a topic word <see cref="TopicPull"/> of the time when the speaker has one to follow.
         /// </summary>
-        private string Line(Random random, int speaker, IList<string> prefix, int hidden = 0)
+        private string Line(Random random, int speaker, IList<string> prefix, int[] topic = null)
         {
+            bool mentioned = topic == null || prefix.Any(w => Find(w) is int t && Array.IndexOf(topic, t) >= 0);
             var words = new List<string>(prefix);
             int a = StartToken, b = StartToken;
             foreach (var word in prefix)
@@ -343,8 +395,13 @@ namespace DiscordBot.Models
             while (words.Count < MaxWords)
             {
                 int next = EndToken;
+                bool found = false;
+                if (!mentioned && random.NextDouble() < TopicPull)
+                    found = TryPickOwnFrom(_speakerTri, speaker, Pack(a, b), topic, random, out next)
+                        || TryPickOwnFrom(_speakerBi, speaker, b, topic, random, out next);
                 bool chaos = b != StartToken && random.NextDouble() < Chaos;
-                bool found = !chaos && TryPickOwn(_speakerTri, speaker, Pack(a, b), random, out next);
+                if (!found)
+                    found = !chaos && TryPickOwn(_speakerTri, speaker, Pack(a, b), random, out next);
                 if (!found && !(chaos && rare))
                     found = TryPickOwn(_speakerBi, speaker, b, random, out next);
                 if (!found && !_bi.TryPick(0, b, random, out next))
@@ -356,10 +413,11 @@ namespace DiscordBot.Models
                     break;
                 words.Add(word);
                 length += word.Length + 1;
+                mentioned |= topic != null && Array.IndexOf(topic, next) >= 0;
                 a = b;
                 b = next;
             }
-            return string.Join(" ", words.Skip(hidden)).Trim();
+            return string.Join(" ", words).Trim();
         }
 
         /// <summary>
@@ -413,6 +471,47 @@ namespace DiscordBot.Models
                 }
                 next = _next[lo + random.Next(hi - lo)];
                 return true;
+            }
+
+            /// <summary>A next word for the context that is one of <paramref name="wanted"/>, picked by how often each was said.</summary>
+            public bool TryPickFrom(int group, TKey key, int[] wanted, Random random, out int next)
+            {
+                next = EndToken;
+                if (!Range(group, key, out int lo, out int hi))
+                    return false;
+                int seen = 0;
+                for (int i = lo; i < hi; i++)
+                {
+                    if (IsWanted(wanted, _next[i]) && random.Next(++seen) == 0)
+                        next = _next[i];
+                }
+                return seen > 0;
+            }
+
+            /// <summary>Up to <paramref name="max"/> random (context, word) entries in a group whose word is one of <paramref name="wanted"/>.</summary>
+            public List<(TKey Key, int Word)> SampleLeadingTo(int group, int[] wanted, int max, Random random)
+            {
+                var sample = new List<(TKey, int)>();
+                int seen = 0;
+                for (int i = _start[group]; i < _start[group + 1]; i++)
+                {
+                    if (!IsWanted(wanted, _next[i]))
+                        continue;
+                    seen++;
+                    if (sample.Count < max)
+                        sample.Add((_keys[i], _next[i]));
+                    else if (random.Next(seen) is int slot && slot < max)
+                        sample[slot] = (_keys[i], _next[i]);
+                }
+                return sample;
+            }
+
+            /// <summary>A topic is a word or three, so a plain loop beats a hash lookup in these scans.</summary>
+            private static bool IsWanted(int[] wanted, int word)
+            {
+                for (int i = 0; i < wanted.Length; i++)
+                    if (wanted[i] == word) return true;
+                return false;
             }
 
             private bool Range(int group, TKey key, out int lo, out int hi)
