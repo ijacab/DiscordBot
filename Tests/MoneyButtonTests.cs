@@ -144,6 +144,7 @@ namespace Tests
             var blackjack = new BlackjackManager(new DiscordSocketClient(), bets, coins);
             const ulong id = 920_301;
             var account = new CoinAccount { UserId = id, Name = "again", NetWorth = 10_000 };
+            coins.GetAll().Accounts.RemoveAll(a => a.UserId == id); //a save left by an earlier run would be found first
             coins.GetAll().Accounts.Add(account);
 
             var channel = new Mock<IMessageChannel>();
