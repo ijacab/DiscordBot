@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-19", ".property now shows today's crash risk: the more of everyone's wealth in stocks and houses, the likelier a crash."),
             new PatchNote("2026-11-19", "Jackpot: 3 rolls an hour each, down from 10."),
             new PatchNote("2026-11-19", "Words after .convo now set the topic: the chat starts with it and keeps coming back to it, e.g. `.convo pizza`."),
             new PatchNote("2026-11-18", ".convo is even more random now."),

@@ -93,6 +93,33 @@ namespace DiscordBot.Models
             DailyChance * (1 + (MaxChanceMultiple - 1) * Math.Clamp(exposure / FullExposureShare, 0, 1));
 
         /// <summary>
+        /// One line for `.property` on how risky the market is right now: the crash under way, or today's chance of one starting,
+        /// how that compares with normal, and the share of everyone's wealth in stocks and houses that sets it (<see cref="ChanceFor"/>).
+        /// </summary>
+        public static string RiskLine(CoinAccounts data, double exposure, long today)
+        {
+            if (data.MarketPhase != CrisisPhase.None)
+            {
+                string phase = data.MarketPhase == CrisisPhase.Decline ? "prices are falling"
+                    : data.MarketPhase == CrisisPhase.Bottom ? "prices are bouncing around the bottom"
+                    : "prices are recovering";
+                int days = Math.Max(1, data.MarketPhaseDaysLeft);
+                return $"⚠️ **Market crash under way**: {phase}, about {days} more day{(days == 1 ? "" : "s")} of this.";
+            }
+
+            double chance = ChanceFor(exposure);
+            double multiple = chance / DailyChance;
+            string level = multiple < 2 ? "Low" : multiple < 3.5 ? "Rising" : multiple < MaxChanceMultiple - 0.01 ? "High" : "Maximum";
+            long wait = data.NextCrisisAllowedDay - today;
+            string cooldown = wait > 0 ? $" (none can start for {wait} more day{(wait == 1 ? "" : "s")})" : "";
+            //percentages written out by hand: the culture's P format can put a space before the % sign
+            string Pct(double x, string format) => (x * 100).ToString(format, System.Globalization.CultureInfo.InvariantCulture) + "%";
+            return $"📉 **Crash risk: {level}**: {Pct(chance, "0.0")} chance a day, {multiple.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}x normal{cooldown}. " +
+                $"{Pct(exposure, "0")} of everyone's wealth is in stocks and houses, and the more there is, the likelier a crash " +
+                $"(up to {MaxChanceMultiple:0}x at {Pct(FullExposureShare, "0")}).";
+        }
+
+        /// <summary>
         /// Total fall of an ordinary stock over a decline: today's tier fall in the mildest crash (severity 0), up to 70% to 90%
         /// by tier (99% for crypto) in the worst (severity 1).
         /// </summary>

@@ -537,7 +537,9 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             double index = data.PropertyIndex;
 
-            string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices move about 2% a day (3% at most), and the market runs in booms and busts of 4 to 8 days.\n\n";
+            string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices drift about 2% a day in booms and busts of 4 to 8 days, " +
+                "with a random move on top each day that can be 10% to 30% or more on a shock day.\n" +
+                MarketCycle.RiskLine(data, _stockService.RiskyAssetShare(), PropertyMarket.DayNumber(DateTime.UtcNow)) + "\n\n";
             var house = PropertyKind.House;
             output += $"🏠 **House**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(house, index))} " +
                 $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(house, index))} to buy with stamp duty), " +

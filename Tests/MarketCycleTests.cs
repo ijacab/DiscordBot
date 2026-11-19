@@ -252,6 +252,39 @@ namespace Tests
         }
 
         [Fact]
+        public void RiskLine_ShowsTheCrashChanceAndWhatDrivesIt()
+        {
+            var calm = new CoinAccounts();
+            string low = MarketCycle.RiskLine(calm, 0, Day);
+            Assert.Contains("Crash risk: Low", low);
+            Assert.Contains("5.0% chance a day, 1.0x normal", low);
+            Assert.Contains("0% of everyone's wealth", low);
+
+            string half = MarketCycle.RiskLine(calm, 0.3, Day);
+            Assert.Contains("Crash risk: Rising", half);
+            Assert.Contains("3.0x normal", half);
+
+            string full = MarketCycle.RiskLine(calm, 0.9, Day);
+            Assert.Contains("Crash risk: Maximum", full);
+            Assert.Contains("25.0% chance a day, 5.0x normal", full);
+            Assert.Contains("90% of everyone's wealth", full);
+            Assert.Contains("up to 5x at 60%", full);
+
+            calm.NextCrisisAllowedDay = Day + 2;
+            Assert.Contains("none can start for 2 more days", MarketCycle.RiskLine(calm, 0.3, Day));
+        }
+
+        [Fact]
+        public void RiskLine_DuringACrashSaysWhereItIs()
+        {
+            var crash = new CoinAccounts { MarketPhase = CrisisPhase.Decline, MarketPhaseDaysLeft = 1 };
+            string line = MarketCycle.RiskLine(crash, 0.5, Day);
+            Assert.Contains("Market crash under way", line);
+            Assert.Contains("prices are falling, about 1 more day", line);
+            Assert.DoesNotContain("Crash risk", line);
+        }
+
+        [Fact]
         public void Market_OldSavesGetTheSafeHavensAdded()
         {
             var market = StockMarket.CreateDefault(new Random(1));

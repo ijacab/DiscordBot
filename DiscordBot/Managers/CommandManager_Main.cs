@@ -121,7 +121,7 @@ namespace DiscordBot.Managers
                 new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks + property) over the last 30 days, sampled hourly. Add a time like `48h` or `7d` to show just that window, as on `.stocks`. Pass a user to see theirs, or `all` to put everyone on the same graph. Shorthand: `.nw`", Syntax = "`.networth`, `.networth 48h`, `.networth @person 7d` or `.networth all 24h`" },
                 new Command("nw", NetWorthGraph) { Description = "Shorthand for `.networth`.", Syntax = "`.nw`, `.nw 48h`, `.nw @person 7d` or `.nw all 24h`", Hidden = true },
                 new Command("donate", Donate) { Description = "Donate some of your money to someone else.", Syntax = "`.donate @person 1000`" },
-                new Command("property", Property) { Description = "Shows the house price, the market, and the houses you own. Rent is paid hourly after the agency's cut.", Syntax = "`.property`" },
+                new Command("property", Property) { Description = "Shows the house price, the market (and today's crash risk), and the houses you own. Rent is paid hourly after the agency's cut.", Syntax = "`.property`" },
                 new Command("buyproperty", BuyProperty) { Description = "Buys a house at the current market price, with cash only. Stamp duty and conveyancing are 4.5% on top.", Syntax = "`.buyproperty`" },
                 new Command("sellproperty", SellProperty) { Description = "Sells a property you own at market value, less 3% for agent commission and marketing.", Syntax = "`.sellproperty 1`" },
                 new Command("letout", RentingIsAutomatic) { Hidden = true },
