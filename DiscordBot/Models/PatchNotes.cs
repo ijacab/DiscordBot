@@ -44,6 +44,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-20", "Calls and puts are now simple leveraged bets: `.call TECH 1000 5x 1h`. You see exactly what you win, where you break even and where you're wiped out. `.short` is gone (use a put)."),
             new PatchNote("2026-11-19", "Debt auto-sell now sells anything: after stocks it covers shorts and cashes out options worth something, then sells houses."),
             new PatchNote("2026-11-19", "Card levels: XP from raids and Face Off, `.train` buys levels, `.card focus` picks the stat that grows. Your level stays with a new card and resets each season."),
             new PatchNote("2026-11-19", "Raids! `.raid @person 5000`: win twice your stake from them, or lose it to them. Defend with `.stance` and `.guards`, take revenge, chase bounties. `.card` is your control panel."),

@@ -123,6 +123,11 @@ namespace DiscordBot.Services
                 }
 
                 changed |= SettleExpiredOptions(now);
+                if (SettleBets(now))
+                {
+                    changed = true;
+                    coinChanged = true;
+                }
                 if (changed) Save();
             }
             if (coinChanged) await _coinService.Update();
@@ -239,9 +244,6 @@ namespace DiscordBot.Services
         private static double SpreadFor(CoinAccount account) =>
             account.IsActive(PowerUpIds.InsiderTrader, DateTime.UtcNow) ? 0 : Stock.Spread;
 
-        public static readonly TimeSpan MinOptionDuration = TimeSpan.FromMinutes(15);
-        public static readonly TimeSpan MaxOptionDuration = TimeSpan.FromDays(3);
-
         /// <summary>Sells borrowed shares. The sale value is locked from cash as margin, and the sale tax goes to the jackpot.</summary>
         public (Stock Stock, int Shares, double Margin, double Tax) Short(CoinAccount account, string symbol, string amount)
         {
@@ -310,63 +312,167 @@ namespace DiscordBot.Services
             return MarketCycle.DriftFor(stock, data.MarketPhase, data.CrisisSeverity);
         }
 
-        /// <summary>The most option contracts the account can pay for (premium plus fee) at this duration.</summary>
-        public int MaxAffordableContracts(CoinAccount account, string symbol, bool isCall, TimeSpan duration, double cashShare = 1)
+        /// <summary>A call or put quote: what share of what's paid rides at the leverage, and what it's expected to pay back.</summary>
+        public sealed class BetQuote
         {
+            public Stock Stock { get; set; }
+            public bool IsCall { get; set; }
+            public int Leverage { get; set; }
+            public TimeSpan Duration { get; set; }
+            public double ExpectedMultiple { get; set; }
+            public double RidingShare { get; set; }
+            public bool TooDear => 1 - RidingShare > LeverageRules.MaxFeeShare;
+        }
+
+        /// <summary>Prices a call or put on <paramref name="symbol"/> from the stock's current state. Takes a moment the first time (it simulates).</summary>
+        public BetQuote QuoteBet(string symbol, bool isCall, int leverage, TimeSpan duration)
+        {
+            if (!LeverageRules.Leverages.Contains(leverage))
+                throw new BadInputException($"Leverage is {string.Join(", ", LeverageRules.Leverages.Select(l => l + "x"))}. Pick one.");
+            if (duration < LeverageRules.MinDuration || duration > LeverageRules.MaxDuration)
+                throw new BadInputException("Calls and puts run from 15m to 24h. Pick something in that range.");
+            Stock copy;
+            MarketDrift drift;
             lock (_lock)
             {
-                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
-                if (duration < MinOptionDuration || duration > MaxOptionDuration)
-                    throw new BadInputException("Options last between 15m and 3d.");
+                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}, dumbass. Check `.stocks`.");
+                if (stock.Role != StockRole.Normal)
+                    throw new BadInputException($"{stock.Symbol} is a safe haven. Nobody's gambling on bonds and gold, buy it with `.buy`.");
+                copy = JsonConvert.DeserializeObject<Stock>(JsonConvert.SerializeObject(stock));
+                drift = CurrentDrift(stock);
+            }
+            //simulated outside the lock so the market isn't held up
+            double expected = LeveragePricer.ExpectedMultiple(copy, isCall, leverage, LeverageRules.TicksFor(duration), drift);
+            return new BetQuote
+            {
+                Stock = copy, IsCall = isCall, Leverage = leverage, Duration = duration,
+                ExpectedMultiple = expected, RidingShare = LeverageRules.RidingShare(expected),
+            };
+        }
 
-                double perShare = stock.OptionPremiumPerShare(duration, isCall, CurrentDrift(stock));
-                double budget = account.NetWorth * cashShare;
-                int contracts = Stock.MaxAffordableContracts(budget, perShare);
-                if (contracts < 1)
-                    throw new BadInputException($"One contract of {stock.Symbol} costs ${Stock.OptionCost(perShare, 1):N2} (premium plus fee) and you only have ${budget:N2}{(cashShare < 1 ? $" ({cashShare:P0} of your cash)" : "")}.");
-                return contracts;
+        /// <summary>
+        /// Opens a call or put for an amount of cash ("1000", "25%" of cash, "max"). Most of it rides at the leverage and the fee
+        /// goes into the jackpot. Settles on the fair price when it closes (<see cref="SettleBets"/>).
+        /// </summary>
+        public (LeveragedBet Bet, BetQuote Quote) OpenBet(CoinAccount account, ulong channelId, string symbol, bool isCall, string amount, int leverage, TimeSpan duration)
+        {
+            var quote = QuoteBet(symbol, isCall, leverage, duration);
+            if (quote.TooDear)
+                throw new BadInputException($"A {leverage}x {quote.Stock.Symbol} {(isCall ? "call" : "put")} is too damn likely to pay right now, so the fee would eat over {LeverageRules.MaxFeeShare:P0} of it. Use less leverage or a shorter bet.");
+            lock (_lock)
+            {
+                var stock = _market.Find(quote.Stock.Symbol) ?? throw new BadInputException($"{quote.Stock.Symbol} just got taken off the market.");
+                double cash = Math.Max(0, account.NetWorth);
+                double paid = TryParsePercent(amount, out double share) ? Math.Floor(cash * share * 100) / 100
+                    : IsAllOrMax(amount) ? Math.Floor(cash * 100) / 100
+                    : ParseMoney(amount);
+                if (paid < 1) throw new BadInputException("Bet at least $1, you cheapskate.");
+                if (paid > account.NetWorth)
+                    throw new BadInputException($"You've got ${cash:N2} in cash. You can't bet ${paid:N2}.");
+
+                double stake = Math.Round(paid * quote.RidingShare, 2);
+                var bet = new LeveragedBet
+                {
+                    UserId = account.UserId,
+                    ChannelId = channelId,
+                    Symbol = stock.Symbol,
+                    IsCall = isCall,
+                    Leverage = leverage,
+                    Paid = paid,
+                    Stake = stake,
+                    EntryPrice = stock.FairPrice,
+                    OpenedUtcTicks = DateTime.UtcNow.Ticks,
+                    ExpiresUtcTicks = (DateTime.UtcNow + duration).Ticks,
+                };
+                _market.Bets.Add(bet);
+                account.NetWorth -= paid;
+                _coinService.AddToJackpot(bet.Fee);
+                account.Stats.OptionContractsBought++;
+                account.Stats.OptionPremiumsPaid += paid;
+                Save();
+                return PersistAccount(account, (bet, quote));
             }
         }
 
-        /// <summary>Whether a sell, cover or option amount means everything: "all" or "max".</summary>
+        /// <summary>Whether a sell, cover or bet amount means everything: "all" or "max".</summary>
         private static bool IsAllOrMax(string amount) =>
             amount.Equals("all", StringComparison.OrdinalIgnoreCase) || amount.Equals("max", StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Buys at-the-money options that expire after <paramref name="duration"/>. The strike is the fair price (not the quote,
-        /// so trading can't be used to set it), and the premium plus a jackpot fee is paid from cash.
-        /// </summary>
-        public (OptionContract Option, double Premium, double Fee) BuyOption(CoinAccount account, string symbol, bool isCall, int contracts, TimeSpan duration)
+        /// <summary>A whole-dollar (or cents) amount like 1000, 1,000 or $1000.50. Anything else, NaN included, is a syntax error.</summary>
+        private static double ParseMoney(string amount)
+        {
+            string text = (amount ?? "").Trim().Replace(",", "").Replace("$", "");
+            if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value)
+                || !double.IsFinite(value) || value <= 0)
+                throw new BadSyntaxException();
+            return Math.Floor(value * 100) / 100;
+        }
+
+        /// <summary>A call or put that closed: who, what it paid and where to say so.</summary>
+        public sealed class SettledBet
+        {
+            public LeveragedBet Bet { get; set; }
+            public double ClosePrice { get; set; }
+            public double Payout { get; set; }
+        }
+
+        private readonly List<SettledBet> _settledBets = new List<SettledBet>();
+
+        /// <summary>Calls and puts that closed since the last call, for announcing. Empties the list.</summary>
+        public List<SettledBet> TakeSettledBets()
         {
             lock (_lock)
             {
-                var stock = _market.Find(symbol) ?? throw new BadInputException($"There's no stock called {symbol.ToUpper()}.");
-                if (contracts < 1) throw new BadSyntaxException();
-                if (duration < MinOptionDuration || duration > MaxOptionDuration)
-                    throw new BadInputException("Options last between 15m and 3d.");
+                var list = _settledBets.ToList();
+                _settledBets.Clear();
+                return list;
+            }
+        }
 
-                double premium = Math.Round(stock.OptionPremiumPerShare(duration, isCall, CurrentDrift(stock)) * Stock.OptionContractSize * contracts, 2);
-                double fee = Math.Round(premium * Stock.OptionFeeRate, 2);
-                if (premium + fee > account.NetWorth)
-                    throw new BadInputException($"That option costs ${premium + fee:N2} (premium plus fee) but you only have ${account.NetWorth:N2}.");
+        /// <summary>Pays out calls and puts whose time is up, on the fair price. Caller holds the lock. True when any closed.</summary>
+        private bool SettleBets(long nowTicks)
+        {
+            var due = _market.Bets.Where(b => b.ExpiresUtcTicks <= nowTicks).ToList();
+            foreach (var bet in due)
+            {
+                double close = _market.Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice;
+                double payout = bet.ValueAt(close);
+                PayBet(bet, payout, close, "closed");
+            }
+            return due.Count > 0;
+        }
 
-                var option = new OptionContract
-                {
-                    UserId = account.UserId,
-                    Symbol = stock.Symbol,
-                    IsCall = isCall,
-                    Strike = stock.FairPrice,
-                    Contracts = contracts,
-                    Premium = premium,
-                    ExpiresAtUtcTicks = DateTimeOffset.UtcNow.UtcTicks + duration.Ticks
-                };
-                _market.Options.Add(option);
-                _coinService.AddToJackpot(fee);
-                account.NetWorth -= premium + fee;
-                account.Stats.OptionContractsBought += contracts;
-                account.Stats.OptionPremiumsPaid += premium + fee;
+        private void PayBet(LeveragedBet bet, double payout, double close, string how)
+        {
+            _market.Bets.Remove(bet);
+            var data = _coinService.GetAll();
+            var account = data.Accounts.FirstOrDefault(a => a.UserId == bet.UserId);
+            if (account != null && payout > 0)
+            {
+                account.NetWorth += data.PayDebtFrom(account, payout); //winnings pay any debt first
+                account.Stats.OptionPayouts += payout;
+                if (payout > bet.Paid) account.Stats.OptionsExpiredInTheMoney++;
+            }
+            _market.AddSettledResult(bet.UserId,
+                $"{bet.Leverage}x {bet.Symbol} {bet.Kind} {how} at ${Stock.FormatPrice(close)} (in at ${Stock.FormatPrice(bet.EntryPrice)}): paid ${payout:N2} for ${bet.Paid:N2}.");
+            _settledBets.Add(new SettledBet { Bet = bet, ClosePrice = close, Payout = payout });
+        }
+
+        /// <summary>Closes a call or put early at what it would pay now. Only debt auto-sell does this; players ride them out.</summary>
+        public (LeveragedBet Bet, double Paid) CloseBetForDebt(CoinAccount account, string betId)
+        {
+            lock (_lock)
+            {
+                var bet = _market.Bets.FirstOrDefault(b => b.Id == betId && b.UserId == account.UserId)
+                    ?? throw new BadInputException("That bet has already closed.");
+                double close = _market.Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice;
+                double payout = bet.ValueAt(close);
+                if (payout <= 0) throw new BadInputException("That bet is worth nothing right now.");
+                PayBet(bet, payout, close, "sold early to pay debt");
+                _settledBets.RemoveAt(_settledBets.Count - 1); //auto-sell announces it itself
                 Save();
-                return PersistAccount(account, (option, premium, fee));
+                _coinService.Update().GetAwaiter().GetResult();
+                return (bet, payout);
             }
         }
 

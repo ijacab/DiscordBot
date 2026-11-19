@@ -57,7 +57,10 @@ namespace DiscordBot.Models
         public Dictionary<ulong, Dictionary<string, double>> CostBasis { get; set; } = new Dictionary<ulong, Dictionary<string, double>>();
         /// <summary>userId -> (symbol -> short position)</summary>
         public Dictionary<ulong, Dictionary<string, ShortPosition>> Shorts { get; set; } = new Dictionary<ulong, Dictionary<string, ShortPosition>>();
+        /// <summary>Old-style options from before calls and puts became leveraged bets. None are sold now; open ones still settle.</summary>
         public List<OptionContract> Options { get; set; } = new List<OptionContract>();
+        /// <summary>Open calls and puts (<see cref="LeveragedBet"/>).</summary>
+        public List<LeveragedBet> Bets { get; set; } = new List<LeveragedBet>();
         /// <summary>userId -> text of their last few settled options, newest first.</summary>
         public Dictionary<ulong, List<string>> RecentSettled { get; set; } = new Dictionary<ulong, List<string>>();
         /// <summary>Number of 5 minute periods since the unix epoch that prices were last updated for.</summary>
@@ -170,9 +173,11 @@ namespace DiscordBot.Models
 
         public IEnumerable<OptionContract> GetOptions(ulong userId) => Options.Where(o => o.UserId == userId);
 
-        /// <summary>True if the user holds any shares, short or open option.</summary>
+        public IEnumerable<LeveragedBet> GetBets(ulong userId) => Bets.Where(b => b.UserId == userId);
+
+        /// <summary>True if the user holds any shares, short, call, put or old option.</summary>
         public bool HasPositions(ulong userId) =>
-            GetHoldings(userId).Count > 0 || GetShorts(userId).Count > 0 || GetOptions(userId).Any();
+            GetHoldings(userId).Count > 0 || GetShorts(userId).Count > 0 || GetOptions(userId).Any() || GetBets(userId).Any();
 
         public void AddSettledResult(ulong userId, string text)
         {
@@ -195,6 +200,9 @@ namespace DiscordBot.Models
 
             foreach (var option in GetOptions(userId))
                 value += option.PayoutAt(Find(option.Symbol)?.FairPrice ?? option.Strike);
+
+            foreach (var bet in GetBets(userId))
+                value += bet.ValueAt(Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice);
 
             return value;
         }
@@ -302,6 +310,14 @@ namespace DiscordBot.Models
                 Options.Remove(option);
                 Owe(option.UserId, payout);
                 AddSettledResult(option.UserId, $"{option.Contracts}x {symbol} {(option.IsCall ? "call" : "put")} settled when it was taken off the market: paid ${payout:N2}.");
+            }
+
+            foreach (var bet in Bets.Where(b => b.Symbol == symbol).ToList())
+            {
+                double payout = bet.ValueAt(stock.FairPrice);
+                Bets.Remove(bet);
+                Owe(bet.UserId, payout);
+                AddSettledResult(bet.UserId, $"{bet.Leverage}x {symbol} {bet.Kind} closed early when {symbol} was taken off the market: paid ${payout:N2} for ${bet.Paid:N2}.");
             }
 
             Stocks.Remove(stock);

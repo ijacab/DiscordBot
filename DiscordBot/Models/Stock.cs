@@ -165,7 +165,7 @@ namespace DiscordBot.Models
         /// <summary>What kind of listing this is, for headers: "safe haven", "bond", or the tier for ordinary stocks.</summary>
         public string KindLabel => Role == StockRole.SafeHaven ? "safe haven" : Role == StockRole.Bond ? "bond" : $"tier {RiskTier}";
 
-        /// <summary>Standard deviation of one tick's move as a fraction of the price (options are now priced by simulation, see <see cref="OptionPricer"/>).</summary>
+        /// <summary>Standard deviation of one tick's move as a fraction of the price (calls and puts are priced by simulation, see <see cref="LeveragePricer"/>).</summary>
         public double TickVolatility => IsCrypto ? CryptoTickVolatility : MaxSwingByTier[RiskTier] / Math.Sqrt(3);
 
         /// <summary>
@@ -419,42 +419,8 @@ namespace DiscordBot.Models
         public const int OptionContractSize = 100;
         /// <summary>An option pays at most this many times its strike per share (a call can only win up to 20x the price it was bought at). A higher cap makes a crypto call dearer than the coin itself, so it could never beat buying (a 6 hour call costs about 67% of the price at 10x, 99% at 30x, 220% at 1,000x), and rare crypto booms would stop the price being found accurately by simulation.</summary>
         public const double MaxOptionPayoutMultiple = 20;
-        /// <summary>Extra the house charges on the fair premium.</summary>
-        public const double OptionHouseEdge = 1.10;
-        /// <summary>Fee on the premium, paid into the jackpot.</summary>
+        /// <summary>Fee taken when an old option is cashed out early for debt, into the jackpot.</summary>
         public const double OptionFeeRate = 0.02;
-
-        /// <summary>Premium plus the jackpot fee for a number of contracts, to the cent. Same rounding as a purchase.</summary>
-        public static double OptionCost(double premiumPerShare, int contracts)
-        {
-            double premium = Math.Round(premiumPerShare * OptionContractSize * contracts, 2);
-            return premium + Math.Round(premium * OptionFeeRate, 2);
-        }
-
-        /// <summary>The most contracts that premium plus fee can buy with this cash. Zero when not even one is affordable.</summary>
-        public static int MaxAffordableContracts(double cash, double premiumPerShare)
-        {
-            if (cash <= 0 || premiumPerShare <= 0) return 0;
-            const int limit = 1_000_000_000;
-            int contracts = (int)Math.Min(limit, Math.Floor(cash / OptionCost(premiumPerShare, 1)));
-            while (contracts > 0 && OptionCost(premiumPerShare, contracts) > cash) contracts--;
-            while (contracts < limit && OptionCost(premiumPerShare, contracts + 1) <= cash) contracts++;
-            return contracts;
-        }
-        public const double MinOptionPremiumPerShare = 0.01;
-
-        /// <summary>
-        /// Premium per share of an at-the-money call or put lasting <paramref name="duration"/>: what it pays on average when the real
-        /// price process is run forward from this stock's current state (<see cref="OptionPricer"/>), plus the house edge. Calls
-        /// are dear and puts cheap when the stock is well below its base, and the reverse when it is above. <paramref name="drift"/>
-        /// is the market-wide crisis drift now running, so puts aren't cheap in the middle of a crash.
-        /// </summary>
-        public double OptionPremiumPerShare(TimeSpan duration, bool isCall = true, MarketDrift? drift = null)
-        {
-            int ticks = (int)Math.Max(1, Math.Round(duration.TotalMinutes / 5));
-            double fair = OptionPricer.FairValuePerShare(this, isCall, ticks, drift ?? MarketDrift.None);
-            return Math.Max(MinOptionPremiumPerShare, Math.Round(fair * OptionHouseEdge, 2));
-        }
 
         /// <summary>The quote for a fair price and impact, never below <paramref name="floor"/> (a dollar unless it's a crypto).</summary>
         public static double PriceAt(double fairPrice, double impact, double floor = MinPrice) =>

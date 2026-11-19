@@ -105,10 +105,9 @@ namespace Tests
             Assert.Equal(shorted / 2, stocks.Cover(account, symbol, "50%").Shares);
 
             double cash = account.NetWorth;
-            int contracts = stocks.MaxAffordableContracts(account, symbol, true, TimeSpan.FromHours(1), cashShare: 0.5);
-            int all = stocks.MaxAffordableContracts(account, symbol, true, TimeSpan.FromHours(1));
-            Assert.True(contracts >= 1 && contracts <= all / 2 + 1, $"{contracts} of {all}");
-            Assert.Equal(cash, account.NetWorth);
+            var (bet, _) = stocks.OpenBet(account, 0, symbol, true, "50%", 2, TimeSpan.FromHours(1));
+            Assert.Equal(Math.Floor(cash * 0.5 * 100) / 100, bet.Paid, 2);
+            Assert.Equal(cash - bet.Paid, account.NetWorth, 2);
         }
     }
 }

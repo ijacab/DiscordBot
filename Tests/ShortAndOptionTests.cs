@@ -326,34 +326,6 @@ namespace Tests
         }
 
         [Fact]
-        public void Option_PremiumRisesWithTimeAndWithRisk()
-        {
-            var steady = Normal(2, 100);
-            var wild = Normal(5, 100);
-            var coin = Coin(100);
-
-            Assert.True(steady.OptionPremiumPerShare(TimeSpan.FromHours(24)) > steady.OptionPremiumPerShare(TimeSpan.FromHours(1)));
-            Assert.True(wild.OptionPremiumPerShare(TimeSpan.FromHours(6)) > steady.OptionPremiumPerShare(TimeSpan.FromHours(6)));
-            Assert.True(coin.OptionPremiumPerShare(TimeSpan.FromHours(6)) > wild.OptionPremiumPerShare(TimeSpan.FromHours(6)));
-        }
-
-        [Fact]
-        public void Option_PremiumHasAMinimum()
-        {
-            Assert.Equal(Stock.MinOptionPremiumPerShare, Normal(1, 1).OptionPremiumPerShare(TimeSpan.FromMinutes(15)));
-        }
-
-        [Fact]
-        public void Option_PremiumUsesFairPriceNotTheTradedQuote()
-        {
-            var stock = Normal(3, 100);
-            double before = stock.OptionPremiumPerShare(TimeSpan.FromHours(6));
-            stock.ApplyTrade(20_000); //pumps the quote, not the fair price
-            Assert.True(stock.Price > stock.FairPrice);
-            Assert.Equal(before, stock.OptionPremiumPerShare(TimeSpan.FromHours(6)));
-        }
-
-        [Fact]
         public void Option_ExpiryTimeIsKept()
         {
             var expiry = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc);

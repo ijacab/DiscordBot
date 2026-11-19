@@ -18,6 +18,8 @@ namespace DiscordBot.Services
     {
         /// <summary>Stock sales aim this much over the debt, since selling pushes the price down as it goes.</summary>
         public const double StockSaleBuffer = 1.02;
+        /// <summary>Marks a call or put (a <see cref="LeveragedBet"/>) among the option lots, to tell it from an old option.</summary>
+        private const string BetPrefix = "bet:";
         /// <summary>The most times one account is planned and sold again in a minute. Each round closes most of what was left.</summary>
         public const int MaxRounds = 12;
 
@@ -161,6 +163,8 @@ namespace DiscordBot.Services
                 .ToList();
             var optionLots = market.GetOptions(account.UserId)
                 .Select(o => new OptionLot { Id = o.Id, Value = o.PayoutAt(market.Find(o.Symbol)?.FairPrice ?? o.Strike) * (1 - Stock.OptionFeeRate) })
+                .Concat(market.GetBets(account.UserId)
+                    .Select(b => new OptionLot { Id = BetPrefix + b.Id, Value = b.ValueAt(market.Find(b.Symbol)?.FairPrice ?? b.EntryPrice) }))
                 .ToList();
             //a property with squatters in can't be sold until they leave, so it is left out (the rest still covers what it can)
             var now = DateTime.UtcNow;
@@ -198,9 +202,17 @@ namespace DiscordBot.Services
                 if (account.Debt <= 0) break;
                 try
                 {
-                    var (option, _) = _stockService.CloseOption(account, id);
+                    if (id.StartsWith(BetPrefix))
+                    {
+                        var (bet, _) = _stockService.CloseBetForDebt(account, id.Substring(BetPrefix.Length));
+                        propertiesSold.Add($"a {bet.Leverage}x {bet.Symbol} {bet.Kind}");
+                    }
+                    else
+                    {
+                        var (option, _) = _stockService.CloseOption(account, id);
+                        propertiesSold.Add($"an old {option.Symbol} {(option.IsCall ? "call" : "put")}");
+                    }
                     _coinService.GetAll().RepayFromCash(account);
-                    propertiesSold.Add($"a {option.Symbol} {(option.IsCall ? "call" : "put")}");
                     soldAny = true;
                 }
                 catch (BadInputException) { }

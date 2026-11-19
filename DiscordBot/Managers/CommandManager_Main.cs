@@ -113,11 +113,11 @@ namespace DiscordBot.Managers
                 new Command("stocksthread", StocksThread) { Description = "Bot admins only. Opens a thread here with one live message: a line per stock and one image with every stock's chart, all time and the last 3 hours. Updates every 5 minutes. One per server; running it again moves it and deletes the old thread.", Syntax = "`.stocksthread` or `.stocksthread stop`", RequiresAdmin = true },
                 new Command("buy", BuyStock) { Description = "Buys whole shares of a stock.", Syntax = "`.buy SYMBOL 10`, `.buy SYMBOL 50%` (half your cash) or `.buy SYMBOL max`" },
                 new Command("sell", SellStock) { Description = "Sells shares of a stock you own.", Syntax = "`.sell SYMBOL 10`, `.sell SYMBOL 50%` (half your shares), `.sell SYMBOL all` or `.sell SYMBOL max`" },
-                new Command("short", ShortStock) { Description = "Sells borrowed shares, locking the sale value as margin. You profit if the price falls. At 2x the entry price you lose the margin.", Syntax = "`.short SYMBOL 10`, `.short SYMBOL 50%` (half your cash as margin) or `.short SYMBOL max`" },
+                new Command("short", ShortStock) { Hidden = true },
                 new Command("cover", CoverStock) { Description = "Buys back shares you shorted and releases your margin, plus profit or minus loss.", Syntax = "`.cover SYMBOL 10`, `.cover SYMBOL 50%`, `.cover SYMBOL all` or `.cover SYMBOL max`" },
-                new Command("call", CallOption) { Description = "Buys call options (100 shares each) at the current price. Pays out if the stock is higher at expiry (15m to 3d), up to 20x the strike per share. The premium comes from simulating how the stock really moves, so it's dearer when the stock is below its launch price. It is gone either way.", Syntax = "`.call SYMBOL 2 6h`, `.call SYMBOL 50% 6h` (half your cash) or `.call SYMBOL max 6h`" },
-                new Command("put", PutOption) { Description = "Buys put options (100 shares each) at the current price. Pays out if the stock is lower at expiry (15m to 3d). The premium comes from simulating how the stock really moves, so it's dearer when the stock is above its launch price or the market is crashing. It is gone either way.", Syntax = "`.put SYMBOL 2 6h`, `.put SYMBOL 50% 6h` (half your cash) or `.put SYMBOL max 6h`" },
-                new Command("options", Options) { Description = "Shows your open options and recently settled ones.", Syntax = "`.options`" },
+                new Command("call", CallOption) { Description = $"Bet a stock goes UP, with leverage: at 5x every 1% it rises makes you 5%. Pick 2x, 5x or 10x and 15m to 24h (default 5x for 1h). Paid out on the price when it closes: you can't lose more than you put in, you're wiped out if it drops 1/leverage (20% at 5x), and it pays at most {LeverageRules.MaxMultiple:0}x what rides. The fee depends on how likely it is to pay. Type it with no amount to see the payout table first.", Syntax = "`.call SYMBOL` (payout table), `.call SYMBOL 1000`, `.call SYMBOL 25% 10x 6h` or `.call SYMBOL max 2x 15m`" },
+                new Command("put", PutOption) { Description = "Bet a stock goes DOWN, with leverage: at 5x every 1% it falls makes you 5%. Same rules as `.call`. A 2x put is a short that can't lose more than you put in.", Syntax = "`.put SYMBOL` (payout table), `.put SYMBOL 1000`, `.put SYMBOL 25% 10x 6h`" },
+                new Command("options", Options) { Description = "Shows your open calls and puts, what each would pay right now, and the last few that closed.", Syntax = "`.options`" },
                 new Command("portfolio", Portfolio) { Description = "Shows the stocks you own.", Syntax = "`.portfolio`" },
                 new Command("pf", Portfolio) { Description = "Shorthand for `.portfolio`.", Syntax = "`.pf`", Hidden = true },
                 new Command("networth", NetWorthGraph) { Description = "Shows a graph of net worth (cash + stocks + property) over the last 30 days, sampled hourly. Add a time like `48h` or `7d` to show just that window, as on `.stocks`. Pass a user to see theirs, or `all` to put everyone on the same graph. Shorthand: `.nw`", Syntax = "`.networth`, `.networth 48h`, `.networth @person 7d` or `.networth all 24h`" },
@@ -311,6 +311,8 @@ namespace DiscordBot.Managers
 
             //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
             _ = _stockThreadService.RefreshIfDue(client);
+
+            await AnnounceSettledBets(client);
 
             //market headlines when a crash starts, bottoms out, recovers or ends, in the last few channels money was used in
             foreach (var headline in _propertyService.TakeNews())

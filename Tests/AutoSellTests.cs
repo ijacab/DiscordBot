@@ -145,20 +145,20 @@ namespace Tests
             coins.GetAll().Accounts.Add(account);
             var normal = stocks.GetMarket().Stocks.Where(x => x.Role == StockRole.Normal).ToList();
             stocks.Short(account, normal[0].Symbol, "100");
-            stocks.BuyOption(account, normal[1].Symbol, true, 1, TimeSpan.FromHours(6));
-            stocks.BuyOption(account, normal[1].Symbol, false, 1, TimeSpan.FromHours(6));
-            normal[1].FairPrice *= 2; //the call is now well in the money and the put worthless
+            stocks.OpenBet(account, 0, normal[1].Symbol, true, "10000", 2, TimeSpan.FromHours(1));
+            stocks.OpenBet(account, 0, normal[1].Symbol, false, "10000", 2, TimeSpan.FromHours(1));
+            normal[1].FairPrice *= 1.6; //the call is now well up and the put wiped out
             double shortEquity = stocks.GetMarket().GetShort(account.UserId, normal[0].Symbol).EquityAt(normal[0].Price);
-            double callValue = stocks.GetMarket().GetOptions(account.UserId).Single(o => o.IsCall).PayoutAt(normal[1].FairPrice);
+            double callValue = stocks.GetMarket().GetBets(account.UserId).Single(b => b.IsCall).ValueAt(normal[1].FairPrice);
             account.NetWorth = 0;
-            account.Debt = Math.Floor((shortEquity + callValue * 0.98) * 0.9);
+            account.Debt = Math.Floor((shortEquity + callValue) * 0.9);
 
             var lines = await new DebtService(coins, stocks, new PropertyService(coins)).AutoSellForDebts(new ulong[0]);
 
             Assert.Equal(0, account.Debt, 2);
             Assert.Null(stocks.GetMarket().GetShort(account.UserId, normal[0].Symbol));
-            Assert.DoesNotContain(stocks.GetMarket().GetOptions(account.UserId), o => o.IsCall);
-            Assert.Contains(stocks.GetMarket().GetOptions(account.UserId), o => !o.IsCall); //worthless, so kept
+            Assert.DoesNotContain(stocks.GetMarket().GetBets(account.UserId), b => b.IsCall);
+            Assert.Contains(stocks.GetMarket().GetBets(account.UserId), b => !b.IsCall); //worthless, so kept
             Assert.Contains("short", lines.Single());
         }
     }

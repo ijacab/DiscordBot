@@ -634,16 +634,9 @@ namespace DiscordBot.Managers
                 throw new BadInputException("Finish your bet before trading stocks.");
         }
 
-        private async Task ShortStock(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            if (args.Count != 2) throw new BadSyntaxException();
-            EnsureNotBetting(message);
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            var (stock, shares, margin, tax) = _stockService.Short(account, args[0], args[1]);
-
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} shorted {shares} share(s) of {stock.Symbol}, locking ${FormatHelper.GetCommaNumber(margin)} margin and ${FormatHelper.GetCommaNumber(tax)} sale tax (goes to the jackpot). You profit if it falls and lose margin as it rises, and at 2x the entry price you're wiped out. {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
-        }
+        /// <summary>Shorting is gone: a put does the same job with the downside capped at what you put in.</summary>
+        private Task ShortStock(DiscordSocketClient client, SocketMessage message, List<string> args) =>
+            message.Channel.SendMessageAsync($"{message.Author.Mention} shorting is dead. Bet on a stock tanking with a put instead: `.put SYMBOL 1000 2x` is a short that can't lose more than you put in. Old shorts still close with `.cover`.");
 
         private async Task CoverStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
@@ -654,61 +647,6 @@ namespace DiscordBot.Managers
             var (stock, shares, returned, profit) = _stockService.Cover(account, args[0], args[1]);
 
             await message.Channel.SendMessageAsync($"{message.Author.Mention} covered {shares} share(s) of {stock.Symbol} and got back ${FormatHelper.GetCommaNumber(returned)} ({SignedMoney(profit)}). {stock.Symbol} is now ${Stock.FormatPrice(stock.Price)}. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
-        }
-
-        private Task CallOption(DiscordSocketClient client, SocketMessage message, List<string> args) => BuyOptionCommand(message, args, isCall: true);
-
-        private Task PutOption(DiscordSocketClient client, SocketMessage message, List<string> args) => BuyOptionCommand(message, args, isCall: false);
-
-        private async Task BuyOptionCommand(SocketMessage message, List<string> args, bool isCall)
-        {
-            if (args.Count != 3 || !DurationParser.TryParse(args[2], out TimeSpan duration))
-                throw new BadSyntaxException();
-            bool isPercent = StockService.TryParsePercent(args[1], out double cashShare);
-            bool useMax = isPercent || args[1].Equals("max", StringComparison.OrdinalIgnoreCase);
-            if (!useMax && (!int.TryParse(args[1], out int typed) || typed < 1))
-                throw new BadSyntaxException();
-            EnsureNotBetting(message);
-
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            int contracts = useMax ? _stockService.MaxAffordableContracts(account, args[0], isCall, duration, isPercent ? cashShare : 1) : int.Parse(args[1]);
-            var (option, premium, fee) = _stockService.BuyOption(account, args[0], isCall, contracts, duration);
-
-            string kind = isCall ? "call" : "put";
-            string wins = isCall ? "rises above" : "falls below";
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} bought {contracts} {option.Symbol} {kind} option(s) with strike ${Stock.FormatPrice(option.Strike)} for ${FormatHelper.GetCommaNumber(premium)} plus ${FormatHelper.GetCommaNumber(fee)} fee (goes to the jackpot). Each is 100 shares and pays out only if {option.Symbol} {wins} the strike by expiry in {FormatRemaining(duration)}. Settled on the fair price, not on trades. Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.");
-        }
-
-        private async Task Options(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            if (args.Count != 0) throw new BadSyntaxException();
-
-            var market = _stockService.GetMarket();
-            var open = market.GetOptions(message.Author.Id).OrderBy(o => o.ExpiresAtUtcTicks).ToList();
-            market.RecentSettled.TryGetValue(message.Author.Id, out var recent);
-
-            if (open.Count == 0 && (recent == null || recent.Count == 0))
-            {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} you have no options. Try `.call SYMBOL 1 6h` or `.put SYMBOL 1 6h`.");
-                return;
-            }
-
-            string output = "";
-            if (open.Count > 0)
-            {
-                output += "**Open**\n";
-                foreach (var option in open)
-                {
-                    double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                    output += $"{(option.IsCall ? "📈 call" : "📉 put")} {option.Contracts}x **{option.Symbol}** strike ${Stock.FormatPrice(option.Strike)} · expires in {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))} now (paid ${FormatHelper.GetCommaNumber(option.Premium)})\n";
-                }
-            }
-            if (recent != null && recent.Count > 0)
-            {
-                output += "\n**Recently settled**\n" + string.Join("\n", recent);
-            }
-
-            await message.SendRichEmbedMessage($"{message.Author.Username}'s options", output);
         }
 
         private static string FormatRemaining(TimeSpan span)
@@ -888,8 +826,11 @@ namespace DiscordBot.Managers
             foreach (var option in options)
             {
                 double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                output += $"🎟️ {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
+                output += $"🎟️ {option.Contracts}x **{option.Symbol}** old {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
             }
+            var bets = market.GetBets(account.UserId).OrderBy(b => b.ExpiresUtcTicks).ToList();
+            foreach (var bet in bets)
+                output += BetLine(bet, market.Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice) + "\n";
 
             var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
@@ -898,7 +839,7 @@ namespace DiscordBot.Managers
 
             output += "\n**Everything you own**\n";
             output += $"💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
-            if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0)
+            if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0 || bets.Count > 0)
                 output += $"📈 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)}\n";
             //grouped by kind: every house is worth the same (one market index), so one line each with the average paid
             foreach (var group in account.Properties.GroupBy(p => p.Kind).OrderBy(g => g.Key))
