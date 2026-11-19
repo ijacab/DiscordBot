@@ -182,7 +182,7 @@ namespace DiscordBot.Managers
             {
                 $"**You:** {attacker.BattlePerson?.Name ?? "no card"} (Lv {attacker.BattlePerson?.Level ?? 0}), power {check.AttackPower:0}{(check.IsRevenge ? " with 🔥 revenge (+25%)" : "")}",
                 $"**{target.Name}:** {card?.Name ?? "no card"} (Lv {card?.Level ?? 0}), defends at {check.DefencePower:0}: {target.RaidStance}{(check.Guarded ? ", with guards" : "")}{(check.Underdog > 1 ? $", {RaidService.Pct(check.Underdog - 1)} harder for being richer than you" : "")}",
-                $"**Chance to win:** {RaidService.Pct(check.Chance)}",
+                $"**Chance to win:** {RaidService.ChancePercent(check.Chance)}% (you need {RaidService.NeededRoll(check.Chance)}+ on a d100)",
             };
             if (check.MaxStake >= check.MinStake)
             {

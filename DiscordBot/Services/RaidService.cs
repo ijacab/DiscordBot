@@ -59,7 +59,9 @@ namespace DiscordBot.Services
             public RaidCheck Check { get; set; }
             public double Stake { get; set; }
             public bool Won { get; set; }
-            public double Roll { get; set; }
+            /// <summary>The d100 roll, 1 to 100, higher is better. The raid wins when it is at least <see cref="Needed"/>.</summary>
+            public int Roll { get; set; }
+            public int Needed { get; set; }
             public bool Rerolled { get; set; }
             /// <summary>What the target lost (a win), part of which may have gone on their debt.</summary>
             public double Loot { get; set; }
@@ -146,15 +148,16 @@ namespace DiscordBot.Services
                 attacker.NetWorth -= stake;
 
                 var result = new RaidResult { Attacker = attacker, Target = target, Check = check, Stake = stake };
-                result.Roll = _random.NextDouble();
-                result.Won = result.Roll < check.Chance;
+                result.Needed = NeededRoll(check.Chance);
+                result.Roll = RollD100();
+                result.Won = result.Roll >= result.Needed;
                 string today = now.ToString("yyyyMMdd");
                 if (!result.Won && attacker.BattlePerson?.Ability == CardAbility.Reroll && attacker.LastRaidRerollDate != today)
                 {
                     attacker.LastRaidRerollDate = today;
                     result.Rerolled = true;
-                    result.Roll = _random.NextDouble();
-                    result.Won = result.Roll < check.Chance;
+                    result.Roll = RollD100();
+                    result.Won = result.Roll >= result.Needed;
                 }
 
                 if (result.Won) Win(result, now);
@@ -169,6 +172,15 @@ namespace DiscordBot.Services
                 return result;
             }
         }
+
+        /// <summary>A d100 roll, 1 to 100.</summary>
+        private int RollD100() => 100 - (int)Math.Floor(Math.Min(_random.NextDouble(), 0.999999) * 100);
+
+        /// <summary>The chance as a whole percent, which is what the raid really uses, so the shown odds and the roll always agree.</summary>
+        public static int ChancePercent(double chance) => (int)Math.Round(chance * 100);
+
+        /// <summary>The d100 roll needed to win: a 60% chance needs 41 or more.</summary>
+        public static int NeededRoll(double chance) => 101 - ChancePercent(chance);
 
         private void Win(RaidResult result, DateTime now)
         {
@@ -297,12 +309,13 @@ namespace DiscordBot.Services
         {
             var (a, t, c) = (r.Attacker, r.Target, r.Check);
             string attackerCard = a.BattlePerson?.Name ?? a.Name;
-            string defenderCard = t.BattlePerson?.Name ?? "no card";
+            string defenderCard = t.BattlePerson == null ? "no card" : $"{t.BattlePerson.Name}, Lv {t.BattlePerson.Level}";
             var lines = new List<string>
             {
-                $"{(c.IsRevenge ? "🔥 **Revenge raid!** " : "")}**{a.Name}** ({attackerCard}, Lv {a.BattlePerson?.Level ?? 0}) raided **{t.Name}** ({defenderCard}, Lv {t.BattlePerson?.Level ?? 0}, {t.RaidStance}{(c.Guarded ? " with guards" : "")}) for a {Money(r.Stake)} stake.",
-                $"🎲 {Pct(c.Chance)} to win, rolled {Pct(r.Roll)}{(r.Rerolled ? " (🔁 Reroll used)" : "")}{(c.Underdog > 1 ? $". {t.Name} fought {Pct(c.Underdog - 1)} harder for being richer" : "")}.",
+                $"{(c.IsRevenge ? "🔥 **Revenge raid!** " : "⚔️ ")}**{a.Name}** ({attackerCard}, Lv {a.BattlePerson?.Level ?? 0}) raided **{t.Name}** ({defenderCard}, {t.RaidStance} stance{(c.Guarded ? ", with guards" : "")}) with a {Money(r.Stake)} stake.",
+                $"🎲 Needed **{r.Needed}+** on a d100 ({ChancePercent(c.Chance)}% chance), rolled **{r.Roll}** {(r.Won ? "✅" : "❌")}{(r.Rerolled ? " (🔁 rerolled once with the Reroll ability)" : "")}",
             };
+            if (c.Underdog > 1) lines.Add($"{t.Name} defended {Pct(c.Underdog - 1)} harder for being richer.");
             if (r.Won)
             {
                 string debt = r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} of it on their debt" : "";

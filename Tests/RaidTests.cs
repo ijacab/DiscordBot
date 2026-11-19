@@ -288,6 +288,27 @@ namespace Tests
         }
 
         [Fact]
+        public void Roll_IsAD100WhereHigherWins_AndShowsTheNumberNeeded()
+        {
+            Assert.Equal(41, RaidService.NeededRoll(0.60));
+            Assert.Equal(96, RaidService.NeededRoll(0.05));
+            Assert.Equal(6, RaidService.NeededRoll(0.95));
+
+            var (_, raids, a, b) = Setup(1_000_000, 1_000_000, 0.91); //rolls a 9
+            var lost = raids.Raid(a, b, 10_000, Now);
+            Assert.Equal(9, lost.Roll);
+            Assert.False(lost.Won);
+            string text = RaidService.Describe(lost);
+            Assert.Contains($"Needed **{lost.Needed}+** on a d100 ({RaidService.ChancePercent(lost.Check.Chance)}% chance), rolled **9** ❌", text);
+
+            var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.0); //rolls a 100
+            var won = raids2.Raid(x, y, 10_000, Now);
+            Assert.Equal(100, won.Roll);
+            Assert.True(won.Won);
+            Assert.Contains("rolled **100** ✅", RaidService.Describe(won));
+        }
+
+        [Fact]
         public void Describe_NamesTheResult()
         {
             var (_, raids, a, b) = Setup(10_000, 100_000, 0.0);
