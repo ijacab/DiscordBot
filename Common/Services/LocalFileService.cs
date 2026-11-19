@@ -9,10 +9,21 @@ namespace Common.Services
 {
     public class LocalFileService : IFileService
     {
+        private static readonly object _writeLock = new object();
+
+        /// <summary>
+        /// Writes the whole file. Atomic: it goes to a temp file first and then replaces the old one, so a crash mid-write
+        /// never leaves a half-written save, and writers take turns.
+        /// </summary>
         public Task UpdateContent(string fileName, string content)
         {
             string path = Path.Join(Directory.GetCurrentDirectory(), fileName);
-            File.WriteAllText(path, content);
+            lock (_writeLock)
+            {
+                string temp = path + ".tmp";
+                File.WriteAllText(temp, content);
+                File.Move(temp, path, overwrite: true);
+            }
             return Task.CompletedTask;
         }
 

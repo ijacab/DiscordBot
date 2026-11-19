@@ -111,7 +111,7 @@ namespace DiscordBot.Services
 
             _coinAccounts.Accounts.Add(coinAccount);
 
-            string content = JsonConvert.SerializeObject(_coinAccounts);
+            string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
             return coinAccount;
         }
@@ -126,7 +126,7 @@ namespace DiscordBot.Services
             //update remote with local changes when update remote is true
             if (updateRemote)
             {
-                string content = JsonConvert.SerializeObject(_coinAccounts);
+                string content = Serialize();
                 await _fileService.UpdateContent(_fileName, content);
             }
         }
@@ -163,11 +163,33 @@ namespace DiscordBot.Services
 
         public async Task Update()
         {
-            string content = JsonConvert.SerializeObject(_coinAccounts);
-            await _fileService.UpdateContent(_fileName, content);
+            await _fileService.UpdateContent(_fileName, Serialize());
+        }
+
+        /// <summary>
+        /// The save as JSON. Accounts change on several threads (commands, buttons, game loops), so a list can change while it's
+        /// being written out; that's retried rather than crashing the save.
+        /// </summary>
+        private string Serialize()
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    lock (Money.Sync) return JsonConvert.SerializeObject(_coinAccounts);
+                }
+                catch (InvalidOperationException) when (attempt < 5)
+                {
+                    System.Threading.Thread.Sleep(5);
+                }
+            }
         }
 
         /// <summary>A new season. Everyone's Battle Person card is kept, back at level 0, and given back when their account is made again.</summary>
+        /// <summary>The handout everyone who played in the last <see cref="DailyIncomeActiveWindow"/> gets at the start of each UTC day.</summary>
+        public const double DailyIncome = 10_000;
+        public static readonly TimeSpan DailyIncomeActiveWindow = TimeSpan.FromDays(3);
+
         public async Task ClearAll()
         {
             var carried = new Dictionary<ulong, BattlePerson>();
@@ -179,7 +201,7 @@ namespace DiscordBot.Services
             foreach (var pair in _coinAccounts.CarriedCards.Where(p => !carried.ContainsKey(p.Key)))
                 carried[pair.Key] = pair.Value; //kept from an earlier season and not picked up yet
             _coinAccounts = new CoinAccounts { CarriedCards = carried };
-            string content = JsonConvert.SerializeObject(_coinAccounts);
+            string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
         }
 
@@ -193,13 +215,14 @@ namespace DiscordBot.Services
             foreach (var debtor in _coinAccounts.Accounts.Where(a => a.Debt > 0))
                 debtor.Debt = CoinAccount.GrowDebtOneHour(debtor.Debt);
 
-            if (!string.IsNullOrWhiteSpace(_coinAccounts.DateDailyIncrementPaidFor)
-                || dateString != _coinAccounts.DateDailyIncrementPaidFor)
+            //the daily handout, once a UTC day (it used to be paid every hour by mistake), to anyone who's played lately
+            if (dateString != _coinAccounts.DateDailyIncrementPaidFor)
             {
-                foreach (var a in _coinAccounts.Accounts) //add 1000 if it is the start of the day
+                long activeSince = (DateTime.UtcNow - DailyIncomeActiveWindow).Ticks;
+                foreach (var a in _coinAccounts.Accounts.Where(a => a.LastActiveUtcTicks >= activeSince))
                 {
-                    double daily = _appSettings.PrestigeDisabled ? 1000 : 1000 * (a.PrestigeLevel + 1);
-                    a.NetWorth += daily;
+                    double daily = _appSettings.PrestigeDisabled ? DailyIncome : DailyIncome * (a.PrestigeLevel + 1);
+                    Money.Credit(_coinAccounts, a, daily);
                     a.Stats.DailyIncomeEarned += daily;
                 }
                 _coinAccounts.DateDailyIncrementPaidFor = dateString;
@@ -216,7 +239,7 @@ namespace DiscordBot.Services
                 account.Stats.InterestEarned += interest;
             }
             _coinAccounts.TimesInterestPaidForList.Add(hourDateString);
-            string content = JsonConvert.SerializeObject(_coinAccounts);
+            string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
         }
 

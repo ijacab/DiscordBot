@@ -189,7 +189,9 @@ namespace Tests
 
             PropertyService.PayHoldingOneHour(data);
 
-            Assert.Equal(1_000 - PropertyCatalog.HourlyHoldingCost(PropertyKind.Apartment, 1.0), account.NetWorth, 6);
+            //cash pays what it can and the rest goes on debt: cash never goes negative
+            Assert.Equal(0, account.NetWorth, 6);
+            Assert.Equal(PropertyCatalog.HourlyHoldingCost(PropertyKind.Apartment, 1.0) - 1_000, account.Debt, 2);
         }
 
         [Fact]

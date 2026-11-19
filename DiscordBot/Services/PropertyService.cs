@@ -212,7 +212,7 @@ namespace DiscordBot.Services
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0))
             {
                 double cost = account.Properties.Sum(p => PropertyCatalog.HourlyHoldingCost(p.Kind, index));
-                account.NetWorth -= cost;
+                Money.Charge(account, cost); //cash first; what cash can't cover goes on their debt, so cash never goes negative
                 account.Stats.HoldingCostsPaid += cost;
             }
         }

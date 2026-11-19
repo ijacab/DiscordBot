@@ -235,7 +235,9 @@ namespace DiscordBot.Games.Managers
                 BattleArenaPlayer player = table.Game.GetPlayer(userId);
                 table.Game.Leave(userId);
                 await _betManager.CancelBet(userId, player.Username, player.BetAmount);
-                await Refund(table.Pool.RemoveFighter(userId).ToDictionary(b => b.BackerId, b => b.Amount));
+                var removed = table.Pool.RemoveFighter(userId);
+                foreach (var backing in removed) Money.Release(backing.BackerId, backing.Amount);
+                await Refund(removed.ToDictionary(b => b.BackerId, b => b.Amount));
                 table.Notes.Add($"{player.Username} leaves the lobby.");
                 if (table.Game.Players.Count < 2)
                     table.StartsAt = null;
@@ -309,6 +311,9 @@ namespace DiscordBot.Games.Managers
             {
                 if (!_tables.TryGetValue(gameId, out Table table))
                     return (false, "That fight has ended.");
+                amount = Money.Cents(amount);
+                if (!double.IsFinite(amount) || amount <= 0)
+                    return (false, "Back them with a real amount, dipshit.");
                 if (amount > backer.NetWorth)
                     return (false, $"You only have ${FormatHelper.GetCommaNumber(backer.NetWorth)}.");
 
@@ -317,7 +322,8 @@ namespace DiscordBot.Games.Managers
                 if (refusal != null)
                     return (false, refusal);
 
-                backer.NetWorth -= Math.Round(amount, 2);
+                Money.Debit(backer, amount);
+                Money.Hold(backer.UserId, amount);
                 await _coinService.Update(backer.UserId, backer.NetWorth, backer.Name);
 
                 string fighter = table.Game.Players.First(p => p.UserId == fighterId).Username;
@@ -430,6 +436,7 @@ namespace DiscordBot.Games.Managers
             if (table.Pool.Backings.Count > 0)
             {
                 var payouts = table.Pool.Settle(winners.Select(w => w.UserId).ToList());
+                foreach (var backing in table.Pool.Backings) Money.Release(backing.BackerId, backing.Amount);
                 bool refunded = !table.Pool.Backings.Any(b => winners.Any(w => w.UserId == b.FighterId));
                 await Refund(payouts);
                 result.AppendLine(refunded ? "Nobody backed a winner, so every backer gets their stake back." : "**Backers paid:**");
@@ -458,6 +465,7 @@ namespace DiscordBot.Games.Managers
         {
             foreach (BattleArenaPlayer player in table.Game.Players.ToList())
                 await _betManager.CancelBet(player.UserId, player.Username, player.BetAmount);
+            foreach (var backing in table.Pool.Backings) Money.Release(backing.BackerId, backing.Amount);
             await Refund(table.Pool.RefundAll());
             Games.Remove(table.Game);
             _tables.TryRemove(table.Game.GameGuid, out _);
@@ -473,7 +481,7 @@ namespace DiscordBot.Games.Managers
                 if (pay.Value <= 0)
                     continue;
                 CoinAccount account = await _coinService.Get(pay.Key, null);
-                account.NetWorth += pay.Value;
+                Money.Credit(_coinService.GetAll(), account, pay.Value);
                 await _coinService.Update(account.UserId, account.NetWorth, account.Name);
             }
         }

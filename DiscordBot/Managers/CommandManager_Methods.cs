@@ -50,12 +50,15 @@ namespace DiscordBot.Managers
             else
             {
                 await _mappingService.Remove(args[0]);
-                await message.Channel.SendMessageAsync($"Removed mapping {args[0]}");
+                _customMappings = await _mappingService.GetAll(); //or the old one keeps answering until a restart
+                await message.Channel.SendMessageAsync($"Binned `{args[0]}`. Nobody liked it anyway.");
             }
         }
 
         private async Task Clear(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (args.Count == 0)
+                throw new BadInputException("Clear WHAT? `.clear mapping`, `.clear remind` or `.clear coin` (a new season).");
             if (args[0].StartsWith("mapping"))
             {
                 await _mappingService.ClearAll();
@@ -89,28 +92,22 @@ namespace DiscordBot.Managers
 
         private async Task AddReminder(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args[0] == "show")
+            if (args.Count > 0 && args[0] == "show")
             {
-                string msg = "`Reminders`";
-                var reminders = await _reminderService.GetAll();
-                var remindersOrdered = reminders.OrderBy(r => r.TimeToRemind);
-
-                foreach (var reminder in remindersOrdered)
-                {
-                    msg += $"{reminder.TimeToRemind.ToString("yyyy-MM-dd hh:mm:ss")}: {reminder.Message}";
-                }
-                await message.Channel.SendMessageAsync($"{msg}");
+                //only your own: other people's reminders are their business
+                var mine = (await _reminderService.GetAll()).Where(r => r.AuthorMention == message.Author.Mention).OrderBy(r => r.TimeToRemind).ToList();
+                string msg = mine.Count == 0 ? "You've got no reminders. Go outside." :
+                    "⏰ **Your reminders**\n" + string.Join("\n", mine.Select(r => $"{r.TimeToRemind.ToUniversalTime():yyyy-MM-dd HH:mm} UTC: {r.Message}"));
+                await message.Channel.SendMessageAsync(msg, allowedMentions: AllowedMentions.None);
                 return;
             }
 
-
-            if (args.Count != 3)
+            if (args.Count != 3 || !int.TryParse(args[1], out int numberOfTime))
                 throw new BadSyntaxException();
             else
             {
                 string reminderMessage = args[0].Trim('"');
-                int numberOfTime = Convert.ToInt32(args[1]);
-                numberOfTime = numberOfTime < 0 ? 0 : numberOfTime;
+                numberOfTime = Math.Clamp(numberOfTime, 0, 100_000);
                 string timeType = args[2].ToLower();
                 var timeToRemind = timeType.StartsWith("second") ? DateTimeOffset.Now.AddSeconds(numberOfTime)
                     : timeType.StartsWith("minute") ? DateTimeOffset.Now.AddMinutes(numberOfTime)
@@ -126,19 +123,17 @@ namespace DiscordBot.Managers
         private async Task Help(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
 
-            var rand = new Random().Next(15);
-            if (rand == 0)
+            if (Random.Shared.Next(15) == 0)
             {
                 await message.Channel.SendMessageAsync("FUCK you I'm not helping you");
-                await Task.Delay(TimeSpan.FromSeconds(3));
-                await message.Channel.SendMessageAsync("just kidding");
+                _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ => message.Channel.SendMessageAsync("just kidding")); //not on the gateway
             }
             var helpLines = new List<string>();
             foreach (var command in _commands.Where(c => c.Hidden == false))
             {
-                string desc = string.IsNullOrEmpty(command.Description) ? string.Empty : $" Desc: {command.Description}";
-                string syntax = string.IsNullOrEmpty(command.Description) ? string.Empty : $" Syntax: {command.Syntax}";
-                helpLines.Add($"**.{command.Name}** \t{desc}{syntax}");
+                string desc = string.IsNullOrEmpty(command.Description) ? string.Empty : $" {command.Description}";
+                string syntax = string.IsNullOrEmpty(command.Syntax) ? string.Empty : $" Syntax: {command.Syntax}";
+                helpLines.Add($"**.{command.Name}**{desc}{syntax}");
             }
 
             await SendPagedEmbeds(message.Channel, "List of commands available", helpLines);
@@ -250,7 +245,7 @@ namespace DiscordBot.Managers
             if (num1 > num2)
                 throw new BadSyntaxException();
 
-            rand = new Random().Next(num1, num2 + 1);
+            rand = (int)Random.Shared.NextInt64(num1, (long)num2 + 1); //long, so 2147483647 doesn't overflow
 
             await message.SendRichEmbedMessage($"You rolled {rand}");
         }
@@ -272,10 +267,8 @@ namespace DiscordBot.Managers
             string output = "";
             int? prestige = null;
             bool prestigeDisabled = _appSettings.PrestigeDisabled;
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt; //cash + stocks + property - debt
-            var ordered = prestigeDisabled
-                ? accounts.Accounts.OrderByDescending(TotalWorth)
-                : accounts.Accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
+            double TotalWorth(CoinAccount a) => _worth.TotalWorth(a);
+            var ordered = _worth.Ranked();
             foreach (var account in ordered)
             {
                 if (!prestigeDisabled && prestige != null && account.PrestigeLevel < prestige)
@@ -736,7 +729,7 @@ namespace DiscordBot.Managers
         private async Task NetWorthGraphAll(SocketMessage message, TimeSpan? window)
         {
             var ranked = _coinService.GetAll().Accounts
-                .Select(a => (Account: a, Current: a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt))
+                .Select(a => (Account: a, Current: _worth.TotalWorth(a)))
                 .OrderByDescending(x => x.Current)
                 .ToList();
             if (ranked.Count == 0 || ranked.All(x => x.Account.NetWorthHistory.Count == 0))
@@ -882,81 +875,59 @@ namespace DiscordBot.Managers
         private static string SignedMoney(double amount) =>
             $"{(amount < 0 ? "-" : "+")}${FormatHelper.GetCommaNumber(Math.Abs(amount))}";
 
+        /// <summary>What the jackpot takes off every donation.</summary>
+        public const double DonationTax = 0.20;
+        /// <summary>One donation in this many is tax-free. (It used to pay the donor 6x back, which made passing cash back and forth print money.)</summary>
+        public const int DonationTaxFreeOdds = 12;
+
         private async Task Donate(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count != 2 || !DiscordHelper.TryGetUserId(args[0], out ulong userIdToDonateTo))
                 throw new BadSyntaxException();
 
             ulong userId = message.Author.Id;
-
             if (userId == userIdToDonateTo)
                 throw new BadInputException("You can't **FUCKING** donate to yourself you stupid PIECE OF SHIT");
 
-            if (client.GetUser(userIdToDonateTo).IsBot)
+            var receiverUser = client.GetUser(userIdToDonateTo) ?? message.MentionedUsers.FirstOrDefault(u => u.Id == userIdToDonateTo);
+            if (receiverUser?.IsBot == true || userIdToDonateTo == _botId)
                 throw new BadInputException("You STUPID *CUNT*! YOU CAN'T DONATE TO A FUCKING BOT!");
-
-
-            if (!double.TryParse(args[1], out double donationAmount))
-                throw new BadSyntaxException();
-
-            if (donationAmount <= 0)
-                throw new BadInputException("Can't donate 0 or less than 0 DUMBASS");
+            var existing = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == userIdToDonateTo);
+            if (existing == null && receiverUser == null)
+                throw new BadInputException("Never heard of them. @mention someone who actually plays.");
+            EnsureNotBetting(userId, "donating");
 
             CoinAccount account = await _coinService.Get(userId, message.Author.Username);
-            CoinAccount donationReceiverAccount = await _coinService.Get(userIdToDonateTo, client.GetUser(userIdToDonateTo).Username);
+            if (!Money.TryParse(args[1], account.NetWorth, out double donationAmount))
+                throw new BadInputException("That's not an amount, DUMBASS. Try `.donate @person 1000` or `.donate @person 10%`.");
+            CoinAccount receiver = existing ?? await _coinService.Get(userIdToDonateTo, receiverUser.Username);
 
-            if (!_appSettings.PrestigeDisabled && donationReceiverAccount.PrestigeLevel > account.PrestigeLevel)
-                throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {donationReceiverAccount.PrestigeLevel}.");
+            if (!_appSettings.PrestigeDisabled && receiver.PrestigeLevel > account.PrestigeLevel)
+                throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {receiver.PrestigeLevel}.");
 
-            if (donationAmount > account.NetWorth)
-                throw new BadInputException($"Can't donate more than you have ({FormatHelper.GetCommaNumber(account.NetWorth)})... SCHYUPID IDIOT");
+            Money.Debit(account, donationAmount, $"You've got {Money.Format(Math.Max(0, account.NetWorth))}. Can't donate more than you have... SCHYUPID IDIOT");
+            bool taxFree = Random.Shared.Next(DonationTaxFreeOdds) == 0;
+            double tax = taxFree ? 0 : Math.Round(donationAmount * DonationTax, 2);
+            double received = donationAmount - tax;
+            Money.Credit(_coinService.GetAll(), receiver, received); //pays off their debt first, like any money coming in
+            _coinService.AddToJackpot(tax);
 
-            account.NetWorth -= donationAmount;
-            donationReceiverAccount.NetWorth += donationAmount * 0.8;
-            _coinService.AddToJackpot(donationAmount * 0.2); //the 20% tax goes to the jackpot
+            var given = account.Stats;
+            given.TotalMoneyDonated += donationAmount;
+            given.MaxMoneyDonatedAtOnce = Math.Max(given.MaxMoneyDonatedAtOnce, donationAmount);
+            given.DonationAmountsToDict[userIdToDonateTo] = given.DonationAmountsToDict.GetValueOrDefault(userIdToDonateTo) + donationAmount;
+            if (taxFree) given.DonationBonusesEncountered += 1;
+            var got = receiver.Stats;
+            got.TotalMoneyReceivedFromDonations += received;
+            got.MaxMoneyReceivedFromDonationAtOnce = Math.Max(got.MaxMoneyReceivedFromDonationAtOnce, received);
+            got.DonationAmountsFromDict[userId] = got.DonationAmountsFromDict.GetValueOrDefault(userId) + received;
 
-            //statsfor donater
-            account.Stats.TotalMoneyDonated += donationAmount;
-            if (donationAmount > account.Stats.MaxMoneyDonatedAtOnce)
-                account.Stats.MaxMoneyDonatedAtOnce = donationAmount;
-
-            if (account.Stats.DonationAmountsToDict.ContainsKey(userIdToDonateTo))
-                account.Stats.DonationAmountsToDict[userIdToDonateTo] += donationAmount;
-            else
-                account.Stats.DonationAmountsToDict.Add(userIdToDonateTo, donationAmount);
-
-            //stats for donatee
-            donationReceiverAccount.Stats.TotalMoneyReceivedFromDonations += donationAmount;
-            if (donationAmount > donationReceiverAccount.Stats.MaxMoneyReceivedFromDonationAtOnce)
-                donationReceiverAccount.Stats.MaxMoneyReceivedFromDonationAtOnce = donationAmount;
-
-            if (donationReceiverAccount.Stats.DonationAmountsFromDict.ContainsKey(userId))
-                donationReceiverAccount.Stats.DonationAmountsFromDict[userId] += donationAmount;
-            else
-                donationReceiverAccount.Stats.DonationAmountsFromDict.Add(userId, donationAmount);
-
-            string output = "";
-            int chance = 12, multiplier = 6;
-            int rand = new Random().Next(0, chance);
-            if (rand == 0)
-            {
-                double returnAmount = multiplier * donationAmount;
-                output += $"*You encountered a rare bonus reward for donating. You get back ${FormatHelper.GetCommaNumber(returnAmount)}.*\n";
-                account.NetWorth += returnAmount;
-
-                //stats for donation bonus
-                account.Stats.DonationBonusesEncountered += 1;
-            }
-
-            output += $"{message.Author.Mention} you donated {FormatHelper.GetCommaNumber(donationAmount)} to {args[0]} (minus 20% tax, which goes to the jackpot)." +
-            $"\n`Net worth:`" +
-            $"\n{account.Name}: ${FormatHelper.GetCommaNumber(account.NetWorth)}" +
-            $"\n{donationReceiverAccount.Name}: ${FormatHelper.GetCommaNumber(donationReceiverAccount.NetWorth)}";
-
-            await _coinService.Update(account.UserId, account.NetWorth, message.Author.Username);
-            await _coinService.Update(donationReceiverAccount.UserId, donationReceiverAccount.NetWorth, donationReceiverAccount.Name);
-
-            await message.Channel.SendMessageAsync(output);
+            await _coinService.Update();
+            string taxLine = taxFree
+                ? "✨ Lucky bastard: this one was tax-free, the jackpot got nothing."
+                : $"The jackpot skimmed {Money.Format(tax)} ({DonationTax:P0} tax).";
+            await message.Channel.SendMessageAsync($"💸 {message.Author.Mention} gave **{receiver.Name}** {Money.Format(received)}. {taxLine}\n"
+                + $"{account.Name}: {Money.Format(account.NetWorth)} · {receiver.Name}: {Money.Format(receiver.NetWorth)}", allowedMentions: AllowedMentions.None);
         }
 
         private async Task PowerUp(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -1117,12 +1088,26 @@ namespace DiscordBot.Managers
 
         private async Task Time(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args[0] == "pst")
-                await message.Channel.SendMessageAsync($"PST: {DateTime.UtcNow.AddHours(-7).ToString("yyyy-MM-dd HH:mm:ss")}");
-            else if (args[0] == "aest")
-                await message.Channel.SendMessageAsync($"AEST: {DateTime.UtcNow.AddHours(10).ToString("yyyy-MM-dd HH:mm:ss")}");
-            else
-                await message.Channel.SendMessageAsync($"UTC: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")}");
+            //real time zones, so daylight saving is right
+            string zone = args.Count > 0 ? args[0].ToLowerInvariant() : "utc";
+            (string Label, string Id) pick = zone switch
+            {
+                "pst" or "pdt" or "pt" or "la" => ("LA", "America/Los_Angeles"),
+                "est" or "edt" or "et" or "ny" => ("New York", "America/New_York"),
+                "aest" or "aedt" or "syd" or "sydney" => ("Sydney", "Australia/Sydney"),
+                "uk" or "gmt" or "bst" or "london" => ("London", "Europe/London"),
+                _ => ("UTC", "UTC"),
+            };
+            DateTime now = DateTime.UtcNow;
+            try
+            {
+                now = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(now, pick.Id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                pick.Label = "UTC";
+            }
+            await message.Channel.SendMessageAsync($"{pick.Label}: {now:yyyy-MM-dd HH:mm:ss}");
         }
 
 
@@ -1344,10 +1329,8 @@ namespace DiscordBot.Managers
         private Embed StatsEmbed(CoinAccount account, StatsReport.Section section)
         {
             var accounts = _coinService.GetAll().Accounts;
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt;
-            var ordered = _appSettings.PrestigeDisabled
-                ? accounts.OrderByDescending(TotalWorth).ToList()
-                : accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth).ToList();
+            double TotalWorth(CoinAccount a) => _worth.TotalWorth(a);
+            var ordered = _worth.Ranked(accounts);
 
             var market = _stockService.GetMarket();
             double index = _coinService.GetAll().PropertyIndex;

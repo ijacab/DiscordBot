@@ -122,6 +122,7 @@ namespace DiscordBot.Models
         public static readonly TimeSpan HoldTime = TimeSpan.FromHours(24);
         public const int MaxHeld = 10;
 
+        public const double MusicalChairsMinCap = 10_000;
         public const double HotStreakBonus = 0.5;
         /// <summary>Winning bets a Hot Streak boosts.</summary>
         public const int HotStreakWins = 5;

@@ -44,6 +44,10 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-20", "Fixed: the \"daily\" $1,000 was paid every hour. It's now a $10,000 handout once a day, to anyone who played in the last 3 days."),
+            new PatchNote("2026-11-20", "Donating no longer prints money: the 6x bonus is gone. Instead 1 donation in 12 is tax-free."),
+            new PatchNote("2026-11-20", "Closed exploits: NaN bets, parking cash in a dungeon to fake an all-in, broke players paying out debt they could never back, and the comeback bonus making betting free money."),
+            new PatchNote("2026-11-20", "Blackjack and duck race lobbies are per channel now and start themselves after 30 seconds."),
             new PatchNote("2026-11-20", "Calls and puts are now simple leveraged bets: `.call TECH 1000 5x 1h`. You see exactly what you win, where you break even and where you're wiped out. `.short` is gone (use a put)."),
             new PatchNote("2026-11-19", "Debt auto-sell now sells anything: after stocks it covers shorts and cashes out options worth something, then sells houses."),
             new PatchNote("2026-11-19", "Card levels: XP from raids and Face Off, `.train` buys levels, `.card focus` picks the stat that grows. Your level stays with a new card and resets each season."),

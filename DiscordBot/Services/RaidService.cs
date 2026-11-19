@@ -21,8 +21,8 @@ namespace DiscordBot.Services
         private readonly Func<CoinAccount, double> _totalWorth;
         private readonly Random _random;
 
-        public RaidService(CoinService coinService, StockService stockService)
-            : this(coinService, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId) + coinService.PropertyValue(a) - a.Debt, new Random())
+        public RaidService(CoinService coinService, StockService stockService, AppSettings appSettings)
+            : this(coinService, new WorthService(coinService, stockService, appSettings).TotalWorth, new Random())
         {
         }
 
@@ -192,8 +192,9 @@ namespace DiscordBot.Services
                 loot = Math.Floor(cash);
                 result.Parachuted = true;
             }
-            result.Loot = loot;
-            result.LootToDebt = Take(target, loot);
+            var (taken, lootToDebt) = Take(target, loot);
+            result.Loot = loot = taken;
+            result.LootToDebt = lootToDebt;
             result.BountySet = Math.Round(loot * RaidRules.BountyShare, 2);
             attacker.NetWorth += result.Stake + loot - result.BountySet;
             attacker.Bounty = Math.Round(attacker.Bounty + result.BountySet, 2);
@@ -224,8 +225,7 @@ namespace DiscordBot.Services
             target.NetWorth += result.Stake;
             if (target.RaidStance == RaidStance.Counter)
             {
-                result.CounterHit = Math.Floor(result.Stake * RaidRules.CounterHitMultiple);
-                result.CounterToDebt = Take(attacker, result.CounterHit);
+                (result.CounterHit, result.CounterToDebt) = Take(attacker, Math.Floor(result.Stake * RaidRules.CounterHitMultiple));
                 target.NetWorth += result.CounterHit;
             }
 
@@ -244,16 +244,9 @@ namespace DiscordBot.Services
             if (target.BattlePerson != null) target.BattlePerson.Wins++;
         }
 
-        /// <summary>Takes <paramref name="amount"/> from the account: cash first, the rest on their debt. Returns the debt part.</summary>
-        private static double Take(CoinAccount account, double amount)
-        {
-            double fromCash = Math.Min(Math.Max(0, account.NetWorth), amount);
-            account.NetWorth -= fromCash;
-            double toDebt = Math.Round(amount - fromCash, 2);
-            account.Debt = Math.Round(account.Debt + toDebt, 2);
-            account.Stats.PeakDebt = Math.Max(account.Stats.PeakDebt, account.Debt);
-            return toDebt;
-        }
+        /// <summary>Takes up to <paramref name="amount"/> from the account: cash first, the rest on their debt, but only as much debt as their other assets back. Returns (taken, debt part).</summary>
+        private (double Taken, double ToDebt) Take(CoinAccount account, double amount) =>
+            DiscordBot.Models.Money.Seize(account, null, amount, DiscordBot.Models.Money.DebtRoom(account, _totalWorth(account)));
 
         /// <summary>Hires guards for <see cref="RaidRules.GuardsDuration"/> more, paid from cash into the jackpot. Returns the cost.</summary>
         public double HireGuards(CoinAccount account, DateTime now)

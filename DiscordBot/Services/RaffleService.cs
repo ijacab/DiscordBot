@@ -30,7 +30,7 @@ namespace DiscordBot.Services
         private readonly Func<CoinAccount, double> _totalWorth;
 
         public RaffleService(CoinService coinService, StockService stockService, AppSettings appSettings)
-            : this(coinService, appSettings, a => a.NetWorth + stockService.GetPortfolioValue(a.UserId) + coinService.PropertyValue(a) - a.Debt)
+            : this(coinService, appSettings, new WorthService(coinService, stockService, appSettings).TotalWorth)
         {
         }
 
@@ -344,18 +344,16 @@ namespace DiscordBot.Services
         /// Takes <paramref name="amount"/> from the victim's worth and gives it to the thief. The victim's cash is taken first;
         /// whatever they can't pay goes on their debt, which grows with interest until asset sales or repayment clear it.
         /// </summary>
-        public static (double FromCash, double ToDebt) Seize(CoinAccount victim, CoinAccount thief, double amount)
+        public static (double FromCash, double ToDebt) Seize(CoinAccount victim, CoinAccount thief, double amount, double? debtRoom = null)
         {
-            double fromCash = Math.Min(Math.Max(0, victim.NetWorth), amount);
-            victim.NetWorth -= fromCash;
-            double toDebt = amount - fromCash;
-            victim.Debt = Math.Round(victim.Debt + toDebt, 2);
-            thief.NetWorth += amount;
-            victim.Stats.PeakDebt = Math.Max(victim.Stats.PeakDebt, victim.Debt);
-            thief.Stats.MoneyTakenByPowerUps += amount;
-            victim.Stats.MoneyLostToPowerUps += amount;
-            return (fromCash, toDebt);
+            var (taken, toDebt) = DiscordBot.Models.Money.Seize(victim, thief, amount, debtRoom);
+            thief.Stats.MoneyTakenByPowerUps += taken;
+            victim.Stats.MoneyLostToPowerUps += taken;
+            return (taken - toDebt, toDebt);
         }
+
+        /// <summary>How much debt the victim's other assets can back, so an attack never takes money that isn't there.</summary>
+        private double Room(CoinAccount victim) => DiscordBot.Models.Money.DebtRoom(victim, _totalWorth(victim));
 
         /// <summary>What an attack did to one victim.</summary>
         public sealed class HitResult
@@ -377,11 +375,12 @@ namespace DiscordBot.Services
         /// the victim's cash. Otherwise it is a normal <see cref="Seize"/>: cash first, the rest on the victim's debt.
         /// Catch-up items don't come through here, so nothing blocks them.
         /// </summary>
-        public static HitResult Hit(CoinAccount victim, CoinAccount attacker, double amount, DateTime now)
+        public static HitResult Hit(CoinAccount victim, CoinAccount attacker, double amount, DateTime now, double? debtRoom = null, double? attackerDebtRoom = null)
         {
             if (victim.TryConsumeCharge(PowerUpIds.Mirror, now))
             {
-                Seize(attacker, victim, amount);
+                var (reflectedCash, reflectedDebt) = Seize(attacker, victim, amount, attackerDebtRoom);
+                amount = reflectedCash + reflectedDebt;
                 victim.Stats.AttacksLanded++;
                 attacker.Stats.AttacksSuffered++;
                 return new HitResult { Victim = victim, Gained = -amount, Reflected = true };
@@ -394,7 +393,8 @@ namespace DiscordBot.Services
                 amount = Math.Floor(cash);
                 parachuted = true;
             }
-            var (_, toDebt) = Seize(victim, attacker, amount);
+            var (fromCash, toDebt) = Seize(victim, attacker, amount, debtRoom);
+            amount = fromCash + toDebt;
             attacker.Stats.AttacksLanded++;
             victim.Stats.AttacksSuffered++;
             return new HitResult { Victim = victim, Gained = amount, ToDebt = toDebt, Parachuted = parachuted };
@@ -448,7 +448,7 @@ namespace DiscordBot.Services
             {
                 double amount = Math.Floor(_totalWorth(target) * percent);
                 if (amount <= 0) continue;
-                var hit = Hit(target, user, amount, now);
+                var hit = Hit(target, user, amount, now, Room(target), Room(user));
                 total += hit.Gained;
                 lines.Add(hit.Describe());
             }
@@ -465,7 +465,7 @@ namespace DiscordBot.Services
                     double amount = Math.Floor(_totalWorth(leader) * PowerUpCatalog.BlueShellPercent);
                     if (amount <= 0)
                         throw new BadInputException($"{leader.Name} has nothing to steal.");
-                    return $"💥 **Blue Shell!** You hit 1st place: {Hit(leader, user, amount, now).Describe()}.";
+                    return $"💥 **Blue Shell!** You hit 1st place: {Hit(leader, user, amount, now, Room(leader), Room(user)).Describe()}.";
                 }
                 case PowerUpIds.Pickpocket:
                 {
@@ -491,7 +491,7 @@ namespace DiscordBot.Services
                     double amount = Math.Floor(_totalWorth(target) * PowerUpCatalog.RedShellPercent);
                     if (amount <= 0)
                         throw new BadInputException($"{target.Name} has nothing to steal.");
-                    return $"🔴 **Red Shell!** You hit the player just above you: {Hit(target, user, amount, now).Describe()}.";
+                    return $"🔴 **Red Shell!** You hit the player just above you: {Hit(target, user, amount, now, Room(target), Room(user)).Describe()}.";
                 }
                 case PowerUpIds.LightningBolt:
                 {
@@ -536,7 +536,7 @@ namespace DiscordBot.Services
                         _totalWorth(leader) * PowerUpCatalog.HostileTakeoverWorthPercent));
                     if (amount <= 0)
                         throw new BadInputException($"{leader.Name} has nothing to take. Keep it for later.");
-                    return $"🏴 **Hostile Takeover!** You seized 1st place's money: {Hit(leader, user, amount, now).Describe()}.";
+                    return $"🏴 **Hostile Takeover!** You seized 1st place's money: {Hit(leader, user, amount, now, Room(leader), Room(user)).Describe()}.";
                 }
                 case PowerUpIds.Heist:
                 {
@@ -546,10 +546,10 @@ namespace DiscordBot.Services
                         double amount = Math.Floor(_totalWorth(leader) * PowerUpCatalog.HeistWinPercent);
                         if (amount <= 0)
                             throw new BadInputException($"{leader.Name} has nothing worth robbing.");
-                        return $"💰 **Heist: heads!** You cracked 1st place's vault: {Hit(leader, user, amount, now).Describe()}.";
+                        return $"💰 **Heist: heads!** You cracked 1st place's vault: {Hit(leader, user, amount, now, Room(leader), Room(user)).Describe()}.";
                     }
                     double fine = Math.Floor(Math.Max(PowerUpCatalog.HeistLoseMin, _totalWorth(user) * PowerUpCatalog.HeistLosePercent));
-                    var (_, toDebt) = Seize(user, leader, fine);
+                    var (_, toDebt) = Seize(user, leader, fine, Room(user));
                     return $"🚨 **Heist: tails!** You got caught and paid {leader.Name} {Money(fine)}." +
                         (toDebt > 0 ? $" You didn't have the cash, so {Money(toDebt)} went on your debt." : "");
                 }
@@ -563,10 +563,15 @@ namespace DiscordBot.Services
                     var target = candidates[Math.Min(candidates.Count - 1, (int)(random() * candidates.Count))];
                     if (target.TryConsumeCharge(PowerUpIds.Mirror, now))
                         return $"🪑 **Musical Chairs!** The music stopped on {target.Name}, but their 🪞 Mirror kept them in their seat. Nothing changed hands.";
-                    double mine = user.NetWorth;
-                    user.NetWorth = target.NetWorth;
-                    target.NetWorth = mine;
-                    return $"🪑 **Musical Chairs!** The music stopped and you swapped cash with {target.Name}: you now have {Money(user.NetWorth)}, they have {Money(target.NetWorth)}.";
+                    //a swap of cash, but nobody can walk off with more than twice what they're worth (at least $10,000), and
+                    //negative cash isn't something you can hand over
+                    double mine = Math.Max(0, user.NetWorth);
+                    double gain = Math.Min(target.NetWorth - mine, Math.Max(PowerUpCatalog.MusicalChairsMinCap, 2 * Math.Max(0, _totalWorth(user))));
+                    user.NetWorth += gain;
+                    target.NetWorth -= gain;
+                    user.Stats.MoneyTakenByPowerUps += gain;
+                    target.Stats.MoneyLostToPowerUps += gain;
+                    return $"🪑 **Musical Chairs!** The music stopped and you swapped seats with {target.Name}, nicking {Money(gain)} of their cash: you now have {Money(user.NetWorth)}, they have {Money(target.NetWorth)}.";
                 }
                 case PowerUpIds.StickyFingers:
                 {
@@ -611,7 +616,7 @@ namespace DiscordBot.Services
                     {
                         double amount = Math.Floor(_totalWorth(payer) * PowerUpCatalog.TaxTheRichPercent);
                         if (amount <= 0) continue;
-                        var (_, toDebt) = Seize(payer, user, amount);
+                        var (_, toDebt) = Seize(payer, user, amount, Room(payer));
                         total += amount;
                         lines.Add($"{payer.Name} ({Money(amount)}" + (toDebt > 0 ? $", {Money(toDebt)} of it on their debt)" : ")"));
                     }
@@ -638,7 +643,7 @@ namespace DiscordBot.Services
                     double bonus = Math.Floor(leaderWorth * PowerUpCatalog.BailoutBonusPercent);
                     if (paid + bonus <= 0)
                         throw new BadInputException($"{leader.Name} has nothing to bail you out with. Keep it for later.");
-                    var (_, toDebt) = Seize(leader, user, paid + bonus);
+                    var (_, toDebt) = Seize(leader, user, paid + bonus, Room(leader));
                     user.NetWorth -= paid;
                     user.Debt = Math.Round(user.Debt - paid, 2);
                     _coinService.GetAll().AddDebtRepaymentToJackpot(paid);

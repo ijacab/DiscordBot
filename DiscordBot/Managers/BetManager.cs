@@ -17,8 +17,9 @@ namespace DiscordBot.Managers
         private readonly CoinService _coinService;
         private readonly StockService _stockService;
         private readonly AppSettings _appSettings;
-        public List<ulong> InitiatedBetUserIds = new List<ulong>();
-        private readonly Dictionary<ulong, DailyRollResult> _pendingDailyRolls = new Dictionary<ulong, DailyRollResult>();
+        /// <summary>Players with a bet open. Thread-safe: typed commands and button clicks place bets on different threads.</summary>
+        public readonly SyncSet<ulong> InitiatedBetUserIds = new SyncSet<ulong>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, DailyRollResult> _pendingDailyRolls = new System.Collections.Concurrent.ConcurrentDictionary<ulong, DailyRollResult>();
         private const int StealRollNeeded = 10;
         private const double StealPercent = 0.10;
         /// <summary>Chance that a qualifying bet (see <see cref="QualifiesForJackpot"/>) wins the jackpot pool, per roll.</summary>
@@ -43,12 +44,13 @@ namespace DiscordBot.Managers
         private static readonly Random _random = new Random();
         /// <summary>The random source for the jackpot roll (0 to 1). Settable so tests aren't random.</summary>
         public Func<double> NextJackpotRoll { get; set; } = () => _random.NextDouble();
-        private readonly Dictionary<ulong, double> _pendingJackpotWins = new Dictionary<ulong, double>();
-        private readonly Dictionary<ulong, string> _pendingJackpotNotes = new Dictionary<ulong, string>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, double> _pendingJackpotWins = new System.Collections.Concurrent.ConcurrentDictionary<ulong, double>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, string> _pendingJackpotNotes = new System.Collections.Concurrent.ConcurrentDictionary<ulong, string>();
 
         public class DailyRollResult
         {
             public int Roll { get; set; }
+            public int Needed { get; set; } = StealRollNeeded;
             public double StolenAmount { get; set; }
             public string StolenFromName { get; set; }
             public ulong StolenFromUserId { get; set; }
@@ -56,8 +58,10 @@ namespace DiscordBot.Managers
             public override string ToString()
             {
                 if (StolenAmount > 0)
-                    return $"🎲 First gamble of the day! Rolled a {Roll} and stole ${Common.Helpers.FormatHelper.GetCommaNumber(StolenAmount)} from {StolenFromName}!";
-                return $"🎲 First gamble of the day! Rolled a {Roll}. (Roll a {StealRollNeeded} to steal {StealPercent * 100}% of the top player's net worth.)";
+                    return $"🎲 First gamble of the day! Rolled a {Roll} and robbed {StolenFromName} of {Money.Format(StolenAmount)}. Get fucked, {StolenFromName}.";
+                if (Roll >= Needed)
+                    return $"🎲 First gamble of the day! Rolled a {Roll}... but there was nobody to rob (you're on top, or they've got a Shield).";
+                return $"🎲 First gamble of the day! Rolled a {Roll}. Needed {Needed}+ to rob the top player of {StealPercent:P0} of their cash. Unlucky.";
             }
         }
 
@@ -66,7 +70,7 @@ namespace DiscordBot.Managers
         /// </summary>
         public DailyRollResult TakeDailyRoll(ulong userId)
         {
-            if (!_pendingDailyRolls.Remove(userId, out var result))
+            if (!_pendingDailyRolls.TryRemove(userId, out var result))
                 return null;
             return result;
         }
@@ -77,13 +81,13 @@ namespace DiscordBot.Managers
         /// <summary>Returns (and clears) the announcement for a jackpot won when the user's bet was last resolved, if any.</summary>
         public string TakeJackpotWin(ulong userId)
         {
-            if (_pendingJackpotWins.Remove(userId, out double won))
+            if (_pendingJackpotWins.TryRemove(userId, out double won))
             {
-                _pendingJackpotNotes.Remove(userId);
+                _pendingJackpotNotes.TryRemove(userId, out _);
                 return $"💰 **JACKPOT!** You bet big and won the ${Common.Helpers.FormatHelper.GetCommaNumber(won)} jackpot!";
             }
             //a qualifying bet that couldn't roll because the hour's rolls were used up
-            return _pendingJackpotNotes.Remove(userId, out string note) ? note : null;
+            return _pendingJackpotNotes.TryRemove(userId, out string note) ? note : null;
         }
 
         /// <summary>
@@ -148,30 +152,31 @@ namespace DiscordBot.Managers
         /// </summary>
         public async Task InitiateBet(ulong userId, string userName, double betAmount, int? minimumPercentBetRequired = null)
         {
-            if(InitiatedBetUserIds.Contains(userId))
-                throw new BadInputException("Can't initiate a bet while another is in progress");
-            if (betAmount < 1)
-                throw new BadInputException("You need to bet at least a dollar to play bro... what do think this is? A casino for FUCKING poor people huh? FUCK HEAD FUCK OFF");
-
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             await InitiateBet(coinAccount, betAmount, minimumPercentBetRequired);
         }
 
         public async Task InitiateBet(CoinAccount coinAccount, double betAmount, int? minimumPercentBetRequired = null)
         {
-            if (InitiatedBetUserIds.Contains(coinAccount.UserId))
-                throw new BadInputException("Can't initiate a bet while another is in progress");
-            if (betAmount < 1)
+            if (!double.IsFinite(betAmount) || betAmount < 1)
                 throw new BadInputException("You need to bet at least a dollar to play bro... what do think this is? A casino for FUCKING poor people huh? FUCK HEAD FUCK OFF");
+            //claimed first, atomically, so a typed bet and a button click at the same moment can't both get through
+            if (!InitiatedBetUserIds.TryAdd(coinAccount.UserId))
+                throw new BadInputException("You've already got a bet going, you degenerate. Finish that one first.");
+            try
+            {
+                EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
+                UpdateInitiateBetStats(coinAccount, betAmount);
 
-            EnsureGameMoneyInputIsValid(betAmount, coinAccount, minimumPercentBetRequired);
-
-            UpdateInitiateBetStats(coinAccount, betAmount);
-
-            //minus their input money - they will get it back when the game ends (if they don't lose)
-            coinAccount.NetWorth -= betAmount;
-            await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, coinAccount.Name, updateRemote: false);
-            InitiatedBetUserIds.Add(coinAccount.UserId);
+                //minus their input money - they will get it back when the game ends (if they don't lose)
+                Money.Debit(coinAccount, betAmount);
+                await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, coinAccount.Name, updateRemote: false);
+            }
+            catch
+            {
+                InitiatedBetUserIds.Remove(coinAccount.UserId);
+                throw;
+            }
         }
 
         public async Task CancelBet(ulong userId, string userName, double betAmount)
@@ -194,12 +199,28 @@ namespace DiscordBot.Managers
             if (!InitiatedBetUserIds.Contains(userId))
                 throw new Exception("Something's gone wrong here. Somehow it is trying to resolve a bet which was not initiated.");
 
+            try
+            {
+                return await ResolveBetCore(userId, userName, betAmount, baseWinnings, updateRemote, feedJackpot, game);
+            }
+            finally
+            {
+                InitiatedBetUserIds.Remove(userId); //even if saving fails, they're never stuck with a bet "open"
+            }
+        }
+
+        private async Task<(double BonusWinnings, double TotalWinnings, double NetWinnings, bool WasBonusGranted)>
+            ResolveBetCore(ulong userId, string userName, double betAmount, double baseWinnings, bool updateRemote, bool feedJackpot, string game)
+        {
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
-            
-            bool overFiftyPercentBet = false;
-            if (betAmount >= (0.5 * netWorthBeforeBet) - 1)
-                overFiftyPercentBet = true; //if bet made over 50% networth for that day they get the bonus
+            var worth = new WorthService(_coinService, _stockService, _appSettings);
+            //everything they own counts, plus money held in a dungeon run or a Face Off backing, so parking cash elsewhere
+            //and betting a dollar doesn't count as betting big
+            double everythingBeforeBet = worth.TotalWorth(coinAccount) + betAmount + Money.Held(userId);
+
+            //the interest bonus needs a bet of half of everything they're worth
+            bool overFiftyPercentBet = betAmount >= (0.5 * everythingBeforeBet) - 1;
 
             bool bonusGranted = false, firstGameOfTheDay = false;
             var todayString = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
@@ -217,7 +238,7 @@ namespace DiscordBot.Managers
             coinAccount.LastGambleDate = todayString;
 
             var now = DateTime.UtcNow;
-            double bonusWinnings = GetBonus(coinAccount, baseWinnings);
+            double bonusWinnings = GetBonus(coinAccount, baseWinnings, betAmount);
             bonusWinnings += coinAccount.BetBonus(baseWinnings, betAmount, now);
             //an Audit, a Leech or someone's Toll Booth takes a cut of a win; it comes off the bonus line
             bonusWinnings -= PowerUps.SettleWin(_coinService.GetAll(), coinAccount, baseWinnings + bonusWinnings - betAmount, now);
@@ -255,6 +276,7 @@ namespace DiscordBot.Managers
             //trading is blocked while a bet is open, so their holdings are the same as when the bet was placed
             //property counts the same as stocks: owning any blocks the jackpot
             bool allInWithNothingElseInvested = QualifiesForJackpot(betAmount, netWorthBeforeBet)
+                && Money.Held(userId) <= 0
                 && !_stockService.HasPositions(userId)
                 && coinAccount.Properties.Count == 0;
             if (allInWithNothingElseInvested)
@@ -270,7 +292,6 @@ namespace DiscordBot.Managers
             }
 
             await _coinService.Update(coinAccount.UserId, coinAccount.NetWorth, userName, updateRemote);
-            InitiatedBetUserIds.Remove(userId);
             return (bonusWinnings, totalWinnings, netWinnings, bonusGranted);
         }
 
@@ -280,11 +301,7 @@ namespace DiscordBot.Managers
         /// </summary>
         private IEnumerable<CoinAccount> RankedAccounts()
         {
-            double TotalWorth(CoinAccount a) => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt;
-            var accounts = _coinService.GetAll().Accounts;
-            return _appSettings.PrestigeDisabled
-                ? accounts.OrderByDescending(TotalWorth)
-                : accounts.OrderByDescending(a => a.PrestigeLevel).ThenByDescending(TotalWorth);
+            return new WorthService(_coinService, _stockService, _appSettings).Ranked();
         }
 
         /// <summary>
@@ -293,7 +310,7 @@ namespace DiscordBot.Managers
         /// </summary>
         private DailyRollResult RollDailySteal(CoinAccount roller, int rollNeeded, DateTime now)
         {
-            var result = new DailyRollResult { Roll = DiceRoller.RollDice(1, 10)[0] };
+            var result = new DailyRollResult { Roll = DiceRoller.RollDice(1, 10)[0], Needed = rollNeeded };
             if (result.Roll < rollNeeded)
                 return result;
 
@@ -321,22 +338,28 @@ namespace DiscordBot.Managers
 
         public async Task ResolveBet(IEnumerable<IPlayer> players, bool feedJackpot = true, string game = null)
         {
-            int i = 1;
-            bool updateRemote = false;
-            foreach (var player in players)
+            //every player is settled even if one of them fails, so nobody's stake is left hanging
+            var list = players.ToList();
+            Exception failure = null;
+            for (int i = 0; i < list.Count; i++)
             {
-                if (i == players.Count())
-                    updateRemote = true;
-
-                var (BonusWinnings, TotalWinnings, NetWinnings, WasBonusGranted) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, updateRemote, feedJackpot, game);
-                player.BonusWinnings = BonusWinnings; //this gets used outside of the method
-                i++;
+                var player = list[i];
+                try
+                {
+                    var (BonusWinnings, _, _, _) = await ResolveBet(player.UserId, player.Username, player.BetAmount, player.BaseWinnings, i == list.Count - 1, feedJackpot, game);
+                    player.BonusWinnings = BonusWinnings; //this gets used outside of the method
+                }
+                catch (Exception ex)
+                {
+                    failure ??= ex;
+                }
             }
+            if (failure != null) throw failure;
         }
 
         private void EnsureGameMoneyInputIsValid(double inputMoney, CoinAccount account, int? minimumPercentBetRequired)
         {
-            if (inputMoney <= 0)
+            if (!double.IsFinite(inputMoney) || inputMoney <= 0)
                 throw new BadInputException($"You didn't place any valid bets FUCK HEAD");
 
             if (inputMoney > account.NetWorth)
@@ -346,7 +369,7 @@ namespace DiscordBot.Managers
             {
                 double betRequired = account.NetWorth * ((double)minimumPercentBetRequired / 100);
                 if (inputMoney < betRequired - 1)
-                    throw new BadInputException($"Total bet amount must be at least {minimumPercentBetRequired}% of your net worth. Bet at least ${FormatHelper.GetCommaNumber(betRequired + 1)} or higher.");
+                    throw new BadInputException($"Bet at least {minimumPercentBetRequired}% of your cash, you tight-arse. That's {Money.Format(Math.Ceiling(betRequired))} or more.");
             }
         }
 
@@ -404,24 +427,24 @@ namespace DiscordBot.Managers
         }
 
 
-        public double GetBonus(CoinAccount coinAccount, double baseWinnings)
+        /// <summary>The comeback bonus tops up a win by at most this share of the profit.</summary>
+        public const double MaxComebackBonus = 0.10;
+
+        /// <summary>
+        /// The comeback bonus: a player under half the prestige threshold in cash who's up on the day gets up to
+        /// <see cref="MaxComebackBonus"/> more on the profit of a win, growing with how much they've won today. Small enough
+        /// that it softens the house edge without making betting a money printer. Nothing on a loss.
+        /// </summary>
+        public double GetBonus(CoinAccount coinAccount, double baseWinnings, double betAmount)
         {
+            double profit = baseWinnings - betAmount;
+            if (profit <= 0) return 0;
             double p = coinAccount.GetPrestigeThreshold(_appSettings.PrestigeDisabled) / 2;
             if (coinAccount.NetWorth > p) return 0;
-            double moneyWon = coinAccount.NetWinningsToday < 0 ? 0 : coinAccount.NetWinningsToday;
-            double m = 1;
-            double y = (m / p) * moneyWon * 14;
-            double multiplier = y;
-            if (multiplier == 0) return 0;
-            if (multiplier > 0.75) multiplier = 0.75; //0 at 0 moneyWon and 0.75 at max
-            if (multiplier < 0.05) multiplier = 0.05;
-
-            double bonus = multiplier * baseWinnings;
-            double nw = coinAccount.NetWorth + baseWinnings;
-            if (bonus > nw * 0.1)
-                bonus = nw * 0.1;
-
-            return bonus;
+            double moneyWon = Math.Max(0, coinAccount.NetWinningsToday);
+            if (moneyWon <= 0) return 0;
+            double multiplier = Math.Clamp(moneyWon / p * 14 * MaxComebackBonus / 0.75, 0.01, MaxComebackBonus);
+            return Math.Floor(multiplier * profit * 100) / 100;
         }
     }
 }

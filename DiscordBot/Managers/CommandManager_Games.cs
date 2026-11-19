@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
+using DiscordBot.Models;
 using DiscordBot.Games.Managers;
 using DiscordBot.Games.Models.Dungeon;
 using DiscordBot.Games.Models;
@@ -393,32 +394,15 @@ namespace DiscordBot.Managers
             }
         }
 
-        private bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)
+        /// <summary>
+        /// Reads a bet amount from <paramref name="args"/> at <paramref name="betAmountIndex"/> with <see cref="Money.TryParse"/>
+        /// (1000, 2.5k, 25%, max, min...). A missing amount means the minimum bet. False for junk, NaN, 0 or negatives.
+        /// </summary>
+        private static bool TryExtractBetAmount(IEnumerable<string> args, CoinAccount coinAccount, out double betAmount, int betAmountIndex = 0)
         {
-            betAmount = 0;
-            try
-            {
-                int minPercentBetRequired = 10;
-                double tenPercentNw = coinAccount.NetWorth * ((double)minPercentBetRequired / 100);
-
-                if (args.Count() == betAmountIndex || args.ElementAt(betAmountIndex).StartsWith("min"))
-                    betAmount = tenPercentNw;
-                else if (args.ElementAt(betAmountIndex).StartsWith("max"))
-                    betAmount = coinAccount.NetWorth;
-                else if (args.ElementAt(betAmountIndex).EndsWith('%'))
-                {
-                    double amountMultiple = Convert.ToDouble(args.ElementAt(betAmountIndex).TrimEnd('%')) / 100;
-                    betAmount = coinAccount.NetWorth * amountMultiple;
-                }
-                else
-                    betAmount = Convert.ToDouble(args.ElementAt(betAmountIndex));
-
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            var list = args.ToList();
+            string text = list.Count <= betAmountIndex ? "min" : list[betAmountIndex];
+            return Money.TryParse(text, coinAccount.NetWorth, out betAmount);
         }
     }
 }

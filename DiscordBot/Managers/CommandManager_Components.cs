@@ -188,7 +188,7 @@ namespace DiscordBot.Managers
                 {
                     await component.DeferAsync();
                     CoinAccount account = await _coinService.Get(userId, component.User.Username);
-                    double percent = args.Length > 1 && double.TryParse(args[1], out double p) ? p : 10;
+                    double percent = args.Length > 1 && double.TryParse(args[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double p) && double.IsFinite(p) && p > 0 && p <= 100 ? p : 10;
                     double bet = percent >= 100 ? account.NetWorth : Math.Round(account.NetWorth * percent / 100, 2);
                     await FollowUp(component, await _battleArenaManager.Join(account, bet, component.Channel, component.GuildId ?? 0));
                     return;

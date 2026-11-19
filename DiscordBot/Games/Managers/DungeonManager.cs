@@ -58,12 +58,13 @@ namespace DiscordBot.Games.Managers
             {
                 if (_session != null)
                     return $"A dungeon is already {(_session.Started ? "running" : "in the lobby")} in <#{_dashboard.Channel.Id}>. Join it there, or wait for it to end.";
-                if (buyIn < DungeonSession.MinBuyIn)
+                if (!double.IsFinite(buyIn) || buyIn < DungeonSession.MinBuyIn)
                     return $"The dungeon needs at least ${FormatHelper.GetCommaNumber(DungeonSession.MinBuyIn)} to enter.";
                 if (buyIn > host.NetWorth)
                     return $"You only have ${FormatHelper.GetCommaNumber(host.NetWorth)}.";
 
-                host.NetWorth -= buyIn;
+                Money.Debit(host, buyIn);
+                Money.Hold(host.UserId, buyIn);
                 host.Stats.DungeonRuns++;
                 await _coinService.Update(host.UserId, host.NetWorth, host.Name);
 
@@ -86,7 +87,8 @@ namespace DiscordBot.Games.Managers
                 string refusal = session.Join(account.UserId, account.Name, account.NetWorth, DateTime.UtcNow);
                 if (refusal == null)
                 {
-                    account.NetWorth -= session.BuyIn;
+                    Money.Debit(account, session.BuyIn);
+                    Money.Hold(account.UserId, session.BuyIn);
                     account.Stats.DungeonRuns++;
                     await _coinService.Update(account.UserId, account.NetWorth, account.Name);
                 }
@@ -215,7 +217,8 @@ namespace DiscordBot.Games.Managers
             foreach (DungeonPayout payout in _session.TakePayouts())
             {
                 CoinAccount account = await _coinService.Get(payout.UserId, payout.Name);
-                account.NetWorth += payout.Amount;
+                Money.Release(payout.UserId, _session.BuyIn);
+                Money.Credit(_coinService.GetAll(), account, payout.Amount);
                 account.Stats.DungeonPayouts += payout.Amount;
                 await _coinService.Update(payout.UserId, account.NetWorth, payout.Name);
             }
@@ -224,6 +227,7 @@ namespace DiscordBot.Games.Managers
             var forfeits = _session.TakeForfeits();
             foreach (var forfeit in forfeits)
             {
+                Money.Release(forfeit.UserId, _session.BuyIn);
                 var account = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == forfeit.UserId);
                 if (account != null)
                     account.Stats.DungeonBuyInsLost += forfeit.Amount;

@@ -53,14 +53,14 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             var (bet, betQuote) = _stockService.OpenBet(account, message.Channel.Id, symbol, isCall, amount, leverage, duration);
             string arrow = isCall ? "📈 UP" : "📉 DOWN";
-            await message.Channel.SendMessageAsync($"{message.Author.Mention} just put **${Money(bet.Paid)}** on **{bet.Symbol}** going **{arrow}** at {bet.Leverage}x. Results in {FormatRemaining(duration)}.\n"
+            await message.Channel.SendMessageAsync($"{message.Author.Mention} just put **${Dollars(bet.Paid)}** on **{bet.Symbol}** going **{arrow}** at {bet.Leverage}x. Results in {FormatRemaining(duration)}.\n"
                 + BetPayoffText(isCall, bet.Leverage, bet.EntryPrice, bet.Paid, bet.Stake, duration, betQuote.ExpectedMultiple)
-                + $"\nCash left: ${Money(account.NetWorth)}. `.options` to watch it sweat.");
+                + $"\nCash left: ${Dollars(account.NetWorth)}. `.options` to watch it sweat.");
         }
 
         private static string FormatDurationArg(TimeSpan d) => d.TotalHours >= 1 && d.TotalMinutes % 60 == 0 ? $"{(int)d.TotalHours}h" : $"{(int)d.TotalMinutes}m";
 
-        private static string Money(double amount) => FormatHelper.GetCommaNumber(Math.Round(amount, 2));
+        private static string Dollars(double amount) => FormatHelper.GetCommaNumber(Math.Round(amount, 2));
 
         /// <summary>
         /// The payout table for a bet: the fee, what wipes it out, where it breaks even, a couple of good outcomes and the max.
@@ -80,20 +80,20 @@ namespace DiscordBot.Managers
             double? max = LeverageRules.MaxOutPrice(isCall, leverage, entry);
             var lines = new List<string>
             {
-                $"${Money(stake)} rides at {leverage}x (${Money(fee)} fee into the jackpot). Now {Price(entry)}. Paid out on the price in {FormatRemaining(duration)}:",
+                $"${Dollars(stake)} rides at {leverage}x (${Dollars(fee)} fee into the jackpot). Now {Price(entry)}. Paid out on the price in {FormatRemaining(duration)}:",
                 $"💀 {Price(wipe)} or {(isCall ? "lower" : "higher")} ({Pct(isCall ? wipe / entry - 1 : wipe / entry - 1)}): wiped out, **$0**",
-                $"😐 {Price(priceFor(breakEven))} ({Pct(isCall ? breakEven : -breakEven)}): you get your ${Money(paid)} back",
+                $"😐 {Price(priceFor(breakEven))} ({Pct(isCall ? breakEven : -breakEven)}): you get your ${Dollars(paid)} back",
             };
             foreach (double move in new[] { 0.05, 0.10, 0.25 })
             {
                 double value = At(move);
                 if (max.HasValue && (isCall ? priceFor(move) >= max.Value : priceFor(move) <= max.Value)) break;
-                lines.Add($"🤑 {Price(priceFor(move))} ({Pct(isCall ? move : -move)}): **${Money(value)}** ({value / paid:0.0}x)");
+                lines.Add($"🤑 {Price(priceFor(move))} ({Pct(isCall ? move : -move)}): **${Dollars(value)}** ({value / paid:0.0}x)");
             }
             if (max.HasValue)
-                lines.Add($"🚀 {Price(max.Value)} or {(isCall ? "higher" : "lower")} ({Pct(max.Value / entry - 1)}): maxed out at **${Money(stake * LeverageRules.MaxMultiple)}**");
+                lines.Add($"🚀 {Price(max.Value)} or {(isCall ? "higher" : "lower")} ({Pct(max.Value / entry - 1)}): maxed out at **${Dollars(stake * LeverageRules.MaxMultiple)}**");
             else
-                lines.Add($"🚀 If {Price(0)}: **${Money(At(1))}**, the most a {leverage}x put can make");
+                lines.Add($"🚀 If {Price(0)}: **${Dollars(At(1))}**, the most a {leverage}x put can make");
             if (expectedMultiple.HasValue && paid > 0)
             {
                 double payback = expectedMultiple.Value * stake / paid;
@@ -111,7 +111,7 @@ namespace DiscordBot.Managers
             double move = LeverageRules.Move(bet.IsCall, bet.EntryPrice, fair);
             string mood = value <= 0 ? "💀" : value >= bet.Paid ? "🤑" : "😬";
             return $"{mood} {bet.Leverage}x **{bet.Symbol}** {bet.Kind} · in at ${Stock.FormatPrice(bet.EntryPrice)}, now ${Stock.FormatPrice(fair)} ({move * 100:+0.0;-0.0;0.0}% your way) · "
-                + $"pays **${Money(value)}** if it closed now (paid ${Money(bet.Paid)}) · {FormatRemaining(bet.ExpiresAt - DateTime.UtcNow)} left";
+                + $"pays **${Dollars(value)}** if it closed now (paid ${Dollars(bet.Paid)}) · {FormatRemaining(bet.ExpiresAt - DateTime.UtcNow)} left";
         }
 
         private async Task Options(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -134,7 +134,7 @@ namespace DiscordBot.Managers
             foreach (var option in old)
             {
                 double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                lines.Add($"🎟️ old {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${Money(option.PayoutAt(fair))} now");
+                lines.Add($"🎟️ old {option.Contracts}x **{option.Symbol}** {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${Dollars(option.PayoutAt(fair))} now");
             }
             if (recent != null && recent.Count > 0)
                 lines.Add("\n**Recently closed**\n" + string.Join("\n", recent));
@@ -151,10 +151,10 @@ namespace DiscordBot.Managers
                 string name = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == bet.UserId)?.Name ?? "someone";
                 string move = $"{bet.Symbol} closed at ${Stock.FormatPrice(settled.ClosePrice)} (in at ${Stock.FormatPrice(bet.EntryPrice)})";
                 string text = settled.Payout <= 0
-                    ? $"💀 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} got **wiped the fuck out**. ${Money(bet.Paid)} gone. {move}."
+                    ? $"💀 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} got **wiped the fuck out**. ${Dollars(bet.Paid)} gone. {move}."
                     : settled.Payout >= bet.Paid
-                        ? $"🤑 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} paid **${Money(settled.Payout)}** on ${Money(bet.Paid)} ({settled.Payout / bet.Paid:0.0}x). {move}."
-                        : $"😬 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} limped home with ${Money(settled.Payout)} of their ${Money(bet.Paid)}. {move}.";
+                        ? $"🤑 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} paid **${Dollars(settled.Payout)}** on ${Dollars(bet.Paid)} ({settled.Payout / bet.Paid:0.0}x). {move}."
+                        : $"😬 **{name}**'s {bet.Leverage}x {bet.Symbol} {bet.Kind} limped home with ${Dollars(settled.Payout)} of their ${Dollars(bet.Paid)}. {move}.";
                 try
                 {
                     await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);

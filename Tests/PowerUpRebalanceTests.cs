@@ -538,12 +538,13 @@ namespace Tests
         }
 
         [Fact]
-        public void Heist_TailsYouPayAndGoIntoDebtIfShort()
+        public void Heist_TailsWithNothingToPayWith_TakesNothingThatIsntThere()
         {
+            //the loser is broke with no assets: debt can only be run up against things they own, so no money is made up
             var w = Board((1, 1000), (2, 0));
             Use(w, 2, PowerUpIds.Heist, () => 0.9);
-            Assert.Equal(2000, w[1].NetWorth, 2);
-            Assert.Equal(PowerUpCatalog.HeistLoseMin, w[2].Debt, 2);
+            Assert.Equal(1000, w[1].NetWorth, 2);
+            Assert.Equal(0, w[2].Debt, 2);
         }
 
         [Fact]

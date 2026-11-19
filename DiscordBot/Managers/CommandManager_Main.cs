@@ -25,6 +25,7 @@ namespace DiscordBot.Managers
         private readonly PropertyService _propertyService;
         private readonly DebtService _debtService;
         private readonly RaidService _raidService;
+        private readonly WorthService _worth;
         private readonly StockThreadService _stockThreadService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
@@ -50,7 +51,7 @@ namespace DiscordBot.Managers
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
             "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot",
-            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
+            "buy", "sell", "short", "cover", "call", "put", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
         };
 
         private bool _patchNotesChecked;
@@ -71,6 +72,7 @@ namespace DiscordBot.Managers
             _propertyService = propertyService;
             _debtService = debtService;
             _raidService = raidService;
+            _worth = new WorthService(coinService, stockService, appSettings);
             _stockThreadService = stockThreadService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
@@ -286,102 +288,91 @@ namespace DiscordBot.Managers
 
         }
 
+        /// <summary>
+        /// The minute loop. Each step is caught on its own, so one failing (a reminder for a deleted channel, a save that
+        /// throws) never stops the rest of them, every minute, forever.
+        /// </summary>
         public async Task RunBackgroundTasks(DiscordSocketClient client)
         {
-            //reminder tasks
-            Task reminderTask = Task.CompletedTask;
-            try
-            {
-                reminderTask = SendReminders(client);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error while sending reminders {nameof(CommandManager)}: {ex.Message}");
-            }
-
-            //coin tasks
-            Task coinServiceTask = _coinService.AddInterest();
-            Task stockTask = _stockService.TickIfDue();
-            Task propertyTask = _propertyService.TickIfDue(_stockService.RiskyAssetShare);
-            await Task.WhenAll(reminderTask, coinServiceTask, stockTask, propertyTask);
+            await Task.WhenAll(
+                Safely("reminders", () => SendReminders(client)),
+                Safely("interest", () => _coinService.AddInterest()),
+                Safely("stock tick", () => _stockService.TickIfDue()),
+                Safely("property tick", () => _propertyService.TickIfDue(_stockService.RiskyAssetShare)));
 
             //the .convo model loads in the background once after a start, and the first scrape of the server's history starts by itself
-            _convoCorpus.EnsureLoadStarted();
-            _convoCorpus.EnsureScrapeStarted(client);
+            await Safely("convo", () =>
+            {
+                _convoCorpus.EnsureLoadStarted();
+                _convoCorpus.EnsureScrapeStarted(client);
+                return Task.CompletedTask;
+            });
 
             //redraw the live ticker threads after a new stock tick, in the background so slow uploads never hold up this loop
-            _ = _stockThreadService.RefreshIfDue(client);
+            _ = Safely("stock threads", () => _stockThreadService.RefreshIfDue(client));
 
-            await AnnounceSettledBets(client);
+            await Safely("settled bets", () => AnnounceSettledBets(client));
 
             //market headlines when a crash starts, bottoms out, recovers or ends, in the last few channels money was used in
-            foreach (var headline in _propertyService.TakeNews())
-                await PostToRecentChannels(client, headline);
+            await Safely("market news", async () =>
+            {
+                foreach (var headline in _propertyService.TakeNews())
+                    await PostToRecentChannels(client, headline);
+            });
 
-            try
-            {
-                await AnnouncePatchNotesIfNew(client);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error while announcing patch notes {nameof(CommandManager)}: {ex.Message}");
-            }
+            await Safely("patch notes", () => AnnouncePatchNotesIfNew(client));
 
             //any spare cash goes straight to debt, then players with auto-sell on sell assets for what's left
-            await _coinService.RepayDebtsFromCash(_betManager.InitiatedBetUserIds);
-            foreach (var line in await _debtService.AutoSellForDebts(_betManager.InitiatedBetUserIds))
+            await Safely("debt", async () =>
             {
-                if (client.GetChannel(_coinService.GetAll().LastActiveChannelId) is Discord.IMessageChannel debtChannel)
-                    await debtChannel.SendMessageAsync(line);
-            }
+                await _coinService.RepayDebtsFromCash(_betManager.InitiatedBetUserIds);
+                foreach (var line in await _debtService.AutoSellForDebts(_betManager.InitiatedBetUserIds))
+                {
+                    if (client.GetChannel(_coinService.GetAll().LastActiveChannelId) is IMessageChannel debtChannel)
+                        await debtChannel.SendMessageAsync(line);
+                }
+            });
 
             //after interest and stock ticks, so the hourly sample reflects both
-            await _coinService.RecordNetWorthHistory(a => a.NetWorth + _stockService.GetPortfolioValue(a.UserId) + _coinService.PropertyValue(a) - a.Debt);
+            await Safely("net worth history", () => _coinService.RecordNetWorthHistory(_worth.TotalWorth));
+            await Safely("raffle", () => _raffleService.RunIfDue(client, _betManager.InitiatedBetUserIds));
+            //kept power-ups go off by themselves the moment they can
+            await Safely("kept power-ups", () => _raffleService.ActivateKeptAndAnnounce(client, _betManager.InitiatedBetUserIds));
+        }
 
+        private async Task Safely(string step, Func<Task> work)
+        {
             try
             {
-                await _raffleService.RunIfDue(client, _betManager.InitiatedBetUserIds);
+                await work();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error while running the raffle {nameof(CommandManager)}: {ex.Message}");
-            }
-
-            try
-            {
-                //kept power-ups go off by themselves the moment they can
-                await _raffleService.ActivateKeptAndAnnounce(client, _betManager.InitiatedBetUserIds);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error while setting off kept power-ups {nameof(CommandManager)}: {ex.Message}");
+                _logger.LogError(ex, "Background step {Step} failed: {Message}", step, ex.Message);
             }
         }
 
+        /// <summary>Sends reminders that are due. One that can't be delivered (deleted channel, DM closed) is dropped, not retried forever.</summary>
         private async Task SendReminders(DiscordSocketClient client)
         {
             var reminders = await _reminderService.GetAll();
-            var remindersToAction = reminders.Where(r => DateTime.Now >= r.TimeToRemind);
-
-            if (remindersToAction.Count() > 0)
+            foreach (var reminder in reminders.Where(r => DateTime.Now >= r.TimeToRemind).ToList())
             {
-                foreach (var reminder in remindersToAction)
+                try
                 {
-                    string reminderMessage = $"Reminder: {reminder.AuthorMention} {reminder.Message}";
-                    var messageChannel = client.GetChannel(reminder.ChannelId) as IMessageChannel;
-
-                    if (messageChannel == null)
-                    {
-                        var dmChannel = client.GetDMChannelAsync(reminder.ChannelId);
-                        await messageChannel.SendMessageAsync(reminderMessage);
-                    }
+                    string reminderMessage = $"⏰ Oi {reminder.AuthorMention}, you told me to remind you: {reminder.Message}";
+                    IMessageChannel channel = client.GetChannel(reminder.ChannelId) as IMessageChannel
+                        ?? await client.GetDMChannelAsync(reminder.ChannelId) as IMessageChannel;
+                    if (channel != null)
+                        await channel.SendMessageAsync(reminderMessage);
                     else
-                    {
-                        await messageChannel.SendMessageAsync(reminderMessage);
-                    }
-
-                    await _reminderService.Remove(reminder.Id);
+                        _logger.LogWarning("Reminder {Id} dropped: channel {Channel} is gone", reminder.Id, reminder.ChannelId);
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Reminder {Id} couldn't be sent and was dropped", reminder.Id);
+                }
+                await _reminderService.Remove(reminder.Id);
             }
         }
 

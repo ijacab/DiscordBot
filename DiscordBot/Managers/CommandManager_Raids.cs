@@ -134,10 +134,8 @@ namespace DiscordBot.Managers
             double cash = Math.Max(0, attacker.NetWorth);
             if (text == "max" || text == "all") return Math.Floor(Math.Min(cash, check.MaxStake));
             if (text == "min") return check.MinStake;
-            if (StockService.TryParsePercent(text, out double share)) return Math.Floor(cash * share);
-            if (double.TryParse(text.Replace(",", "").Replace("$", ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double amount) && amount > 0)
-                return Math.Floor(amount);
-            throw new BadInputException("That stake doesn't look right. Use an amount like 5000, a share of your cash like 10%, min or max.");
+            if (Money.TryParse(text, cash, out double amount)) return Math.Floor(amount);
+            throw new BadInputException("That stake is gibberish. Use an amount like 5000, a share of your cash like 10%, min or max.");
         }
 
         /// <summary>A player to raid: a mention, an id, or the name on their account.</summary>
