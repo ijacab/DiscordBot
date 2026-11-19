@@ -227,27 +227,34 @@ namespace DiscordBot.Managers
             double total = _worth.TotalWorth(account);
             var lines = new List<string> { $"**Worth {Money.Format(total)}**", $"💵 Cash {Money.Format(account.NetWorth)}" };
 
-            //stocks: one line each, what it's worth now and how it's done since you bought
+            //stocks: two short lines each, like it used to be. The first is what you hold and what it's worth, the second is what you paid and how you're doing
             if (holdings.Count > 0 || shorts.Count > 0)
             {
                 var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
                 double sharesValue = holdings.Sum(h => (market.Find(h.Key)?.Price ?? 0) * h.Value);
-                string overall = totalCost > 0 ? $" ({Money.Signed(totalGain)}, {totalGain / totalCost * 100:+0.#;-0.#;0}%)" : "";
-                lines.Add($"\n📈 **Stocks {Money.Format(sharesValue)}**{overall}");
+                lines.Add($"\n📈 **Stocks {Money.Format(sharesValue)}**");
                 foreach (var holding in holdings.OrderByDescending(h => (market.Find(h.Key)?.Price ?? 0) * h.Value))
                 {
                     var stock = market.Find(holding.Key);
                     double cost = market.GetAverageCost(account.UserId, holding.Key);
-                    string bought = cost > 0 ? $"bought ${Stock.FormatPrice(cost)} → now ${Stock.FormatPrice(stock.Price)}" : $"now ${Stock.FormatPrice(stock.Price)} (buy price unknown)";
-                    string change = cost > 0 ? $" · {Money.Signed((stock.Price - cost) * holding.Value)} ({(stock.Price - cost) / cost * 100:+0.#;-0.#;0}%)" : "";
-                    lines.Add($"{(cost <= 0 ? "➖" : stock.Price >= cost ? "🟢" : "🔴")} **{holding.Key}** ×{holding.Value:N0} · {bought} · {Money.Format(stock.Price * holding.Value)}{change}");
+                    string trend = cost <= 0 ? "➖" : stock.Price >= cost ? "📈" : "📉";
+                    lines.Add($"{trend} **{holding.Key}** · {holding.Value:N0} shares · now ${Stock.FormatPrice(stock.Price)} each = {Money.Format(stock.Price * holding.Value)}");
+                    if (cost <= 0)
+                        lines.Add("  ↳ buy price unknown");
+                    else
+                        lines.Add($"  ↳ bought at ${Stock.FormatPrice(cost)} · {Money.Signed((stock.Price - cost) * holding.Value)} ({(stock.Price - cost) / cost * 100:+0.##;-0.##;0}%)");
                 }
                 foreach (var held in shorts.OrderBy(x => x.Key))
                 {
                     var stock = market.Find(held.Key);
                     double gain = held.Value.EquityAt(stock.Price) - held.Value.Margin;
-                    lines.Add($"{(gain >= 0 ? "🟢" : "🔴")} {held.Key} short ×{held.Value.Shares:N0} · {Money.Format(held.Value.EquityAt(stock.Price))} · {Money.Signed(gain)} (`.cover {held.Key} all`)");
+                    lines.Add($"{(gain >= 0 ? "📈" : "📉")} **{held.Key}** · short {held.Value.Shares:N0} shares · now ${Stock.FormatPrice(stock.Price)} each");
+                    lines.Add($"  ↳ sold at ${Stock.FormatPrice(held.Value.EntryPrice)} · {Money.Signed(gain)} · `.cover {held.Key} all` to close");
                 }
+                if (holdings.Count > 0)
+                    lines.Add(totalCost > 0
+                        ? $"📊 All stocks: {Money.Signed(totalGain)} ({totalGain / totalCost * 100:+0.##;-0.##;0}%) on what you paid"
+                        : "📊 All stocks: no known buy prices");
             }
 
             //calls and puts: what each pays if it closed now
