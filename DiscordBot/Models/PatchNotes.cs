@@ -44,6 +44,9 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-19", "Debt auto-sell now sells anything: after stocks it covers shorts and cashes out options worth something, then sells houses."),
+            new PatchNote("2026-11-19", "Card levels: XP from raids and Face Off, `.train` buys levels, `.card focus` picks the stat that grows. Your level stays with a new card and resets each season."),
+            new PatchNote("2026-11-19", "Raids! `.raid @person 5000`: win twice your stake from them, or lose it to them. Defend with `.stance` and `.guards`, take revenge, chase bounties. `.card` is your control panel."),
             new PatchNote("2026-11-19", ".property now shows today's crash risk: the more of everyone's wealth in stocks and houses, the likelier a crash."),
             new PatchNote("2026-11-19", "Jackpot: 3 rolls an hour each, down from 10."),
             new PatchNote("2026-11-19", "Words after .convo now set the topic: the chat starts with it and keeps coming back to it, e.g. `.convo pizza`."),

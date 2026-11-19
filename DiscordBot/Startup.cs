@@ -52,6 +52,7 @@ namespace DiscordBot
             services.AddSingleton<CoinService>();
             services.AddSingleton<StockService>();
             services.AddSingleton<RaffleService>();
+            services.AddSingleton<RaidService>();
             services.AddSingleton<PropertyService>();
             services.AddSingleton<DebtService>();
             services.AddSingleton<StockThreadService>();

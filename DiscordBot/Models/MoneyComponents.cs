@@ -15,6 +15,10 @@
         public const string Slots = "slot";
         /// <summary>The page picker under `.stats`.</summary>
         public const string Stats = "stats";
+        /// <summary>The control panel under `.card`: train, guards, stance and focus, for the card's owner.</summary>
+        public const string Card = "card";
+        /// <summary>Raid buttons: stake buttons under a `.raid @person` preview (for the raider) and Revenge under a result (for the raided).</summary>
+        public const string Raid = "raid";
     }
 
     public static class ButtonOwner

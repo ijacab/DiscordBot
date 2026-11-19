@@ -73,6 +73,8 @@ namespace DiscordBot.Models
         public long NextCrisisAllowedDay { get; set; }
         /// <summary>Set when a crash ends, so stocks take their new level as their base on the next tick.</summary>
         public bool CrisisResetPending { get; set; }
+        /// <summary>Battle Person cards kept from last season, given back (at level 0) when each player's account is made again.</summary>
+        public Dictionary<ulong, BattlePerson> CarriedCards { get; set; } = new Dictionary<ulong, BattlePerson>();
 
         public class CoinAccount
         {
@@ -106,6 +108,24 @@ namespace DiscordBot.Models
             public double Debt { get; set; }
             /// <summary>When on (`.autosell on`), stocks and then property are sold every minute to pay off any debt (<see cref="Services.DebtService"/>).</summary>
             public bool AutoSellForDebt { get; set; }
+            //raids (`.raid`, Services/RaidService.cs)
+            /// <summary>How the card defends against raids while the player is away.</summary>
+            public RaidStance RaidStance { get; set; } = RaidStance.Guard;
+            /// <summary>Hired guards (`.guards`) defend until then (UTC ticks).</summary>
+            public long GuardsUntilUtcTicks { get; set; }
+            /// <summary>Safe from raids until then (UTC ticks), after being raided successfully. Revenge raids ignore it.</summary>
+            public long RaidProtectedUntilUtcTicks { get; set; }
+            /// <summary>When the player's own raids happened (UTC ticks), for the hourly limit.</summary>
+            public List<long> RecentRaidUtcTicks { get; set; } = new List<long>();
+            /// <summary>The last time this player raided each target (UTC ticks), for the once-per-6-hours rule.</summary>
+            public Dictionary<ulong, long> LastRaidOnUtcTicks { get; set; } = new Dictionary<ulong, long>();
+            /// <summary>Players who raided this one and can be raided back once, with revenge's bonus.</summary>
+            public List<RevengeToken> RevengeTokens { get; set; } = new List<RevengeToken>();
+            /// <summary>Money set aside from this player's raid loot, paid to whoever beats them next.</summary>
+            public double Bounty { get; set; }
+            /// <summary>yyyyMMdd (UTC) the Reroll ability last re-rolled a failed raid.</summary>
+            public string LastRaidRerollDate { get; set; }
+
             /// <summary>Interest on debt every hour (it nearly doubles every 7 hours). High on purpose: pay it off.</summary>
             public const double HourlyDebtInterest = 0.10;
 

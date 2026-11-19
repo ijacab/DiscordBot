@@ -87,15 +87,16 @@ namespace DiscordBot.Games.Managers
                 if (winners.Contains(player))
                 {
                     account.BattlePerson.Wins++;
-                    account.BattlePerson.Level += playerCount > 2 ? 2 : 1;
+                    CardLevels.AddXp(account.BattlePerson, playerCount > 2 ? CardLevels.FaceOffBigWinXp : CardLevels.FaceOffWinXp);
                 }
                 else if (place == winners.Count && playerCount > 2)
                 {
-                    account.BattlePerson.Level += 1; //runner up in a bigger fight still levels up
+                    CardLevels.AddXp(account.BattlePerson, CardLevels.FaceOffRunnerUpXp); //runner up in a bigger fight still earns well
                 }
                 else
                 {
                     account.BattlePerson.Losses++;
+                    CardLevels.AddXp(account.BattlePerson, CardLevels.FaceOffLossXp);
                 }
             }
 

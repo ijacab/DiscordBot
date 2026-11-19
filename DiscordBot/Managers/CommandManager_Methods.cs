@@ -617,7 +617,7 @@ namespace DiscordBot.Managers
         {
             string debt = account.Debt > 0 ? $"You owe ${FormatHelper.GetCommaNumber(account.Debt)}." : "You have no debt.";
             string state = account.AutoSellForDebt
-                ? "💳 Auto-sell is **on**: while you owe money, your stocks and then property are sold within a minute to pay it off. `.autosell off` to stop."
+                ? "💳 Auto-sell is **on**: while you owe money, your stocks, then shorts, options and property are sold within a minute to pay it off. `.autosell off` to stop."
                 : "💳 Auto-sell is **off**: debt is only paid from spare cash and the sales you make, and it grows 10% every hour. `.autosell on` to sell assets automatically to pay it off.";
             return $"{mention} {state} {debt}";
         }
@@ -1293,6 +1293,7 @@ namespace DiscordBot.Managers
             }
 
             var battlePerson = new BattlePerson(NameGenerator.GetGeneratedName(2));
+            CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //shown at the player's own level, which it keeps
             if (battlePerson.Foil)
                 faceBytes = FoilEffect.Apply(faceBytes); //foil cards get the holographic image, saved with the card
             string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
@@ -1329,28 +1330,6 @@ namespace DiscordBot.Managers
             }
         }
 
-        public async Task CardView(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
-            BattlePerson card = coinAccount.BattlePerson;
-            if (card == null)
-            {
-                await message.SendRichEmbedMessage("No card", "You don't have a Battle Person yet. Type `.cardpull` to get one.");
-                return;
-            }
-
-            var embed = DiscordHelper.GetEmbedBuilder(card.Name, card.GetSummary()).Build();
-            if (!string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath))
-            {
-                using var image = File.OpenRead(card.FilePath);
-                await message.Channel.SendFileAsync(stream: image, Path.GetFileName(card.FilePath), embed: embed);
-            }
-            else
-            {
-                await message.Channel.SendMessageAsync(embed: embed);
-            }
-        }
-
         private async Task SaveCard(string prefix, CoinAccount coinAccount, SocketMessage message)
         {
             //the prefix comes from the player's message, so it must be a plain file name
@@ -1381,6 +1360,7 @@ namespace DiscordBot.Managers
             File.Delete(unsavedJsonPath);
 
             battlePerson.FilePath = savedImagePath;
+            CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //the level belongs to the player, not the card
             coinAccount.BattlePerson = battlePerson;
             await _coinService.Update();
             await message.SendRichEmbedMessage($"New Battle Person saved: {battlePerson.Name}");

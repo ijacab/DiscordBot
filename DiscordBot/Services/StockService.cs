@@ -370,6 +370,34 @@ namespace DiscordBot.Services
             }
         }
 
+        /// <summary>
+        /// Cashes an open option out early at what it would pay now (on the fair price, as `.portfolio` values it), less the
+        /// option fee into the jackpot. Debt auto-sell uses it; an option worth nothing can't be cashed out.
+        /// </summary>
+        public (OptionContract Option, double Paid) CloseOption(CoinAccount account, string optionId)
+        {
+            lock (_lock)
+            {
+                var option = _market.Options.FirstOrDefault(o => o.Id == optionId && o.UserId == account.UserId)
+                    ?? throw new BadInputException("That option has already expired or been closed.");
+                double fair = _market.Find(option.Symbol)?.FairPrice ?? option.Strike;
+                double payout = option.PayoutAt(fair);
+                if (payout <= 0) throw new BadInputException("That option is worth nothing right now.");
+
+                double fee = Math.Round(payout * Stock.OptionFeeRate, 2);
+                double paid = Math.Round(payout - fee, 2);
+                _market.Options.Remove(option);
+                _coinService.AddToJackpot(fee);
+                account.NetWorth += paid;
+                account.Stats.OptionPayouts += paid;
+                string kind = option.IsCall ? "call" : "put";
+                _market.AddSettledResult(option.UserId,
+                    $"{option.Contracts}x {option.Symbol} {kind} @ ${Stock.FormatPrice(option.Strike)} cashed out early at ${Stock.FormatPrice(fair)} to pay debt: ${paid:N2} after the fee, for ${option.Premium:N2}.");
+                Save();
+                return PersistAccount(account, (option, paid));
+            }
+        }
+
         /// <summary>Closes shorts whose price has doubled, since their loss is the whole margin. Caller holds the lock.</summary>
         private void LiquidateBrokenShorts()
         {

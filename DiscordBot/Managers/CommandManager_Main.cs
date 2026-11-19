@@ -24,6 +24,7 @@ namespace DiscordBot.Managers
         private readonly RaffleService _raffleService;
         private readonly PropertyService _propertyService;
         private readonly DebtService _debtService;
+        private readonly RaidService _raidService;
         private readonly StockThreadService _stockThreadService;
         private readonly DuckDuckGoService _duckDuckGoService;
         private readonly FaceService _faceService;
@@ -49,7 +50,7 @@ namespace DiscordBot.Managers
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
             "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot",
-            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty"
+            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
         };
 
         private bool _patchNotesChecked;
@@ -58,7 +59,7 @@ namespace DiscordBot.Managers
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
             BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
-            TranslationService translationService, BanService banService)
+            TranslationService translationService, BanService banService, RaidService raidService)
         {
             _logger = logger;
             _appSettings = appSettings;
@@ -69,6 +70,7 @@ namespace DiscordBot.Managers
             _raffleService = raffleService;
             _propertyService = propertyService;
             _debtService = debtService;
+            _raidService = raidService;
             _stockThreadService = stockThreadService;
             _duckDuckGoService = duckDuckGoService;
             _faceService = faceService;
@@ -127,7 +129,7 @@ namespace DiscordBot.Managers
                 new Command("letout", RentingIsAutomatic) { Hidden = true },
                 new Command("unlet", RentingIsAutomatic) { Hidden = true },
                 new Command("powerup", PowerUp) { Description = "Shows your power-ups. One is drawn every hour among everyone who used money in the 6 hours before, and it goes off the moment it's won (lower on the leaderboard you draw more attacks and catch-up items). One that couldn't go off yet is kept: use it by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
-                new Command("autosell", AutoSell) { Description = "When on, your stocks and then property are sold automatically to pay off any debt (debt grows 10% every hour). Shorts and options are left alone.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
+                new Command("autosell", AutoSell) { Description = "When on, your assets are sold automatically to pay off any debt (debt grows 10% every hour): stocks first, then shorts are covered, options cashed out, and then property.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jackpot", Jackpot) { Description = "Shows the jackpot. 75% of every lost bet, sell tax, donation tax and debt repayments go in. A bet of all your cash (up to $10,000) or half your cash or more (above $10,000), with no stocks or property, can win the lot, with 3 rolls an hour each. Three 💎 on `.slots` win it too.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
@@ -135,7 +137,11 @@ namespace DiscordBot.Managers
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },
                 new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" },
                 new Command("cardpull", CardPull) { Description = "Pulls a new Battle Person card. Costs $1,000, but your first pull each day is free. Keep it by typing the `.cardpull keep` line that follows.", Syntax = "`.cardpull`" },
-                new Command("card", CardView) { Description = "Shows your Battle Person card with its stats, rarity and ability", Syntax = "`.card`" },
+                new Command("card", CardView) { Description = "Shows your Battle Person card and its control panel: level and XP, training, focus, raid stance, guards, bounty and revenge. Your level is yours: it carries over to a new card you keep, and resets each season. XP comes from raids and Face Off.", Syntax = "`.card`, `.card focus attack|defense|crit|balanced`" },
+                new Command("raid", Raid) { Description = "Raid another player with your Battle Person card to take their money. Stake some cash (at least 1% of your worth, at most 10% of theirs): win and you get it back plus twice it from them (cash first, then their debt); lose and they keep it. The odds come from both cards' power, their stance and guards, and how much richer they are than you. 3 raids an hour, the same person once every 6 hours, and someone just raided is safe for an hour. Whoever you raid can take revenge for 24 hours, and 10% of your loot becomes a bounty for whoever beats you.", Syntax = "`.raid` (revenge and bounties), `.raid @person` (odds), `.raid @person 5000`, `.raid @person 10%` or `.raid name max`" },
+                new Command("train", Train) { Description = "Trains your Battle Person card a level for cash (into the jackpot). Each level costs 30% more than the last, less the XP you already have.", Syntax = "`.train` or `.train max`" },
+                new Command("stance", Stance) { Description = "Sets how your card defends against raids while you're away. Guard: 30% stronger. Counter: normal, but a beaten raider pays you their stake twice over. Hoard: weaker, but a raider who gets through takes half as much.", Syntax = "`.stance guard`, `.stance counter` or `.stance hoard`" },
+                new Command("guards", Guards) { Description = "Hires guards for 6 hours: your card defends 50% harder against raids. Costs 2% of your worth, into the jackpot.", Syntax = "`.guards`" },
                 new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" },
                 new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" },
                 new Command("clear", Clear, hidden: true, requiresAdmin: true),

@@ -16,21 +16,22 @@ namespace DiscordBot.Games.Models.BattleArena
         public double CritMultiplier { get; set; }
         public double CritMultiplierBonusPerLevel { get; set; }
 
-        public double GetTotalAttack(int level)
+        /// <param name="growth">Scales the per-level gain, from the card's focus (<see cref="CardLevels.Growth"/>). 1 is the card's own growth.</param>
+        public double GetTotalAttack(int level, double growth = 1)
         {
-            double totalAttack = Attack + (AttackBonusPerLevel * level);
+            double totalAttack = Attack + (AttackBonusPerLevel * growth * level);
             return totalAttack > MaxAttack ? MaxAttack : totalAttack;
         }
 
-        public double GetTotalDefense(int level)
+        public double GetTotalDefense(int level, double growth = 1)
         {
-            double totalDefense = Defense + (DefenseBonusPerLevel * level);
+            double totalDefense = Defense + (DefenseBonusPerLevel * growth * level);
             return totalDefense > MaxDefense ? MaxDefense : totalDefense;
         }
 
-        public double GetTotalCritMultiplier(int level)
+        public double GetTotalCritMultiplier(int level, double growth = 1)
         {
-            double totalCritMultiplier = CritMultiplier + (CritMultiplierBonusPerLevel * level);
+            double totalCritMultiplier = CritMultiplier + (CritMultiplierBonusPerLevel * growth * level);
             return totalCritMultiplier > MaxCritMultipler ? MaxCritMultipler : totalCritMultiplier;
         }
 

@@ -56,6 +56,12 @@ namespace DiscordBot.Managers
                     case MoneyComponents.Debt:
                         await MoneyComponent(component, game, action, args);
                         break;
+                    case MoneyComponents.Card:
+                        await CardComponent(component, action, args);
+                        break;
+                    case MoneyComponents.Raid:
+                        await RaidComponent(component, action, args);
+                        break;
                     default:
                         if (IsLobbyGame(game))
                             await LobbyGameComponent(component, game, action);
@@ -93,6 +99,9 @@ namespace DiscordBot.Managers
                         break;
                     case MoneyComponents.Stock:
                         await StockModal(modal, action, args);
+                        break;
+                    case MoneyComponents.Raid:
+                        await RaidModal(modal, action, args);
                         break;
                     default:
                         if (IsLobbyGame(game))

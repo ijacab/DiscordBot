@@ -24,6 +24,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
     CommandManager_Slots.cs    .slots and the slot machine's buttons / bet form
+    CommandManager_Raids.cs    .raid, .train, .stance, .guards, the `.card` control panel and their buttons
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
@@ -45,12 +46,13 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
       GameContext.cs             who acts and where (from a typed command or a button click)
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
-      BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, RoundOutcome, SpectatorPool (side bets)
+      BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, CardLevels (XP, training, focus), RoundOutcome, SpectatorPool (side bets)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           hourly rubber-banded raffle; the power-up won goes off straight away (kept for `.pu use` if it can't)
     PropertyService.cs         houses: buy/sell with cash, rent, daily market step; buys back old apartments
-    DebtService.cs             `.autosell`: sells stocks, then property, every minute to pay off debt
+    DebtService.cs             `.autosell`: sells stocks, covers shorts, cashes out options, then sells property, every minute to pay off debt
+    RaidService.cs             `.raid` (odds, stakes, loot, limits, revenge, bounties), guards and card training
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
@@ -76,7 +78,8 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
-    MoneyComponents.cs         money button prefixes (stk/pu/prop/debt) and ButtonOwner (owner-only buttons)
+    MoneyComponents.cs         money button prefixes (stk/pu/prop/debt/card/raid) and ButtonOwner (owner-only buttons)
+    RaidRules.cs               raid numbers: card power, stances, guards, underdog penalty, stake limits, loot
     StockThread.cs             saved `.stocksthread` state: thread and board message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes

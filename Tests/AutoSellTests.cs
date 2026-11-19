@@ -115,5 +115,51 @@ namespace Tests
             Assert.Equal(0, account.Debt, 2); //not a small remainder left over from the price moving as it sold
             Assert.True(stocks.GetMarket().GetHoldings(account.UserId).Any(), "it sold everything instead of only what was needed");
         }
+
+        [Fact]
+        public void Plan_GoesStocksThenShortsThenOptionsThenProperty()
+        {
+            var shorts = new[] { new DebtService.ShortLot { Symbol = "SHRT", Shares = 100, NetPerShare = 10 } };
+            var options = new[] { new DebtService.OptionLot { Id = "opt1", Value = 500 }, new DebtService.OptionLot { Id = "dud", Value = 0 } };
+
+            var small = DebtService.Plan(1_500, new[] { Lot("AAA", 100, 10) }, new[] { Home(PropertyKind.House, 900_000) }, shorts, options);
+            Assert.Single(small.Stocks);
+            Assert.Single(small.Shorts);
+            Assert.Empty(small.Options);
+            Assert.Empty(small.Properties);
+
+            var big = DebtService.Plan(2_600, new[] { Lot("AAA", 100, 10) }, new[] { Home(PropertyKind.House, 900_000) }, shorts, options);
+            Assert.Equal(100, big.Shorts.Single().Shares);
+            Assert.Equal(new[] { "opt1" }, big.Options); //a worthless option is never sold
+            Assert.Single(big.Properties);
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task AutoSell_CoversShortsAndCashesOutOptionsToPayDebt()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var stocks = new StockService(new LocalFileService(), coins);
+            await stocks.ClearAll();
+            coins.GetAll().Accounts.Clear();
+            var account = new CoinAccount { UserId = 77, Name = "shorter", NetWorth = 1_000_000, AutoSellForDebt = true };
+            coins.GetAll().Accounts.Add(account);
+            var normal = stocks.GetMarket().Stocks.Where(x => x.Role == StockRole.Normal).ToList();
+            stocks.Short(account, normal[0].Symbol, "100");
+            stocks.BuyOption(account, normal[1].Symbol, true, 1, TimeSpan.FromHours(6));
+            stocks.BuyOption(account, normal[1].Symbol, false, 1, TimeSpan.FromHours(6));
+            normal[1].FairPrice *= 2; //the call is now well in the money and the put worthless
+            double shortEquity = stocks.GetMarket().GetShort(account.UserId, normal[0].Symbol).EquityAt(normal[0].Price);
+            double callValue = stocks.GetMarket().GetOptions(account.UserId).Single(o => o.IsCall).PayoutAt(normal[1].FairPrice);
+            account.NetWorth = 0;
+            account.Debt = Math.Floor((shortEquity + callValue * 0.98) * 0.9);
+
+            var lines = await new DebtService(coins, stocks, new PropertyService(coins)).AutoSellForDebts(new ulong[0]);
+
+            Assert.Equal(0, account.Debt, 2);
+            Assert.Null(stocks.GetMarket().GetShort(account.UserId, normal[0].Symbol));
+            Assert.DoesNotContain(stocks.GetMarket().GetOptions(account.UserId), o => o.IsCall);
+            Assert.Contains(stocks.GetMarket().GetOptions(account.UserId), o => !o.IsCall); //worthless, so kept
+            Assert.Contains("short", lines.Single());
+        }
     }
 }

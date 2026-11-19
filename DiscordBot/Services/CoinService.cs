@@ -1,4 +1,5 @@
 ﻿using Common.Services;
+using DiscordBot.Games.Models.BattleArena;
 using DiscordBot.Models;
 using Newtonsoft.Json;
 using System;
@@ -105,6 +106,8 @@ namespace DiscordBot.Services
                 NetWorth = netWorth,
                 MostRecentDateBonusMet = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
             };
+            if (_coinAccounts.CarriedCards.Remove(userId, out var card))
+                coinAccount.BattlePerson = card; //their card from last season, at level 0
 
             _coinAccounts.Accounts.Add(coinAccount);
 
@@ -164,9 +167,18 @@ namespace DiscordBot.Services
             await _fileService.UpdateContent(_fileName, content);
         }
 
+        /// <summary>A new season. Everyone's Battle Person card is kept, back at level 0, and given back when their account is made again.</summary>
         public async Task ClearAll()
         {
-            _coinAccounts = new CoinAccounts();
+            var carried = new Dictionary<ulong, BattlePerson>();
+            foreach (var account in _coinAccounts.Accounts.Where(a => a.BattlePerson != null))
+            {
+                CardLevels.ResetForNewSeason(account.BattlePerson);
+                carried[account.UserId] = account.BattlePerson;
+            }
+            foreach (var pair in _coinAccounts.CarriedCards.Where(p => !carried.ContainsKey(p.Key)))
+                carried[pair.Key] = pair.Value; //kept from an earlier season and not picked up yet
+            _coinAccounts = new CoinAccounts { CarriedCards = carried };
             string content = JsonConvert.SerializeObject(_coinAccounts);
             await _fileService.UpdateContent(_fileName, content);
         }

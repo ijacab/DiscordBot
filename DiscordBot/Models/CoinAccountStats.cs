@@ -110,6 +110,19 @@ namespace DiscordBot.Models
         public long DungeonRuns { get; set; }
         public double DungeonPayouts { get; set; }
         public double DungeonBuyInsLost { get; set; }
+
+        //raids and card training
+        public long RaidsWon { get; set; }
+        public long RaidsLost { get; set; }
+        public long DefencesWon { get; set; }
+        public long DefencesLost { get; set; }
+        /// <summary>Loot taken in raids won, and stakes and counter-hits won while defending.</summary>
+        public double RaidMoneyWon { get; set; }
+        /// <summary>Stakes and counter-hits lost on failed raids, and loot taken by raiders.</summary>
+        public double RaidMoneyLost { get; set; }
+        public double BountiesCollected { get; set; }
+        public double CardTrainingSpent { get; set; }
+        public double GuardsSpent { get; set; }
     }
 
     /// <summary>One game's results for one player.</summary>
