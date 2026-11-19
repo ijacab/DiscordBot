@@ -25,7 +25,7 @@ namespace DiscordBot.Managers
         {
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
             if (Math.Floor(account.NetWorth) < 1)
-                throw new BadInputException("You're out of cash to bet. Wait for the hourly interest or the daily $1,000.");
+                throw new BadInputException("You're out of cash to bet. Wait for the hourly $1,000.");
 
             double bet;
             if (args.Count == 0)

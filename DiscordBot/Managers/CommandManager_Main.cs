@@ -52,7 +52,7 @@ namespace DiscordBot.Managers
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
             "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot", "crash",
-            "buy", "sell", "short", "cover", "call", "put", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
+            "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
         };
 
         private bool _patchNotesChecked;

@@ -185,11 +185,13 @@ namespace DiscordBot.Services
             }
         }
 
-        /// <summary>A new season. Everyone's Battle Person card is kept, back at level 0, and given back when their account is made again.</summary>
-        /// <summary>The handout everyone who played in the last <see cref="DailyIncomeActiveWindow"/> gets at the start of each UTC day.</summary>
-        public const double DailyIncome = 10_000;
-        public static readonly TimeSpan DailyIncomeActiveWindow = TimeSpan.FromDays(3);
+        /// <summary>
+        /// INTENTIONAL, don't "fix": every account gets this every hour, with the hourly interest (it has always been called the
+        /// daily $1,000 but is paid hourly, and the owner likes it that way).
+        /// </summary>
+        public const double HourlyIncome = 1_000;
 
+        /// <summary>A new season. Everyone's Battle Person card is kept, back at level 0, and given back when their account is made again.</summary>
         public async Task ClearAll()
         {
             var carried = new Dictionary<ulong, BattlePerson>();
@@ -215,18 +217,14 @@ namespace DiscordBot.Services
             foreach (var debtor in _coinAccounts.Accounts.Where(a => a.Debt > 0))
                 debtor.Debt = CoinAccount.GrowDebtOneHour(debtor.Debt);
 
-            //the daily handout, once a UTC day (it used to be paid every hour by mistake), to anyone who's played lately
-            if (dateString != _coinAccounts.DateDailyIncrementPaidFor)
+            //INTENTIONAL: the $1,000 handout is paid to everyone every hour, not once a day
+            foreach (var a in _coinAccounts.Accounts)
             {
-                long activeSince = (DateTime.UtcNow - DailyIncomeActiveWindow).Ticks;
-                foreach (var a in _coinAccounts.Accounts.Where(a => a.LastActiveUtcTicks >= activeSince))
-                {
-                    double daily = _appSettings.PrestigeDisabled ? DailyIncome : DailyIncome * (a.PrestigeLevel + 1);
-                    Money.Credit(_coinAccounts, a, daily);
-                    a.Stats.DailyIncomeEarned += daily;
-                }
-                _coinAccounts.DateDailyIncrementPaidFor = dateString;
+                double income = _appSettings.PrestigeDisabled ? HourlyIncome : HourlyIncome * (a.PrestigeLevel + 1);
+                Money.Credit(_coinAccounts, a, income);
+                a.Stats.DailyIncomeEarned += income;
             }
+            _coinAccounts.DateDailyIncrementPaidFor = dateString;
 
             var accountsToAction = _coinAccounts.Accounts.Where(a => a.MostRecentDateBonusMet == dateString);
             foreach (var account in accountsToAction)

@@ -254,7 +254,7 @@ namespace DiscordBot.Services
                 .Row("Steals won", $"{N(s.DailyStealsWon)} ({M(s.MoneyStolenByDailyRoll)})")
                 .Row("Times robbed", $"{N(s.TimesRobbedByDailyRoll)} ({M(s.MoneyLostToDailyRoll)})")
                 .Heading("Income")
-                .Row("Daily $1,000s", M(s.DailyIncomeEarned))
+                .Row("Hourly $1,000s", M(s.DailyIncomeEarned))
                 .Row("Hourly interest", M(s.InterestEarned))
                 .Row("Bonus winnings from betting", M(s.TotalBonusWinnings))
                 .ToString();

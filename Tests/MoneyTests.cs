@@ -1,4 +1,4 @@
-using Common.Services;
+﻿using Common.Services;
 using DiscordBot;
 using DiscordBot.Exceptions;
 using DiscordBot.Models;
@@ -84,25 +84,52 @@ namespace Tests
             Assert.Equal(0, Money.Held(777_001));
         }
 
+        /// <summary>The $1,000 handout is paid to everyone every hour, on purpose. This test is here so nobody "fixes" it to once a day.</summary>
         [Fact]
-        public async System.Threading.Tasks.Task DailyHandout_IsPaidOnceADay_OnlyToRecentPlayers()
+        public async System.Threading.Tasks.Task TheThousandDollarHandout_IsIntentionallyPaidToEveryoneEveryHour()
         {
             var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
             var data = coins.GetAll();
             data.Accounts.Clear();
             data.TimesInterestPaidForList.Clear();
-            data.DateDailyIncrementPaidFor = null;
             var active = new CoinAccount { UserId = 1, NetWorth = 0, LastActiveUtcTicks = DateTime.UtcNow.Ticks };
-            var gone = new CoinAccount { UserId = 2, NetWorth = 0, LastActiveUtcTicks = DateTime.UtcNow.AddDays(-30).Ticks };
+            var longGone = new CoinAccount { UserId = 2, NetWorth = 0, LastActiveUtcTicks = DateTime.UtcNow.AddDays(-30).Ticks };
             data.Accounts.Add(active);
-            data.Accounts.Add(gone);
+            data.Accounts.Add(longGone);
 
             await coins.AddInterest();
-            data.TimesInterestPaidForList.Clear(); //as if the next hour came round
-            await coins.AddInterest();
+            Assert.Equal(1_000, CoinService.HourlyIncome);
+            Assert.Equal(1_000, active.NetWorth, 2);
+            Assert.Equal(1_000, longGone.NetWorth, 2);
 
-            Assert.Equal(CoinService.DailyIncome, active.NetWorth, 2);
-            Assert.Equal(0, gone.NetWorth, 2);
+            data.TimesInterestPaidForList.Clear(); //as if the next hour came round, same day
+            await coins.AddInterest();
+            Assert.Equal(2_000, active.NetWorth, 2);
+            Assert.Equal(2_000, longGone.NetWorth, 2);
+        }
+
+        [Fact]
+        public void TheDonationBonus_IsIntentionallyOneInTwelveForSixTimes()
+        {
+            Assert.Equal(12, DiscordBot.Managers.CommandManager.DonationBonusOdds);
+            Assert.Equal(6, DiscordBot.Managers.CommandManager.DonationBonusMultiple);
+        }
+
+        [Fact]
+        public void RetiredPatchNotes_AreNeverListed_AndTheirKeysDontSwallowNewNotes()
+        {
+            var listed = PatchNotes.All.Select(PatchNotes.KeyOf).ToHashSet();
+            Assert.NotEmpty(PatchNotes.Retired);
+            foreach (var pair in PatchNotes.Retired)
+            {
+                Assert.DoesNotContain(pair.Key, listed);   //never put them back
+                Assert.Contains(pair.Value, listed);       //the note they resolve to still exists
+                //a server whose marker is a retired note still hears about everything newer than the note it resolves to
+                var fresh = PatchNotes.NewSince(pair.Key, 100);
+                Assert.NotEmpty(fresh);
+                Assert.All(fresh, n => Assert.DoesNotContain(PatchNotes.KeyOf(n), PatchNotes.Retired.Keys));
+                Assert.Equal(PatchNotes.CountSince(pair.Value), fresh.Count);
+            }
         }
     }
 }

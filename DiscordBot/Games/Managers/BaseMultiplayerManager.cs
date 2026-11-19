@@ -212,8 +212,8 @@ namespace DiscordBot.Games.Managers
                 CoinAccount = coinAcc
             };
 
-            //one lobby per channel: a bet in another server or channel opens its own table
-            var openGame = Games.FirstOrDefault(g => !g.Started && g.Players.Any(p => !p.IsDealer && p.ChannelId == context.Channel.Id));
+            //INTENTIONAL, don't "fix": there is one open lobby for everyone, across channels and servers (results go to each player's channel)
+            var openGame = Games.FirstOrDefault(g => g.Started == false);
             if (openGame == null) //if no open games found, create new game
             {
                 var newGame = new TGame();
@@ -221,7 +221,6 @@ namespace DiscordBot.Games.Managers
 
                 Games.Add(newGame);
                 await AnnounceLobby(newGame, player, context, created: true);
-                ScheduleAutoStart(newGame.GameGuid, playerId, context);
             }
             else
             {
@@ -326,30 +325,6 @@ namespace DiscordBot.Games.Managers
             {
                 Console.Error.WriteLine($"{GameName} could not finish after starting: {ex}");
             }
-        }
-
-        /// <summary>
-        /// A lobby nobody starts starts itself after <see cref="SecondsToForceStartAfter"/>, so a stake is never stuck in a
-        /// lobby someone walked away from.
-        /// </summary>
-        private void ScheduleAutoStart(Guid gameId, ulong hostId, GameContext context)
-        {
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(SecondsToForceStartAfter));
-                try
-                {
-                    TPlayer host = null;
-                    if (TryGetExisitingGame(gameId, out var game) && !game.Started)
-                        host = game.Players.FirstOrDefault(p => !p.IsDealer);
-                    if (host != null)
-                        await Start(host.UserId, context);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"{GameName} auto-start failed: {ex}");
-                }
-            });
         }
 
         /// <summary>

@@ -246,8 +246,9 @@ namespace DiscordBot.Managers
 
         /// <summary>What the jackpot takes off every donation.</summary>
         public const double DonationTax = 0.20;
-        /// <summary>One donation in this many is tax-free. (It used to pay the donor 6x back, which made passing cash back and forth print money.)</summary>
-        public const int DonationTaxFreeOdds = 12;
+        /// <summary>INTENTIONAL, don't "fix": 1 donation in this many pays the donor back <see cref="DonationBonusMultiple"/> times what they gave.</summary>
+        public const int DonationBonusOdds = 12;
+        public const int DonationBonusMultiple = 6;
 
         private async Task Donate(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
@@ -275,8 +276,7 @@ namespace DiscordBot.Managers
                 throw new BadInputException($"Can't donate to someone with a higher prestige level than you. You are level {account.PrestigeLevel} and they are {receiver.PrestigeLevel}.");
 
             Money.Debit(account, donationAmount, $"You've got {Money.Format(Math.Max(0, account.NetWorth))}. Can't donate more than you have... SCHYUPID IDIOT");
-            bool taxFree = Random.Shared.Next(DonationTaxFreeOdds) == 0;
-            double tax = taxFree ? 0 : Math.Round(donationAmount * DonationTax, 2);
+            double tax = Math.Round(donationAmount * DonationTax, 2);
             double received = donationAmount - tax;
             Money.Credit(_coinService.GetAll(), receiver, received); //pays off their debt first, like any money coming in
             _coinService.AddToJackpot(tax);
@@ -285,17 +285,23 @@ namespace DiscordBot.Managers
             given.TotalMoneyDonated += donationAmount;
             given.MaxMoneyDonatedAtOnce = Math.Max(given.MaxMoneyDonatedAtOnce, donationAmount);
             given.DonationAmountsToDict[userIdToDonateTo] = given.DonationAmountsToDict.GetValueOrDefault(userIdToDonateTo) + donationAmount;
-            if (taxFree) given.DonationBonusesEncountered += 1;
             var got = receiver.Stats;
             got.TotalMoneyReceivedFromDonations += received;
             got.MaxMoneyReceivedFromDonationAtOnce = Math.Max(got.MaxMoneyReceivedFromDonationAtOnce, received);
             got.DonationAmountsFromDict[userId] = got.DonationAmountsFromDict.GetValueOrDefault(userId) + received;
 
+            string bonusLine = "";
+            if (Random.Shared.Next(DonationBonusOdds) == 0)
+            {
+                double back = donationAmount * DonationBonusMultiple;
+                Money.Credit(_coinService.GetAll(), account, back);
+                given.DonationBonusesEncountered += 1;
+                bonusLine = $"\n🎉 *Rare bonus for being generous: you get back {Money.Format(back)}.*";
+            }
+
             await _coinService.Update();
-            string taxLine = taxFree
-                ? "✨ Lucky bastard: this one was tax-free, the jackpot got nothing."
-                : $"The jackpot skimmed {Money.Format(tax)} ({DonationTax:P0} tax).";
-            await message.Channel.SendMessageAsync($"💸 {message.Author.Mention} gave **{receiver.Name}** {Money.Format(received)}. {taxLine}\n"
+            string taxLine = $"The jackpot skimmed {Money.Format(tax)} ({DonationTax:P0} tax).";
+            await message.Channel.SendMessageAsync($"💸 {message.Author.Mention} gave **{receiver.Name}** {Money.Format(received)}. {taxLine}{bonusLine}\n"
                 + $"{account.Name}: {Money.Format(account.NetWorth)} · {receiver.Name}: {Money.Format(receiver.NetWorth)}", allowedMentions: AllowedMentions.None);
         }
 

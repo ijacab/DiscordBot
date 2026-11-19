@@ -31,26 +31,44 @@ namespace DiscordBot.Models
         /// </summary>
         public static IReadOnlyList<PatchNote> NewSince(string key, int max)
         {
-            int position = string.IsNullOrEmpty(key) ? -1 : All.ToList().FindIndex(n => KeyOf(n) == key);
+            int position = PositionOf(key);
             return position <= 0 ? new List<PatchNote>() : All.Take(position).Take(max).ToList();
         }
 
         /// <summary>How many notes are newer than this key (for "and N more").</summary>
-        public static int CountSince(string key)
+        public static int CountSince(string key) => Math.Max(0, PositionOf(key));
+
+        /// <summary>Where a key sits in <see cref="All"/>, or -1. A retired note's key sits where the note that replaces it as the marker does.</summary>
+        private static int PositionOf(string key)
         {
-            int position = string.IsNullOrEmpty(key) ? -1 : All.ToList().FindIndex(n => KeyOf(n) == key);
-            return Math.Max(0, position);
+            if (string.IsNullOrEmpty(key)) return -1;
+            if (Retired.TryGetValue(key, out string anchor)) key = anchor;
+            return All.ToList().FindIndex(n => KeyOf(n) == key);
         }
+
+        /// <summary>
+        /// Notes that were taken out ON PURPOSE because the changes they announced were undone (the owner wanted the old behaviour
+        /// back): the $1,000 handout stays hourly, donations keep their 1-in-12 6x bonus and blackjack and duck race lobbies stay
+        /// shared across channels. Never add them back. A server that had already announced one of them as its newest note carries
+        /// that key as its marker, so each is mapped to the newest note still listed that is older than it, and only the notes
+        /// above that one are announced.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> Retired = new Dictionary<string, string>
+        {
+            ["2026-11-20|Fixed: the \"daily\" $1,000 was paid every hour. It's now a $10,000 handout once a day, to anyone who played in the last 3 days."] =
+                "2026-11-20|Closed exploits: NaN bets, parking cash in a dungeon to fake an all-in, broke players paying out debt they could never back, and the comeback bonus making betting free money.",
+            ["2026-11-20|Donating no longer prints money: the 6x bonus is gone. Instead 1 donation in 12 is tax-free."] =
+                "2026-11-20|Closed exploits: NaN bets, parking cash in a dungeon to fake an all-in, broke players paying out debt they could never back, and the comeback bonus making betting free money.",
+            ["2026-11-20|Blackjack and duck race lobbies are per channel now and start themselves after 30 seconds."] =
+                "2026-11-20|Calls and puts are now simple leveraged bets: `.call TECH 1000 5x 1h`. You see exactly what you win, where you break even and where you're wiped out. `.short` is gone (use a put).",
+        };
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
             new PatchNote("2026-11-20", "`.pf` is simpler: one line per stock, and your houses as one summary with what they really earn an hour after fees and upkeep."),
             new PatchNote("2026-11-20", "`.cardpull` has a Keep button now. No more typing a long id."),
             new PatchNote("2026-11-20", "New game: `.crash 1000`. The rocket climbs, hit Cash out before it blows. Add `2x` to bail automatically. Pays back 97% however you play it."),
-            new PatchNote("2026-11-20", "Fixed: the \"daily\" $1,000 was paid every hour. It's now a $10,000 handout once a day, to anyone who played in the last 3 days."),
-            new PatchNote("2026-11-20", "Donating no longer prints money: the 6x bonus is gone. Instead 1 donation in 12 is tax-free."),
             new PatchNote("2026-11-20", "Closed exploits: NaN bets, parking cash in a dungeon to fake an all-in, broke players paying out debt they could never back, and the comeback bonus making betting free money."),
-            new PatchNote("2026-11-20", "Blackjack and duck race lobbies are per channel now and start themselves after 30 seconds."),
             new PatchNote("2026-11-20", "Calls and puts are now simple leveraged bets: `.call TECH 1000 5x 1h`. You see exactly what you win, where you break even and where you're wiped out. `.short` is gone (use a put)."),
             new PatchNote("2026-11-19", "Debt auto-sell now sells anything: after stocks it covers shorts and cashes out options worth something, then sells houses."),
             new PatchNote("2026-11-19", "Card levels: XP from raids and Face Off, `.train` buys levels, `.card focus` picks the stat that grows. Your level stays with a new card and resets each season."),
