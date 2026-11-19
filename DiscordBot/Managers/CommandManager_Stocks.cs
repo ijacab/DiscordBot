@@ -218,89 +218,70 @@ namespace DiscordBot.Managers
 
             var market = _stockService.GetMarket();
             var holdings = market.GetHoldings(account.UserId);
-
             var shorts = market.GetShorts(account.UserId);
             var options = market.GetOptions(account.UserId).OrderBy(o => o.ExpiresAtUtcTicks).ToList();
-
-            string output = "";
-            foreach (var holding in holdings.OrderBy(x => x.Key))
-            {
-                var stock = market.Find(holding.Key);
-                double averageCost = market.GetAverageCost(account.UserId, holding.Key);
-                string trend = averageCost <= 0 ? "➖" : stock.Price >= averageCost ? "📈" : "📉";
-                output += $"{trend} **{holding.Key}** {holding.Value} sh · now ${Stock.FormatPrice(stock.Price)} = ${FormatHelper.GetCommaNumber(stock.Price * holding.Value)}\n";
-
-                if (averageCost <= 0)
-                {
-                    output += "  ↳ buy price unknown\n";
-                    continue;
-                }
-                double gain = (stock.Price - averageCost) * holding.Value;
-                double gainPercent = (stock.Price - averageCost) / averageCost * 100;
-                output += $"  ↳ bought @ ${averageCost:N2} · {SignedMoney(gain)} ({gainPercent:+0.00;-0.00;0.00}%)\n";
-            }
-
-            foreach (var held in shorts.OrderBy(x => x.Key))
-            {
-                var stock = market.Find(held.Key);
-                var position = held.Value;
-                double shortGain = position.EquityAt(stock.Price) - position.Margin;
-                output += $"{(shortGain >= 0 ? "📈" : "📉")} **{held.Key}** short {position.Shares} sh · sold @ ${Stock.FormatPrice(position.EntryPrice)}, now ${Stock.FormatPrice(stock.Price)} · margin ${FormatHelper.GetCommaNumber(position.Margin)} · {SignedMoney(shortGain)}\n";
-            }
-            foreach (var option in options)
-            {
-                double fair = market.Find(option.Symbol)?.FairPrice ?? option.Strike;
-                output += $"🎟️ {option.Contracts}x **{option.Symbol}** old {(option.IsCall ? "call" : "put")} strike ${Stock.FormatPrice(option.Strike)} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left · worth ${FormatHelper.GetCommaNumber(option.PayoutAt(fair))}\n";
-            }
             var bets = market.GetBets(account.UserId).OrderBy(b => b.ExpiresUtcTicks).ToList();
-            foreach (var bet in bets)
-                output += BetLine(bet, market.Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice) + "\n";
-
-            var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
             double stocksValue = _stockService.GetPortfolioValue(account.UserId);
             double propertyValue = _coinService.PropertyValue(account);
             double index = _coinService.GetAll().PropertyIndex;
+            double total = _worth.TotalWorth(account);
+            var lines = new List<string> { $"**Worth {Money.Format(total)}**", $"💵 Cash {Money.Format(account.NetWorth)}" };
 
-            output += "\n**Everything you own**\n";
-            output += $"💵 Cash ${FormatHelper.GetCommaNumber(account.NetWorth)}\n";
-            if (holdings.Count > 0 || shorts.Count > 0 || options.Count > 0 || bets.Count > 0)
-                output += $"📈 Stocks and positions ${FormatHelper.GetCommaNumber(stocksValue)}\n";
-            //grouped by kind: every house is worth the same (one market index), so one line each with the average paid
-            foreach (var group in account.Properties.GroupBy(p => p.Kind).OrderBy(g => g.Key))
+            //stocks: one line each, what it's worth now and how it's done since you bought
+            if (holdings.Count > 0 || shorts.Count > 0)
             {
-                int count = group.Count();
-                string name = PropertyCatalog.DisplayName(group.Key);
-                double worthEach = PropertyCatalog.SaleValue(group.Key, index);
-                double averagePaid = group.Average(p => p.PurchaseCost);
-                string rentEach = FormatHelper.GetCommaNumber(PropertyCatalog.NetRentPerHour(group.Key, index));
-                string icon = group.Key == PropertyKind.House ? "🏠" : "🏢";
-                output += count == 1
-                    ? $"{icon} {name} (bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} after selling costs · rent ${rentEach} an hour\n"
-                    : $"{icon} {count} {name.ToLower()}s (avg bought ${FormatHelper.GetCommaNumber(averagePaid)}) · worth ${FormatHelper.GetCommaNumber(worthEach)} each, ${FormatHelper.GetCommaNumber(worthEach * count)} in all, after selling costs · rent ${rentEach} an hour each\n";
+                var (totalGain, totalCost) = market.GetUnrealisedGain(account.UserId);
+                double sharesValue = holdings.Sum(h => (market.Find(h.Key)?.Price ?? 0) * h.Value);
+                string overall = totalCost > 0 ? $" ({Money.Signed(totalGain)}, {totalGain / totalCost * 100:+0.#;-0.#;0}%)" : "";
+                lines.Add($"\n📈 **Stocks {Money.Format(sharesValue)}**{overall}");
+                foreach (var holding in holdings.OrderByDescending(h => (market.Find(h.Key)?.Price ?? 0) * h.Value))
+                {
+                    var stock = market.Find(holding.Key);
+                    double cost = market.GetAverageCost(account.UserId, holding.Key);
+                    string change = cost > 0 ? $" · {Money.Signed((stock.Price - cost) * holding.Value)} ({(stock.Price - cost) / cost * 100:+0.#;-0.#;0}%)" : "";
+                    lines.Add($"{(cost <= 0 ? "➖" : stock.Price >= cost ? "🟢" : "🔴")} {holding.Key} ×{holding.Value:N0} · {Money.Format(stock.Price * holding.Value)}{change}");
+                }
+                foreach (var held in shorts.OrderBy(x => x.Key))
+                {
+                    var stock = market.Find(held.Key);
+                    double gain = held.Value.EquityAt(stock.Price) - held.Value.Margin;
+                    lines.Add($"{(gain >= 0 ? "🟢" : "🔴")} {held.Key} short ×{held.Value.Shares:N0} · {Money.Format(held.Value.EquityAt(stock.Price))} · {Money.Signed(gain)} (`.cover {held.Key} all`)");
+                }
             }
+
+            //calls and puts: what each pays if it closed now
+            if (bets.Count > 0 || options.Count > 0)
+            {
+                lines.Add($"\n🎲 **Calls and puts {Money.Format(bets.Sum(b => b.ValueAt(market.Find(b.Symbol)?.FairPrice ?? b.EntryPrice)) + options.Sum(o => o.PayoutAt(market.Find(o.Symbol)?.FairPrice ?? o.Strike)))}**");
+                foreach (var bet in bets)
+                {
+                    double value = bet.ValueAt(market.Find(bet.Symbol)?.FairPrice ?? bet.EntryPrice);
+                    lines.Add($"{(value >= bet.Paid ? "🟢" : "🔴")} {bet.Leverage}x {bet.Symbol} {bet.Kind} · {Money.Format(value)} of {Money.Format(bet.Paid)} · {FormatRemaining(bet.ExpiresAt - DateTime.UtcNow)} left");
+                }
+                foreach (var option in options)
+                    lines.Add($"🎟️ old {option.Symbol} {(option.IsCall ? "call" : "put")} · {Money.Format(option.PayoutAt(market.Find(option.Symbol)?.FairPrice ?? option.Strike))} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left");
+            }
+
+            //houses: one line. Every house is worth the same (one market index), so it's just how many, what they'd sell for, and what they earn
             if (account.Properties.Count > 0)
             {
-                output += $"🏘️ Property value ${FormatHelper.GetCommaNumber(propertyValue)}\n";
-                //rent from properties with squatters in goes to the squatter instead
-                var squatted = account.Running(PowerUpIds.Squatted, DateTime.UtcNow).Select(s => PropertyService.SquattedPropertyId(account, s)).ToHashSet();
-                double rentTotal = account.Properties.Where(p => !squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
-                double squattersTake = account.Properties.Where(p => squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
-                output += $"🏘️ Rent ${FormatHelper.GetCommaNumber(rentTotal)} an hour after the agency (about ${FormatHelper.GetCommaNumber(rentTotal * 24)} a day)" +
-                    (squattersTake > 0 ? $" · squatters take ${FormatHelper.GetCommaNumber(squattersTake)} an hour" : "") + "\n";
+                int count = account.Properties.Count;
+                double paid = account.Properties.Sum(p => p.PurchaseCost);
+                var squatted = account.Running(PowerUpIds.Squatted, DateTime.UtcNow).Select(sq => PropertyService.SquattedPropertyId(account, sq)).ToHashSet();
+                double rent = account.Properties.Where(p => !squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
+                double holding = account.Properties.Sum(p => PropertyCatalog.HourlyHoldingCost(p.Kind, index));
+                double earning = rent - holding;
+                string squat = squatted.Count > 0 ? $" · 🏚️ squatters in {squatted.Count}" : "";
+                lines.Add($"\n🏠 **{count} house{(count == 1 ? "" : "s")} {Money.Format(propertyValue)}** (paid {Money.Format(paid)}, {Money.Signed(propertyValue - paid)} if sold now)");
+                lines.Add($"{(earning >= 0 ? "🟢" : "🔴")} Earning {Money.Signed(earning)} an hour after rent, fees and upkeep{squat}");
             }
+
             if (account.Debt > 0)
-                output += $"💳 Debt -${FormatHelper.GetCommaNumber(account.Debt)} (grows 10% every hour; paid off from any spare cash, and sales pay it off first; repayments go into the jackpot; auto-sell is {(account.AutoSellForDebt ? "on" : "off, `.autosell on`")})\n";
-            output += $"🧾 Total ${FormatHelper.GetCommaNumber(account.NetWorth + stocksValue + propertyValue - account.Debt)}\n";
-            if (holdings.Count > 0)
-            {
-                output += totalCost > 0
-                    ? $"📊 Stock gain/loss {SignedMoney(totalGain)} ({totalGain / totalCost * 100:+0.00;-0.00;0.00}%) on known buy prices"
-                    : "📊 Stock gain/loss n/a, no known buy prices";
-            }
+                lines.Add($"\n💳 **Debt {Money.Format(-account.Debt)}**, growing {CoinAccount.HourlyDebtInterest:P0} an hour. Auto-sell is {(account.AutoSellForDebt ? "on" : "off (`.autosell on`)")}.");
 
             //sell menus and the auto-sell switch only for your own portfolio, and they only work for you
             var components = account.UserId == message.Author.Id ? PortfolioComponents(account, holdings) : null;
-            await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", output.Split('\n'), components);
+            await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", lines, components);
         }
 
         private static string SignedMoney(double amount) =>

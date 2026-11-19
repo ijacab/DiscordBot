@@ -44,6 +44,8 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-20", "`.pf` is simpler: one line per stock, and your houses as one summary with what they really earn an hour after fees and upkeep."),
+            new PatchNote("2026-11-20", "`.cardpull` has a Keep button now. No more typing a long id."),
             new PatchNote("2026-11-20", "New game: `.crash 1000`. The rocket climbs, hit Cash out before it blows. Add `2x` to bail automatically. Pays back 97% however you play it."),
             new PatchNote("2026-11-20", "Fixed: the \"daily\" $1,000 was paid every hour. It's now a $10,000 handout once a day, to anyone who played in the last 3 days."),
             new PatchNote("2026-11-20", "Donating no longer prints money: the 6x bonus is gone. Instead 1 donation in 12 is tax-free."),
