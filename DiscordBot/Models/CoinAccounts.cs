@@ -53,6 +53,8 @@ namespace DiscordBot.Models
         public const int RecentChannelCount = 3;
         /// <summary>The newest patch note (<see cref="PatchNotes.KeyOf"/>) already announced after a restart.</summary>
         public string LastAnnouncedPatch { get; set; }
+        /// <summary>Set once the old patch note posts in threads have been deleted (<c>CommandManager.CleanPatchNotesFromThreadsOnce</c>), so it only scans once.</summary>
+        public bool PatchNotesThreadCleanupDone { get; set; }
         /// <summary>How bad the running market crash is, 0 (mild) to 1 (brutal). Rolled when it starts.</summary>
         public double CrisisSeverity { get; set; }
         /// <summary>The shared property market index. 1.0 is the base national median; see <see cref="PropertyCatalog"/>.</summary>

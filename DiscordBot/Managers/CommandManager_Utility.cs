@@ -112,14 +112,18 @@ namespace DiscordBot.Managers
                 await SendPagedEmbeds(message.Channel, "Custom commands", new[] { string.Join(", ", customCommandNames) });
         }
 
-        /// <summary>Sends text to the last few channels money was used in (market news, patch notes). A channel that's gone is skipped.</summary>
-        private async Task PostToRecentChannels(DiscordSocketClient client, string text = null, Func<IMessageChannel, Task> send = null)
+        /// <summary>
+        /// Sends text to the last few channels money was used in (market news, patch notes). A channel that's gone is skipped, and
+        /// so is a thread when <paramref name="skipThreads"/> is set (patch notes never go in threads).
+        /// </summary>
+        private async Task PostToRecentChannels(DiscordSocketClient client, string text = null, Func<IMessageChannel, Task> send = null, bool skipThreads = false)
         {
             foreach (ulong channelId in _coinService.RecentChannels())
             {
                 try
                 {
                     if (client.GetChannel(channelId) is not IMessageChannel channel) continue;
+                    if (skipThreads && channel is IThreadChannel) continue;
                     if (send != null) await send(channel);
                     else await channel.SendMessageAsync(text);
                 }
@@ -153,7 +157,75 @@ namespace DiscordBot.Managers
             if (fresh.Count == 0) return;
             var lines = fresh.Select(n => $"**{n.Date}** · {n.Text}").ToList();
             if (more > 0) lines.Add($"…and {more} more. See `.patchnotes`.");
-            await PostToRecentChannels(client, send: channel => SendPagedEmbeds(channel, "🛠️ Updated: new patch notes", lines));
+            await PostToRecentChannels(client, send: channel => SendPagedEmbeds(channel, PatchNotesTitle, lines), skipThreads: true);
+        }
+
+        /// <summary>The heading of the patch notes post (the first embed field's name), which is how old posts are found again.</summary>
+        private const string PatchNotesTitle = "🛠️ Updated: new patch notes";
+        private bool _threadCleanupStarted;
+
+        /// <summary>
+        /// Once, after the bot connects: deletes the bot's earlier patch note posts from threads (active threads, and public
+        /// archived ones where Discord lets it; the last 100 messages of each). Threads it can't reach are skipped. The flag is saved
+        /// at the end so it never scans again.
+        /// </summary>
+        private async Task CleanPatchNotesFromThreadsOnce(DiscordSocketClient client)
+        {
+            var data = _coinService.GetAll();
+            if (data.PatchNotesThreadCleanupDone || _threadCleanupStarted || client.ConnectionState != ConnectionState.Connected || client.Guilds.Count == 0) return;
+            _threadCleanupStarted = true;
+
+            int deleted = 0, scanned = 0;
+            foreach (var guild in client.Guilds)
+            {
+                var threads = new Dictionary<ulong, IMessageChannel>();
+                foreach (var thread in guild.ThreadChannels) threads[thread.Id] = thread;
+                foreach (ulong id in _coinService.RecentChannels())
+                    if (client.GetChannel(id) is SocketThreadChannel recent && recent.Guild.Id == guild.Id) threads[recent.Id] = recent;
+                foreach (var parent in guild.TextChannels.Where(c => c is not SocketThreadChannel && c is not SocketVoiceChannel))
+                {
+                    try
+                    {
+                        DateTimeOffset? before = null;
+                        for (int page = 0; page < 5; page++)
+                        {
+                            var archived = await parent.GetPublicArchivedThreadsAsync(100, before, null);
+                            foreach (var thread in archived) threads.TryAdd(thread.Id, thread);
+                            if (archived.Count < 100) break;
+                            before = archived.Min(t => t.ArchiveTimestamp);
+                            await Task.Delay(500);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation("Patch note cleanup: no archived threads for #{Channel}: {Message}", parent.Name, ex.Message);
+                    }
+                }
+
+                foreach (var thread in threads.Values)
+                {
+                    try
+                    {
+                        scanned++;
+                        var messages = await thread.GetMessagesAsync(100).FlattenAsync();
+                        foreach (var message in messages.Where(m => m.Author.Id == client.CurrentUser.Id
+                            && m.Embeds.Any(e => e.Fields.Any(f => f.Name == PatchNotesTitle))))
+                        {
+                            await message.DeleteAsync();
+                            deleted++;
+                            await Task.Delay(300);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation("Patch note cleanup: couldn't clean thread {Thread}: {Message}", thread.Id, ex.Message);
+                    }
+                }
+            }
+
+            data.PatchNotesThreadCleanupDone = true;
+            await _coinService.Update();
+            _logger.LogInformation("Patch note cleanup: deleted {Deleted} old patch note posts from {Scanned} threads", deleted, scanned);
         }
 
         private async Task ShowPatchNotes(DiscordSocketClient client, SocketMessage message, List<string> args)

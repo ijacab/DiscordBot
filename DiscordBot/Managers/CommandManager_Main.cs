@@ -324,6 +324,7 @@ namespace DiscordBot.Managers
             });
 
             await Safely("patch notes", () => AnnouncePatchNotesIfNew(client));
+            _ = Safely("patch note thread cleanup", () => CleanPatchNotesFromThreadsOnce(client)); //once, in the background
 
             //any spare cash goes straight to debt, then players with auto-sell on sell assets for what's left
             await Safely("debt", async () =>
