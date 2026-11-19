@@ -238,8 +238,9 @@ namespace DiscordBot.Managers
                 {
                     var stock = market.Find(holding.Key);
                     double cost = market.GetAverageCost(account.UserId, holding.Key);
+                    string bought = cost > 0 ? $"bought ${Stock.FormatPrice(cost)} → now ${Stock.FormatPrice(stock.Price)}" : $"now ${Stock.FormatPrice(stock.Price)} (buy price unknown)";
                     string change = cost > 0 ? $" · {Money.Signed((stock.Price - cost) * holding.Value)} ({(stock.Price - cost) / cost * 100:+0.#;-0.#;0}%)" : "";
-                    lines.Add($"{(cost <= 0 ? "➖" : stock.Price >= cost ? "🟢" : "🔴")} {holding.Key} ×{holding.Value:N0} · {Money.Format(stock.Price * holding.Value)}{change}");
+                    lines.Add($"{(cost <= 0 ? "➖" : stock.Price >= cost ? "🟢" : "🔴")} **{holding.Key}** ×{holding.Value:N0} · {bought} · {Money.Format(stock.Price * holding.Value)}{change}");
                 }
                 foreach (var held in shorts.OrderBy(x => x.Key))
                 {
