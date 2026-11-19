@@ -161,7 +161,7 @@ namespace DiscordBot.Services
                 }
 
                 if (result.Won) Win(result, now);
-                else Lose(result);
+                else Lose(result, now);
 
                 //the raided player can hit back once, unless this was itself the hit back
                 if (!check.IsRevenge)
@@ -204,6 +204,8 @@ namespace DiscordBot.Services
             target.Bounty = 0;
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), attacker, result.BountyCollected);
 
+            AttackHistory.Record(target, attacker.UserId, attacker.Name, check.IsRevenge ? "Revenge raid" : "Raid", loot,
+                lootToDebt > 0 ? $"{Money(lootToDebt)} of it went on your debt" : "it worked", now);
             result.ProtectedFor = target.BattlePerson?.Ability == CardAbility.Heal ? RaidRules.HealProtection : RaidRules.Protection;
             target.RaidProtectedUntilUtcTicks = (now + result.ProtectedFor).Ticks;
 
@@ -219,7 +221,7 @@ namespace DiscordBot.Services
             if (target.BattlePerson != null) target.BattlePerson.Losses++;
         }
 
-        private void Lose(RaidResult result)
+        private void Lose(RaidResult result, DateTime now)
         {
             var (attacker, target) = (result.Attacker, result.Target);
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.Stake);
@@ -233,6 +235,8 @@ namespace DiscordBot.Services
             attacker.Bounty = 0;
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.BountyCollected);
 
+            AttackHistory.Record(target, attacker.UserId, attacker.Name, result.Check.IsRevenge ? "Revenge raid" : "Raid",
+                -(result.Stake + result.CounterHit + result.BountyCollected), "it failed, you kept their stake", now);
             attacker.Stats.RaidsLost++;
             attacker.Stats.RaidMoneyLost += result.Stake + result.CounterHit;
             target.Stats.DefencesWon++;

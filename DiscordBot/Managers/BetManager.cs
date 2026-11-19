@@ -325,6 +325,7 @@ namespace DiscordBot.Managers
                 return result;
 
             Money.Seize(leader, roller, amount, debtRoom: 0); //cash only
+            AttackHistory.Record(leader, roller.UserId, roller.Name, "Daily roll steal", amount, "they rolled a 10 on their first bet of the day", now);
             roller.Stats.DailyStealsWon++;
             roller.Stats.MoneyStolenByDailyRoll += amount;
             leader.Stats.TimesRobbedByDailyRoll++;

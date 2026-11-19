@@ -110,6 +110,9 @@ namespace DiscordBot.Models
             public double Debt { get; set; }
             /// <summary>When on (`.autosell on`), stocks and then property are sold every minute to pay off any debt (<see cref="Services.DebtService"/>).</summary>
             public bool AutoSellForDebt { get; set; }
+            /// <summary>The latest attacks on this player, newest first (<see cref="AttackHistory"/>), for `.attacks`.</summary>
+            public List<AttackRecord> RecentAttacks { get; set; } = new List<AttackRecord>();
+
             //raids (`.raid`, Services/RaidService.cs)
             /// <summary>How the card defends against raids while the player is away.</summary>
             public RaidStance RaidStance { get; set; } = RaidStance.Guard;

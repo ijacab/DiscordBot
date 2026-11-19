@@ -26,6 +26,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Economy.cs  leaderboard, net worth graphs, .donate, .jackpot, .stats
     CommandManager_PowerUps.cs .pu: power-ups, catalog, using one
     CommandManager_Cards.cs    .cardpull and the Keep button
+    CommandManager_Attacks.cs  .attacks: recap of the latest attacks on you
     CommandManager_Crash.cs    .crash and its Cash out / Again buttons
     CommandManager_Fun.cs      .roll .time .img .dbz .face .lang .convo .scrapeconvo
     CommandManager_Admin.cs    .clear .start .stop .ban .unban, disk space
@@ -93,6 +94,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
     Money.cs                   THE money rules: amount parsing, Credit/Debit/Charge/Seize, held cash, save lock
     LeveragedBet.cs            calls and puts: bet model, LeverageRules, LeveragePricer (simulated fees)
+    AttackHistory.cs           the per-player attack log (`.attacks`): records and how they read
     SyncSet.cs                 small thread-safe set (open bets)
     MoneyComponents.cs         money button prefixes (stk/pu/prop/debt/card/raid) and ButtonOwner (owner-only buttons)
     RaidRules.cs               raid numbers: card power, stances, guards, underdog penalty, stake limits, loot
