@@ -21,6 +21,9 @@ namespace DiscordBot.Managers
     {
         private async Task GameRoulette(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            //`.r red 1000` works as well as `.r red-1000`, and so does `.r red 1000 17 50` (pairs of bet and amount)
+            if (args.Count >= 2 && args.Count % 2 == 0 && args.All(a => !a.Contains('-') && !a.Contains(',')))
+                args = new List<string> { string.Join(",", Enumerable.Range(0, args.Count / 2).Select(i => $"{args[2 * i]}-{args[2 * i + 1]}")) };
             if (args.Count != 1)
                 throw new BadSyntaxException();
 

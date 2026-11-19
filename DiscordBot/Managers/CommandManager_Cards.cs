@@ -29,32 +29,54 @@ namespace DiscordBot.Managers
 
         private const string CardDirectory = "card_images";
 
-        public async Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
+        /// <summary>How long a pulled card waits to be kept before it's binned.</summary>
+        public static readonly TimeSpan KeepWindow = TimeSpan.FromMinutes(5);
+
+        /// <summary>Short keys for Keep buttons (a card's file prefix is too long for a button id), by key.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _pendingCards = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+
+        /// <summary>`.cardpull`: fetching the face is a slow web call, so the pull runs off the gateway and reports its own errors.</summary>
+        public Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count > 1 && args[0].StartsWith("keep"))
+                return KeepTyped(message, args[1]); //old `.cardpull keep <id>` lines still work
+            _ = Task.Run(async () =>
             {
-                string keepPrefix = args[1];
-                if (!ulong.TryParse(keepPrefix.Split('_')[0], out ulong userId)
-                    || userId != message.Author.Id)
+                try
                 {
-                    await message.SendRichEmbedMessage($"You are not the owner of this card. FUCK OFF");
-                    return;
+                    await PullCard(message);
                 }
+                catch (BadInputException ex)
+                {
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Card pull failed");
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} the card printer shat itself. Nothing was charged. Try again in a bit.");
+                }
+            });
+            return Task.CompletedTask;
+        }
 
-                CoinAccount ownerAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
-                await SaveCard(keepPrefix, ownerAccount, message);
+        private async Task KeepTyped(SocketMessage message, string prefix)
+        {
+            if (!ulong.TryParse(prefix.Split('_')[0], out ulong userId) || userId != message.Author.Id)
+            {
+                await message.SendRichEmbedMessage("You are not the owner of this card. FUCK OFF");
                 return;
             }
+            CoinAccount owner = await _coinService.Get(message.Author.Id, message.Author.Username);
+            await message.Channel.SendMessageAsync(await SaveCard(prefix, owner));
+        }
 
+        private async Task PullCard(SocketMessage message)
+        {
             CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
             string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
             bool isFreePull = coinAccount.LastFreePullDate != today;
-
             if (!isFreePull && coinAccount.NetWorth < BattlePerson.PullCost)
-            {
-                await message.SendRichEmbedMessage("Not enough money", $"A card pull costs ${FormatHelper.GetCommaNumber(BattlePerson.PullCost)}. Your first pull each day is free.");
-                return;
-            }
+                throw new BadInputException($"A pull costs {Money.Format(BattlePerson.PullCost)} and you're too broke. Your first pull each day is free, come back tomorrow.");
 
             //get the face before charging, so nobody pays when the image service is down
             byte[] faceBytes;
@@ -71,7 +93,7 @@ namespace DiscordBot.Managers
                 faceBytes = FoilEffect.Apply(faceBytes); //foil cards get the holographic image, saved with the card
             string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
 
-            //the card is saved next to the image so 'keep' saves the card the player actually saw
+            //the card is saved next to the image so Keep saves the card the player actually saw
             Directory.CreateDirectory(CardDirectory);
             string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
             await File.WriteAllBytesAsync($"{unsavedBase}.jpg", faceBytes);
@@ -83,43 +105,51 @@ namespace DiscordBot.Managers
                 Money.Debit(coinAccount, BattlePerson.PullCost);
             await _coinService.Update();
 
-            _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(t => DeleteUnsavedCard(prefix));
+            string key = Guid.NewGuid().ToString("N").Substring(0, 8);
+            _pendingCards[key] = prefix;
+            _ = Task.Delay(KeepWindow).ContinueWith(t =>
+            {
+                _pendingCards.TryRemove(key, out _);
+                DeleteUnsavedCard(prefix);
+            });
 
+            string paidLine = isFreePull ? "Free daily pull." : $"{Money.Format(BattlePerson.PullCost)} down the drain.";
             var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, battlePerson.GetSummary()).Build();
+            MessageComponent keep = coinAccount.BattlePerson == null ? null : new ComponentBuilder()
+                .WithButton($"Keep {Trim(battlePerson.Name, 60)}", Id(MoneyComponents.Card, "keep", message.Author.Id.ToString(), key), ButtonStyle.Success)
+                .Build();
+            string text = coinAccount.BattlePerson == null
+                ? $"{paidLine} Your first card, so it's yours."
+                : $"{paidLine} Press **Keep** within {KeepWindow.TotalMinutes:0} minutes to swap it for {coinAccount.BattlePerson.Name} (you keep your level). Otherwise it's binned.";
             using (var image = new MemoryStream(faceBytes))
             {
-                await message.Channel.SendFileAsync(stream: image, $"{prefix}_unsaved.jpg", embed: embed);
+                await message.Channel.SendFileAsync(stream: image, $"{prefix}_unsaved.jpg", text, embed: embed, components: keep);
             }
 
             if (coinAccount.BattlePerson == null)
-            {
-                await SaveCard(prefix, coinAccount, message); //auto save the card if they don't have any card
-            }
-            else
-            {
-                string paidLine = isFreePull ? "Free daily pull used." : $"${FormatHelper.GetCommaNumber(BattlePerson.PullCost)} paid.";
-                await message.Channel.SendMessageAsync($"{paidLine} Type the following if you want to replace your current card with the new one (you have 5 minutes before it is gone):");
-                await message.Channel.SendMessageAsync($".cardpull keep {prefix}");
-            }
+                await message.Channel.SendMessageAsync(await SaveCard(prefix, coinAccount)); //auto save the card if they don't have any card
         }
 
-        private async Task SaveCard(string prefix, CoinAccount coinAccount, SocketMessage message)
+        /// <summary>The Keep button under a pull.</summary>
+        private async Task<string> KeepFromButton(CoinAccount owner, string key)
         {
-            //the prefix comes from the player's message, so it must be a plain file name
+            if (!_pendingCards.TryRemove(key, out string prefix))
+                return "Too slow, that card's already in the bin. Pull another.";
+            return await SaveCard(prefix, owner);
+        }
+
+        /// <summary>Makes the pulled card the player's card. Returns what to say.</summary>
+        private async Task<string> SaveCard(string prefix, CoinAccount coinAccount)
+        {
+            //the prefix can come from the player's message, so it must be a plain file name
             if (string.IsNullOrWhiteSpace(prefix) || prefix != Path.GetFileName(prefix))
-            {
-                await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
-                return;
-            }
+                return "That card doesn't exist. It may have been binned already.";
 
             string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
             string unsavedJsonPath = $"{unsavedBase}.json";
             string unsavedImagePath = $"{unsavedBase}.jpg";
             if (!File.Exists(unsavedJsonPath) || !File.Exists(unsavedImagePath))
-            {
-                await message.SendRichEmbedMessage($"This Battle Person ID does not exist. It may have been deleted.");
-                return;
-            }
+                return "That card doesn't exist. It may have been binned already.";
 
             BattlePerson battlePerson = JsonConvert.DeserializeObject<BattlePerson>(await File.ReadAllTextAsync(unsavedJsonPath));
 
@@ -129,14 +159,14 @@ namespace DiscordBot.Managers
 
             string savedImagePath = Path.Combine(CardDirectory, $"{prefix}.jpg");
             FaceOffRenderer.ForgetArt(savedImagePath);
-            File.Move(unsavedImagePath, savedImagePath);
+            File.Move(unsavedImagePath, savedImagePath, overwrite: true);
             File.Delete(unsavedJsonPath);
 
             battlePerson.FilePath = savedImagePath;
             CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //the level belongs to the player, not the card
             coinAccount.BattlePerson = battlePerson;
             await _coinService.Update();
-            await message.SendRichEmbedMessage($"New Battle Person saved: {battlePerson.Name}");
+            return $"🃏 **{battlePerson.Name}** is your Battle Person now ({battlePerson.Rarity}, level {battlePerson.Level}). `.card` to see it.";
         }
 
         private static void DeleteUnsavedCard(string prefix)

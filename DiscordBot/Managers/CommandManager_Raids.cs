@@ -312,6 +312,11 @@ namespace DiscordBot.Managers
             CoinAccount account = await _coinService.Get(component.User.Id, component.User.Username);
             switch (action)
             {
+                case "keep":
+                    if (args.Length < 2) break;
+                    await component.DeferAsync();
+                    await component.FollowupAsync(await KeepFromButton(account, args[1]));
+                    return;
                 case "train":
                 case "trainmax":
                     await component.DeferAsync();
