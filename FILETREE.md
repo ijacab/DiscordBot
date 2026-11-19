@@ -3,6 +3,7 @@
 ```
 azure-pipelines.yml            CI/CD on the Pi: .NET 10 SDK, staged publish, deploy, Ready check, rollback
 AGENTS.md / FILETREE.md        agent docs
+.claude/agents/code-reviewer.md  read-only reviewer agent with this repo's checklist; run before pushing to master
 
 DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Program.cs                   entry; Kestrel + generic host
@@ -19,7 +20,16 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   Managers/
     CommandManager_Main.cs     ctor, _commands registry, RunCommand dispatch/parsing
     CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace .dungeon handlers (typed paths)
-    CommandManager_Methods.cs  all other command handlers (stats, prestige, donate, stocks/buy/sell/portfolio, img, remindme, convo, lang, ban/unban, ...)
+    CommandManager_Stocks.cs   .stocks .buy .sell .portfolio .stocksthread, old shorts (.cover)
+    CommandManager_Bets.cs     .call .put .options: leveraged bets, payout tables, settled-bet announcements
+    CommandManager_Property.cs .property .buyproperty .sellproperty .autosell
+    CommandManager_Economy.cs  leaderboard, net worth graphs, .donate, .jackpot, .stats
+    CommandManager_PowerUps.cs .pu: power-ups, catalog, using one
+    CommandManager_Cards.cs    .cardpull and the Keep button
+    CommandManager_Crash.cs    .crash and its Cash out / Again buttons
+    CommandManager_Fun.cs      .roll .time .img .dbz .face .lang .convo .scrapeconvo
+    CommandManager_Admin.cs    .clear .start .stop .ban .unban, disk space
+    CommandManager_Utility.cs  custom commands, reminders, .help, patch notes, paged embeds
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
@@ -32,9 +42,11 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     SlotMachine.cs  SlotView.cs   slot machine rules (reels, paytable, jackpot payout) and its embed/buttons
     Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
+    CrashGame.cs                 crash rules: crash point (97% payback for any target), multiplier over time
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
       SlotMachineManager.cs        slot sessions, spin settlement and result display
+      CrashManager.cs              crash rounds: launch, live multiplier edits, cash out, settle through BetManager
       BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/
@@ -53,6 +65,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     PropertyService.cs         houses: buy/sell with cash, rent, daily market step; buys back old apartments
     DebtService.cs             `.autosell`: sells stocks, covers shorts, cashes out options, then sells property, every minute to pay off debt
     RaidService.cs             `.raid` (odds, stakes, loot, limits, revenge, bounties), guards and card training
+    WorthService.cs            the one total-worth formula (cash + stocks/bets + property - debt) and leaderboard order
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
@@ -78,6 +91,9 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     Command.cs                 command definition
     CoinAccounts.cs CoinAccountStats.cs PrestigeLevel.cs Reminder.cs
     Stock.cs StockMarket.cs    stock + risk tiers (max swing per tick), market/portfolios
+    Money.cs                   THE money rules: amount parsing, Credit/Debit/Charge/Seize, held cash, save lock
+    LeveragedBet.cs            calls and puts: bet model, LeverageRules, LeveragePricer (simulated fees)
+    SyncSet.cs                 small thread-safe set (open bets)
     MoneyComponents.cs         money button prefixes (stk/pu/prop/debt/card/raid) and ButtonOwner (owner-only buttons)
     RaidRules.cs               raid numbers: card power, stances, guards, underdog penalty, stake limits, loot
     StockThread.cs             saved `.stocksthread` state: thread and board message ids per server

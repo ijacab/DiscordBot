@@ -33,3 +33,6 @@ packages/
 token.txt
 # scraped server history for .convo (private, stays on the Pi)
 convo_data/
+
+# agent worktrees (Claude Code)
+.claude/worktrees/
