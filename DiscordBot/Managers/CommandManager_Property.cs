@@ -23,7 +23,7 @@ using DiscordBot.Games.Models.BattleArena;
 
 namespace DiscordBot.Managers
 {
-    /// <summary>Property and debt commands: `.property`, `.buyproperty`, `.sellproperty`, `.autosell`.</summary>
+    /// <summary>Property and debt commands: `.property`, `.buy property`, `.sell property` (the old `.buyproperty` and `.sellproperty` still work), `.autosell`.</summary>
     public partial class CommandManager
     {
 
@@ -43,7 +43,7 @@ namespace DiscordBot.Managers
 
             output += "\n**Your property**\n";
             if (account.Properties.Count == 0)
-                output += "None yet. Buy a house with `.buyproperty`.\n";
+                output += "None yet. Buy a house with `.buy property`.\n";
             for (int i = 0; i < account.Properties.Count; i++)
             {
                 var property = account.Properties[i];
@@ -54,7 +54,7 @@ namespace DiscordBot.Managers
 
             output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1% of value an hour) come out hourly with the rent. " +
                 "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
-                "Every property is rented out automatically. `.sellproperty N` sells.";
+                "Every property is rented out automatically. `.sell property N` sells.";
             await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Property", output).Build(), components: PropertyBuyButton());
         }
 
@@ -63,12 +63,12 @@ namespace DiscordBot.Managers
             //houses are the only kind now; "house" is still accepted
             if (args.Count > 1) throw new BadSyntaxException();
             if (args.Count == 1 && args[0].StartsWith("ap", StringComparison.OrdinalIgnoreCase))
-                throw new BadInputException("Apartments are gone: there are only houses now. Buy one with `.buyproperty`.");
+                throw new BadInputException("Apartments are gone: there are only houses now. Buy one with `.buy property`.");
             if (args.Count == 1 && !args[0].Equals("house", StringComparison.OrdinalIgnoreCase)) throw new BadSyntaxException();
             await message.Channel.SendMessageAsync(await BuyPropertyText(message.Author.Id, message.Author.Username, message.Author.Mention), components: PropertyBuyButton());
         }
 
-        /// <summary>Buys a house for a player and returns the public line, for `.buyproperty` and the Buy a house button.</summary>
+        /// <summary>Buys a house for a player and returns the public line, for `.buy property` and the Buy a house button.</summary>
         private async Task<string> BuyPropertyText(ulong userId, string username, string mention)
         {
             var kind = PropertyKind.House;
@@ -83,9 +83,12 @@ namespace DiscordBot.Managers
 
         private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count != 1 || !int.TryParse(args[0], out int number)) throw new BadSyntaxException();
+            if (args.Count > 1 || (args.Count == 1 && !int.TryParse(args[0], out _))) throw new BadSyntaxException();
             EnsureNotBetting(message.Author.Id, "buying or selling property");
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            //with one house there's no need to say which
+            int number = args.Count == 1 ? int.Parse(args[0]) : account.Properties.Count == 1 ? 1
+                : throw new BadInputException("Which one? `.sell property 1` (the numbers are on `.property`).");
             var (holding, proceeds) = await _propertyService.Sell(account, number);
             await message.Channel.SendMessageAsync(SoldPropertyText(message.Author.Mention, account, holding, proceeds));
         }

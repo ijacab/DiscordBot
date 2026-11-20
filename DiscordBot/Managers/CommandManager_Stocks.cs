@@ -160,8 +160,17 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"Live tickers are in <#{thread.Id}>. They update every 5 minutes.");
         }
 
+        /// <summary>`.buy property` and `.sell property`: "property" and "house" mean a house, not a stock.</summary>
+        private static bool IsPropertyWord(string word) =>
+            word.Equals("property", StringComparison.OrdinalIgnoreCase) || word.Equals("house", StringComparison.OrdinalIgnoreCase) || word.Equals("houses", StringComparison.OrdinalIgnoreCase);
+
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (args.Count >= 1 && IsPropertyWord(args[0]))
+            {
+                await BuyProperty(client, message, args.Skip(1).ToList());
+                return;
+            }
             if (args.Count != 2) throw new BadSyntaxException();
             var (text, symbol) = await BuyStockText(message.Author.Id, message.Author.Username, message.Author.Mention, args[0], args[1]);
             await message.Channel.SendMessageAsync(text, components: StockTradeButtons(symbol));
@@ -169,6 +178,11 @@ namespace DiscordBot.Managers
 
         private async Task SellStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
+            if (args.Count >= 1 && IsPropertyWord(args[0]))
+            {
+                await SellProperty(client, message, args.Skip(1).ToList());
+                return;
+            }
             if (args.Count != 2) throw new BadSyntaxException();
             var (text, symbol) = await SellStockText(message.Author.Id, message.Author.Username, message.Author.Mention, args[0], args[1]);
             await message.Channel.SendMessageAsync(text, components: StockTradeButtons(symbol));

@@ -81,7 +81,7 @@ namespace DiscordBot.Services
         public PropertyHolding Get(CoinAccount account, int number)
         {
             if (account.Properties.Count == 0)
-                throw new BadInputException("You don't own any property. Buy a house with `.buyproperty`.");
+                throw new BadInputException("You don't own any property. Buy a house with `.buy property`.");
             if (number < 1 || number > account.Properties.Count)
                 throw new BadInputException($"Pick a number from 1 to {account.Properties.Count}.");
             return account.Properties[number - 1];
