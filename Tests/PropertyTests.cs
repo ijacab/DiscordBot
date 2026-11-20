@@ -148,9 +148,9 @@ namespace Tests
         [Fact]
         public void Rent_ForAHouseIsAboutRightAfterVacancyAndAgency()
         {
-            //3.5% of the $950,000 price per hour is $33,250 gross, about $29,366 after the vacancy and agency
+            //0.7% of the $950,000 price per hour is $6,650 gross, about $5,873 after the vacancy and agency
             double netRentPerHour = PropertyCatalog.GrossRentPerHour(PropertyKind.House, 1.0) * (1 - PropertyCatalog.AgencyFeeRate);
-            Assert.InRange(netRentPerHour, 29_300, 29_400);
+            Assert.InRange(netRentPerHour, 5_860, 5_890);
         }
 
         [Fact]
@@ -204,6 +204,22 @@ namespace Tests
             PropertyService.PayRentOneHour(data);
 
             Assert.Equal(500, account.NetWorth);
+        }
+
+        /// <summary>
+        /// Guards the tuning: a house earns clearly more than a bond but nowhere near what it did at 2.1% an hour (6x its price in two
+        /// weeks), and the costs of buying and selling take most of a day of net income to earn back.
+        /// </summary>
+        [Fact]
+        public void HouseEconomy_StaysInAFairRange()
+        {
+            double price = PropertyCatalog.Price(PropertyKind.House, 1.0);
+            double netPerHour = (PropertyCatalog.NetRentPerHour(PropertyKind.House, 1.0) - PropertyCatalog.HourlyHoldingCost(PropertyKind.House, 1.0)) / price;
+
+            Assert.InRange(netPerHour, 0.002, 0.005);                   //at least 2x a bond (0.1% an hour), at most a quarter of the old 2.1%
+            double costsOfRoundTrip = PropertyCatalog.StampDutyRate + PropertyCatalog.SellingCostRate;
+            Assert.True(costsOfRoundTrip / netPerHour > 18, "a house should take most of a day to earn back its buying and selling costs");
+            Assert.True(netPerHour * 24 * 14 < 1.5, "two weeks of net rent should stay well under 1.5x the price");
         }
     }
 }

@@ -24,7 +24,7 @@ namespace DiscordBot.Models
         public const double CryptoMinPrice = 0.01;
         /// <summary>5 minute ticks in a day.</summary>
         public const int TicksPerDay = 24 * 60 / 5;
-        /// <summary>Bond yield per hour, as a log move: 0.1% an hour, about 2.4% a day. Scaled to the game's hours (rent is 3.5% an hour), so a bond is a steady holding over a 2 to 4 week season.</summary>
+        /// <summary>Bond yield per hour, as a log move: 0.1% an hour, about 2.4% a day. Scaled to the game's hours (a house's rent is 0.7% an hour), so a bond is a steady holding over a 2 to 4 week season.</summary>
         public const double BondGrowthPerHour = 0.001;
         /// <summary>Bond noise per tick, as a log move. Tiny, so the yield is what shows.</summary>
         public const double BondNoise = 0.0001;

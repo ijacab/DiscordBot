@@ -30,9 +30,15 @@ namespace DiscordBot.Models
     {
         public const double HousePrice = 950_000;
         public const double ApartmentPrice = 720_000;
-        /// <summary>Gross rent per hour as a share of the current market price: 3.5% for a house, 4% for an apartment.</summary>
-        public const double HouseGrossYieldPerHour = 0.035;
-        public const double ApartmentGrossYieldPerHour = 0.04;
+        /// <summary>
+        /// Gross rent per hour as a share of the current market price: 0.7% for a house (apartments are gone; theirs only prices old
+        /// saves). After vacancy, the agency and <see cref="HoldingCostPerHour"/> that is about 0.32% an hour, 7.6% a day, so over two
+        /// weeks a house returns roughly twice what a bond does after its 7.5% of buying and selling costs, and flipping one within
+        /// a few days barely pays. It was 3.5% (2.1% an hour net, a house paying back 6x its price in two weeks), far too strong.
+        /// Tune here; <c>PropertyTests.HouseEconomy_StaysInAFairRange</c> keeps it from running away again.
+        /// </summary>
+        public const double HouseGrossYieldPerHour = 0.007;
+        public const double ApartmentGrossYieldPerHour = 0.008;
 
         /// <summary>Stamp duty and conveyancing, paid on top of the price when buying.</summary>
         public const double StampDutyRate = 0.045;
@@ -43,10 +49,10 @@ namespace DiscordBot.Models
         /// <summary>Share of the year a let property sits empty.</summary>
         public const double VacancyRate = 0.04;
         /// <summary>
-        /// Council rates and maintenance, a share of the current value every hour, charged with the rent. About a third of the gross
-        /// rent, like rates are a fraction of a real rent, scaled to the game's hours.
+        /// Council rates and maintenance, a share of the current value every hour, charged with the rent. A bit over a third of the
+        /// gross rent, like rates are a fraction of a real rent, scaled to the game's hours.
         /// </summary>
-        public const double HoldingCostPerHour = 0.01;
+        public const double HoldingCostPerHour = 0.003;
 
         /// <summary>
         /// The market index has no ceiling and no ordinary floor: it can run as far as the daily moves take it. This is only a

@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-20", "Houses earn far less: rent is 0.7% of the price an hour (was 3.5%) and upkeep 0.3% (was 1%). About 0.32% an hour after fees instead of 2.1%, so they're a slow hold, not a money printer."),
             new PatchNote("2026-11-20", "`.dbz` is fixed: it finds a working picture and posts it as an attachment, with more variety each time. `.img` does the same."),
             new PatchNote("2026-11-20", "Houses are bought and sold like stocks now: `.buy property` and `.sell property 1`. `.buyproperty` and `.sellproperty` still work."),
             new PatchNote("2026-11-20", "New `.attacks`: a recap of the latest attacks on you (power-up hits, raids, the daily roll steal), who did it and what it cost."),
