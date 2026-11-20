@@ -89,11 +89,23 @@ namespace DiscordBot.Managers
             await ImageSearch(message, args);
         }
 
+        /// <summary>Things to add to a `.dbz` search so it doesn't keep landing on the same first page of results.</summary>
+        private static readonly string[] _dbzSubjects =
+        {
+            "goku", "vegeta", "gohan", "piccolo", "frieza", "cell", "majin buu", "trunks", "krillin", "bulma", "broly", "gotenks",
+            "super saiyan", "super saiyan blue", "ultra instinct", "kamehameha", "shenron", "dragon balls", "namek", "saiyan saga",
+        };
+
         public async Task ImageSearchDbz(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            await ImageSearch(message, new List<string> { "dragon", "ball", "z" }, isAlwaysOn: true);
+            string subject = _dbzSubjects[Random.Shared.Next(_dbzSubjects.Length)];
+            await ImageSearch(message, new List<string> { "dragon", "ball", "z", subject }, isAlwaysOn: true);
         }
 
+        /// <summary>
+        /// Searches, downloads a picture that really works and posts it as an attachment. The search and the downloads are slow, so
+        /// they run off the gateway task and report their own errors.
+        /// </summary>
         private async Task ImageSearch(SocketMessage message, List<string> args, bool isAlwaysOn = false)
         {
             if (_imageSearchStopped && !isAlwaysOn)
@@ -102,28 +114,35 @@ namespace DiscordBot.Managers
             ThrowIfBlackListed(message);
 
             var searchQuery = string.Join(' ', args);
-
             if (string.IsNullOrWhiteSpace(searchQuery))
                 throw new BadInputException("You didn't provide an argument");
 
-            try
+            _ = Task.Run(async () =>
             {
-                var images = await _duckDuckGoService.GetImages(searchQuery);
-                string output = images.Count > 0 ? images[new Random().Next(0, images.Count)]?.Image : "No image found";
-
-                var msg = await message.Channel.SendMessageAsync(output);
-
-                if (searchQuery.Contains("safeoff", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    //delete nsfw messages after delay
-                    _ = msg.DeleteAfterDelay();
+                    using var typing = message.Channel.EnterTypingState();
+                    var results = await _duckDuckGoService.GetImages(searchQuery);
+                    var image = await _duckDuckGoService.FetchFirstWorkingAsync(DuckDuckGoService.Candidates(results, Random.Shared));
+                    if (image == null)
+                    {
+                        await message.Channel.SendMessageAsync(results.Count == 0
+                            ? "Searched the whole internet and found fuck all. Try again."
+                            : "Found some pictures but every link was dead or blocked. Try again, it picks different ones each time.");
+                        return;
+                    }
 
+                    using var stream = new MemoryStream(image.Bytes);
+                    var msg = await message.Channel.SendFileAsync(stream: stream, filename: image.FileName);
+                    if (searchQuery.Contains("safeoff", StringComparison.OrdinalIgnoreCase))
+                        _ = msg.DeleteAfterDelay(); //delete nsfw messages after delay
                 }
-            }
-            catch (Exception ex)
-            {
-                await message.Channel.SendMessageAsync(ex.Message);
-            }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Image search for {Query} failed", searchQuery);
+                    await message.Channel.SendMessageAsync("The picture machine broke: " + ex.Message);
+                }
+            });
         }
 
         public void ThrowIfBlackListed(SocketMessage message)
