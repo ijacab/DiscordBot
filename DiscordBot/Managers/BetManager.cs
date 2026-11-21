@@ -215,7 +215,7 @@ namespace DiscordBot.Managers
             CoinAccount coinAccount = await _coinService.Get(userId, userName);
             double netWorthBeforeBet = coinAccount.NetWorth + betAmount;
             var worth = new WorthService(_coinService, _stockService, _appSettings);
-            //everything they own counts, plus money held in a dungeon run or a Face Off backing, so parking cash elsewhere
+            //everything they own counts, plus money held in a dungeon run, so parking cash elsewhere
             //and betting a dollar doesn't count as betting big
             double everythingBeforeBet = worth.TotalWorth(coinAccount) + betAmount + Money.Held(userId);
 
@@ -283,7 +283,7 @@ namespace DiscordBot.Managers
                 RollJackpot(coinAccount);
 
             //most of what is lost goes into the jackpot (after the roll, so you can't win your own loss straight back).
-            //Face Off passes false: its losers' money is paid to the winner already
+            //a game whose losers' money is paid to a winner passes false
             if (feedJackpot)
             {
                 double fed = JackpotShareOfLoss(betAmount - totalWinnings);

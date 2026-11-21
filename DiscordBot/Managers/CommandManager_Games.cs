@@ -6,7 +6,7 @@ using DiscordBot.Models;
 using DiscordBot.Games.Managers;
 using DiscordBot.Games.Models.Dungeon;
 using DiscordBot.Games.Models;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Services;
 using Common.Helpers;
 using System;
@@ -174,107 +174,6 @@ namespace DiscordBot.Managers
                 await _blackjackManager.CreateOrJoin(playerId, betAmount, GameContext.From(message)); //will throw an exception if player already in a game, don't need to check
                 await TryDeleteMessageAsync(message);
             }
-        }
-
-        private async Task GameFaceOff(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            //valid inputs:
-            //1000|max|25%     - create or join the lobby with that bet
-            //start            - start the lobby (joins with the minimum first if you're not in it)
-            //attack|defend|focus|gamble [name] - pick this round's action, optionally aimed at an opponent
-            //ability | leave | back name amount | status
-            ulong playerId = message.Author.Id;
-            IMessageChannel channel = message.Channel;
-            string action = args.Count > 0 ? args[0].ToLowerInvariant() : "";
-            ulong guildId = (channel as SocketGuildChannel)?.Guild.Id ?? 0;
-
-            (bool Ok, string Message) result;
-            if (BattleActionInfo.TryParse(action, out BattleAction battleAction))
-            {
-                //the dashboard shows who has picked; deleting the command keeps the pick itself hidden where the bot can
-                await TryDeleteMessageAsync(message);
-                ulong? targetId = null;
-                if (args.Count > 1)
-                {
-                    string wanted = string.Join(" ", args.Skip(1)).Trim().TrimStart('@').ToLowerInvariant();
-                    var match = _battleArenaManager.OpponentsOf(playerId).FirstOrDefault(o => o.Name.ToLowerInvariant().StartsWith(wanted));
-                    if (match.Name == null)
-                    {
-                        _ = PostTransientAsync(channel, $"{message.Author.Mention} No opponent called {wanted} is still in your fight.");
-                        return;
-                    }
-                    targetId = match.Id;
-                }
-                result = await _battleArenaManager.Pick(playerId, battleAction, targetId);
-                if (result.Ok)
-                    result.Message = $"{message.Author.Username} has picked.";
-            }
-            else
-            {
-                switch (action)
-                {
-                    case "ability":
-                        result = await _battleArenaManager.UseAbility(playerId);
-                        break;
-                    case "leave":
-                        result = await _battleArenaManager.Leave(playerId);
-                        break;
-                    case "status":
-                        result = await _battleArenaManager.Bump(playerId, channel);
-                        break;
-                    case "back":
-                        result = await TypedBack(message, args);
-                        break;
-                    case "start":
-                        if (_battleArenaManager.GameOf(playerId) == null)
-                        {
-                            CoinAccount starter = await _coinService.Get(playerId, message.Author.Username);
-                            TryExtractBetAmount(new List<string>(), starter, out double minBet);
-                            result = await _battleArenaManager.Join(starter, minBet, channel, guildId);
-                            if (!result.Ok)
-                                break;
-                        }
-                        result = await _battleArenaManager.Start(playerId);
-                        break;
-                    default:
-                        CoinAccount account = await _coinService.Get(playerId, message.Author.Username);
-                        if (!TryExtractBetAmount(args, account, out double bet))
-                            throw new BadSyntaxException();
-                        result = await _battleArenaManager.Join(account, bet, channel, guildId);
-                        break;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(result.Message))
-                _ = PostTransientAsync(channel, $"{message.Author.Mention} {result.Message}");
-        }
-
-        /// <summary>`.fo back name amount`: backs a fighter in the open fight by name.</summary>
-        private async Task<(bool Ok, string Message)> TypedBack(SocketMessage message, List<string> args)
-        {
-            if (args.Count < 3)
-                return (false, "Use `.fo back name amount`, for example `.fo back sam 1000`.");
-
-            string wanted = args[1].TrimStart('@').ToLowerInvariant();
-            Guid? gameId = null;
-            ulong fighterId = 0;
-            foreach (Guid id in _battleArenaManager.Games.Select(g => g.GameGuid).ToList())
-            {
-                var fighter = _battleArenaManager.FightersOf(id).FirstOrDefault(f => f.Name.ToLowerInvariant().StartsWith(wanted));
-                if (fighter.Name != null)
-                {
-                    gameId = id;
-                    fighterId = fighter.Id;
-                    break;
-                }
-            }
-            if (gameId == null)
-                return (false, $"No fighter called {wanted} is in a Face Off right now.");
-
-            CoinAccount backer = await _coinService.Get(message.Author.Id, message.Author.Username);
-            if (!TryExtractBetAmount(args, backer, out double amount, betAmountIndex: 2))
-                return (false, "That amount doesn't look right. Use a number, a percentage like 10%, or max.");
-            return await _battleArenaManager.Back(backer, gameId.Value, fighterId, amount);
         }
 
         private async Task GameDuckRace(DiscordSocketClient client, SocketMessage message, List<string> args)

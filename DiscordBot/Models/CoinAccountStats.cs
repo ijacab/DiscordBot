@@ -43,7 +43,7 @@ namespace DiscordBot.Models
 
         //---- tracked from here on (older accounts start counting from zero) ----
 
-        /// <summary>Results by game name ("Roulette", "Blackjack", "Duck Race", "Slots", "Face Off").</summary>
+        /// <summary>Results by game name ("Roulette", "Blackjack", "Duck Race", "Slots", "Crash").</summary>
         public Dictionary<string, GameRecord> Games { get; set; } = new Dictionary<string, GameRecord>();
         public double TotalBonusWinnings { get; set; }
 
@@ -114,6 +114,7 @@ namespace DiscordBot.Models
         //raids and card training
         public long RaidsWon { get; set; }
         public long RaidsLost { get; set; }
+        public int BestRaidStreak { get; set; }
         public long DefencesWon { get; set; }
         public long DefencesLost { get; set; }
         /// <summary>Loot taken in raids won, and stakes and counter-hits won while defending.</summary>

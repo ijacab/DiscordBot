@@ -19,7 +19,7 @@ using System.Reflection;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using DiscordBot.Text;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 
 namespace DiscordBot.Managers
 {
@@ -87,11 +87,12 @@ namespace DiscordBot.Managers
                 faceBytes = buffer.ToArray();
             }
 
-            var battlePerson = new BattlePerson(NameGenerator.GetGeneratedName(2));
+            var battlePerson = BattlePerson.Pull();
             CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //shown at the player's own level, which it keeps
             if (battlePerson.Foil)
                 faceBytes = FoilEffect.Apply(faceBytes); //foil cards get the holographic image, saved with the card
-            string prefix = $"{message.Author.Id}_{battlePerson.Name.Replace(" ", "")}_{DateTimeOffset.Now.Ticks}";
+            //a plain file name: letters and digits only, since the nickname has quotes in it
+            string prefix = $"{message.Author.Id}_{System.Text.RegularExpressions.Regex.Replace(battlePerson.Name, "[^A-Za-z0-9]", "")}_{DateTimeOffset.Now.Ticks}";
 
             //the card is saved next to the image so Keep saves the card the player actually saw
             Directory.CreateDirectory(CardDirectory);
@@ -114,13 +115,16 @@ namespace DiscordBot.Managers
             });
 
             string paidLine = isFreePull ? "Free daily pull." : $"{Money.Format(BattlePerson.PullCost)} down the drain.";
+            //every pull trains your current card a little, kept or not
+            string xpLine = coinAccount.BattlePerson == null ? "" : " " + CardLevels.AddXp(coinAccount.BattlePerson, CardLevels.PullXp) + " for " + coinAccount.BattlePerson.Name + ".";
+            await _coinService.Update();
             var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, battlePerson.GetSummary()).Build();
             MessageComponent keep = coinAccount.BattlePerson == null ? null : new ComponentBuilder()
                 .WithButton($"Keep {Trim(battlePerson.Name, 60)}", Id(MoneyComponents.Card, "keep", message.Author.Id.ToString(), key), ButtonStyle.Success)
                 .Build();
             string text = coinAccount.BattlePerson == null
                 ? $"{paidLine} Your first card, so it's yours."
-                : $"{paidLine} Press **Keep** within {KeepWindow.TotalMinutes:0} minutes to swap it for {coinAccount.BattlePerson.Name} (you keep your level). Otherwise it's binned.";
+                : $"{paidLine}{xpLine}\n{Compare(coinAccount.BattlePerson, battlePerson)}\nPress **Keep** within {KeepWindow.TotalMinutes:0} minutes to swap it in (you keep your level and XP). Otherwise it's binned.";
             using (var image = new MemoryStream(faceBytes))
             {
                 await message.Channel.SendFileAsync(stream: image, $"{prefix}_unsaved.jpg", text, embed: embed, components: keep);
@@ -128,6 +132,17 @@ namespace DiscordBot.Managers
 
             if (coinAccount.BattlePerson == null)
                 await message.Channel.SendMessageAsync(await SaveCard(prefix, coinAccount)); //auto save the card if they don't have any card
+        }
+
+        /// <summary>How a new pull stacks up against the card you have, at your level: power, and what changes about how it raids.</summary>
+        private static string Compare(BattlePerson current, BattlePerson pulled)
+        {
+            double diff = pulled.Power - current.Power;
+            string power = Math.Abs(diff) < 0.05 ? "the same power" : diff > 0 ? $"**+{diff:0} power** 📈" : $"**{diff:0} power** 📉";
+            string kind = Archetypes.Normalise(current.Archetype) == Archetypes.Normalise(pulled.Archetype)
+                ? "the same archetype"
+                : $"{Archetypes.Label(current.Archetype)} → {Archetypes.Label(pulled.Archetype)}";
+            return $"Versus your {Archetypes.Emoji(current.Archetype)} {current.Name}: {power}, {kind}.";
         }
 
         /// <summary>The Keep button under a pull.</summary>
@@ -155,10 +170,10 @@ namespace DiscordBot.Managers
 
             if (coinAccount.BattlePerson?.FilePath != null && File.Exists(coinAccount.BattlePerson.FilePath))
                 File.Delete(coinAccount.BattlePerson.FilePath); //replacing the old card removes its image
-            FaceOffRenderer.ForgetArt(coinAccount.BattlePerson?.FilePath);
+            RaidRenderer.ForgetArt(coinAccount.BattlePerson?.FilePath);
 
             string savedImagePath = Path.Combine(CardDirectory, $"{prefix}.jpg");
-            FaceOffRenderer.ForgetArt(savedImagePath);
+            RaidRenderer.ForgetArt(savedImagePath);
             File.Move(unsavedImagePath, savedImagePath, overwrite: true);
             File.Delete(unsavedJsonPath);
 
@@ -166,7 +181,7 @@ namespace DiscordBot.Managers
             CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //the level belongs to the player, not the card
             coinAccount.BattlePerson = battlePerson;
             await _coinService.Update();
-            return $"🃏 **{battlePerson.Name}** is your Battle Person now ({battlePerson.Rarity}, level {battlePerson.Level}). `.card` to see it.";
+            return $"🃏 **{battlePerson.Name}** is your Battle Person now: {Archetypes.Label(battlePerson.Archetype)}, {battlePerson.Rarity}, power {battlePerson.Power:0}. `.card` for the control panel, `.raid @someone` to put it to work.";
         }
 
         private static void DeleteUnsavedCard(string prefix)

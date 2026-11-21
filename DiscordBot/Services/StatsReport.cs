@@ -287,23 +287,16 @@ namespace DiscordBot.Services
         private static string Dungeon(CoinAccount a)
         {
             var s = a.Stats;
-            var faceOff = a.Stats.Games.TryGetValue("Face Off", out var record) ? record : null;
             var page = new Page()
                 .Row("Dungeon buy-ins", N(s.DungeonRuns))
                 .Row("Paid out (cash-outs and refunds)", M(s.DungeonPayouts))
                 .Row("Buy-ins lost", M(s.DungeonBuyInsLost));
-            page.Heading("Face Off");
-            if (faceOff == null || faceOff.Played == 0)
-                page.Line("No Face Off fights recorded yet.");
-            else
-                page.Row("Fights", N(faceOff.Played)).Row("Won / lost", $"{N(faceOff.Won)} / {N(faceOff.Lost)} ({Pct(faceOff.Won, faceOff.Played)})")
-                    .Row("Net", Signed(faceOff.Net)).Row("Best win", Signed(faceOff.BestWin));
-            page.Row("Battle card", a.BattlePerson == null ? "none (`.cardpull`)" : $"{a.BattlePerson.Name}, level {a.BattlePerson.Level}");
+            page.Row("Battle card", a.BattlePerson == null ? "none (`.cardpull`)" : $"{a.BattlePerson.Name} ({DiscordBot.Games.Models.Cards.Archetypes.Name(a.BattlePerson.Archetype)}, level {a.BattlePerson.Level})");
             page.Heading("Raids");
             if (s.RaidsWon + s.RaidsLost + s.DefencesWon + s.DefencesLost == 0 && s.CardTrainingSpent == 0)
                 page.Line("No raids yet (`.raid`).");
             else
-                page.Row("Raids won / lost", $"{N(s.RaidsWon)} / {N(s.RaidsLost)}").Row("Defences won / lost", $"{N(s.DefencesWon)} / {N(s.DefencesLost)}")
+                page.Row("Raids won / lost", $"{N(s.RaidsWon)} / {N(s.RaidsLost)}").Row("Best raid win streak", N(s.BestRaidStreak)).Row("Defences won / lost", $"{N(s.DefencesWon)} / {N(s.DefencesLost)}")
                     .Row("Net from raids", Signed(s.RaidMoneyWon + s.BountiesCollected - s.RaidMoneyLost)).Row("Bounties collected", M(s.BountiesCollected))
                     .Row("Spent on training", M(s.CardTrainingSpent)).Row("Spent on guards", M(s.GuardsSpent));
             return page.ToString();

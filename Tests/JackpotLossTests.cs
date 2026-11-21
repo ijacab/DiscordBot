@@ -59,7 +59,7 @@ namespace Tests
         }
 
         [Fact]
-        public async Task FaceOff_StyleBets_DoNotFeedTheJackpot()
+        public async Task BetsThatDontFeedTheJackpot_DoNotFeedIt()
         {
             var (coins, bets, account) = Setup();
             await Play(bets, account, 1_000, 0, feedJackpot: false);

@@ -19,7 +19,7 @@ using System.Reflection;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using DiscordBot.Text;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 
 namespace DiscordBot.Managers
 {

@@ -1,8 +1,9 @@
 ﻿using Common.Helpers;
 using Discord;
+using Microsoft.Extensions.Logging;
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using System;
@@ -26,12 +27,6 @@ namespace DiscordBot.Managers
         private async Task CardView(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            if (args.Count >= 1 && args[0].ToLowerInvariant() == "focus")
-            {
-                if (args.Count < 2 || !CardLevels.TryParseFocus(args[1], out CardFocus focus)) throw new BadSyntaxException();
-                await message.Channel.SendMessageAsync(await FocusText(account, focus));
-                return;
-            }
             if (args.Count >= 1 && args[0].ToLowerInvariant() == "stance")
             {
                 if (args.Count < 2 || !RaidRules.TryParseStance(args[1], out RaidStance stance)) throw new BadSyntaxException();
@@ -120,12 +115,57 @@ namespace DiscordBot.Managers
             var result = _raidService.Raid(attacker, target, stake, now);
             await _coinService.Update();
 
-            var embed = DiscordHelper.GetEmbedBuilder(result.Won ? "⚔️ Raid succeeded" : "🛡️ Raid failed", RaidService.Describe(result)).Build();
+            var builder = DiscordHelper.GetEmbedBuilder(result.Won ? "⚔️ Raid succeeded" : "🛡️ Raid failed", RaidService.Describe(result));
             var revenge = result.Check.IsRevenge ? null : new ComponentBuilder()
                 .WithButton($"🔥 Revenge on {Trim(attacker.Name, 40)}…", Id(MoneyComponents.Raid, "revenge", target.UserId.ToString(), attacker.UserId.ToString()), ButtonStyle.Danger)
                 .Build();
-            await channel.SendMessageAsync($"<@{target.UserId}>", embed: embed, components: revenge,
-                allowedMentions: new AllowedMentions { UserIds = new List<ulong> { target.UserId } });
+            var mentions = new AllowedMentions { UserIds = new List<ulong> { target.UserId } };
+
+            //a picture of the two cards, if it can be drawn; the text carries everything either way
+            MemoryStream picture = null;
+            try
+            {
+                picture = RaidRenderer.Render(RaidScene(result));
+                builder.WithImageUrl("attachment://raid.png");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Couldn't draw the raid picture");
+            }
+            if (picture != null)
+            {
+                using (picture)
+                    await channel.SendFileAsync(picture, "raid.png", $"<@{target.UserId}>", embed: builder.Build(), components: revenge, allowedMentions: mentions);
+            }
+            else
+            {
+                await channel.SendMessageAsync($"<@{target.UserId}>", embed: builder.Build(), components: revenge, allowedMentions: mentions);
+            }
+        }
+
+        /// <summary>The picture for a raid result: both cards, the dice and the money.</summary>
+        public static RaidScene RaidScene(RaidService.RaidResult r)
+        {
+            RaidSide Side(CoinAccount account, bool winner) => new RaidSide
+            {
+                Name = account.BattlePerson?.Name ?? account.Name,
+                Kind = account.BattlePerson == null ? "NO CARD" : Archetypes.Name(account.BattlePerson.Archetype),
+                Level = account.BattlePerson?.Level ?? 0,
+                Rarity = account.BattlePerson?.Rarity ?? CardRarity.Common,
+                Power = RaidRules.Power(account.BattlePerson),
+                ArtPath = account.BattlePerson?.FilePath,
+                Winner = winner,
+            };
+            return new RaidScene
+            {
+                Attacker = Side(r.Attacker, r.Won),
+                Defender = Side(r.Target, !r.Won),
+                Banner = r.Check.IsRevenge ? (r.Won ? "REVENGE IS SWEET" : "REVENGE FAILED") : (r.Won ? "RAID SUCCEEDED" : "RAID FAILED"),
+                Won = r.Won,
+                Needed = r.Needed,
+                Roll = r.Roll,
+                Footer = r.Won ? $"{RaidService.Money(r.Loot)} LOOT" : $"{RaidService.Money(r.Stake + r.ExtraLoss)} LOST",
+            };
         }
 
         private static double ParseStake(string text, CoinAccount attacker, RaidService.RaidCheck check)
@@ -178,13 +218,16 @@ namespace DiscordBot.Managers
             var card = target.BattlePerson;
             var lines = new List<string>
             {
-                $"**You:** {attacker.BattlePerson?.Name ?? "no card"} (Lv {attacker.BattlePerson?.Level ?? 0}), power {check.AttackPower:0}{(check.IsRevenge ? " with 🔥 revenge (+25%)" : "")}",
-                $"**{target.Name}:** {card?.Name ?? "no card"} (Lv {card?.Level ?? 0}), defends at {check.DefencePower:0}: {target.RaidStance}{(check.Guarded ? ", with guards" : "")}{(check.Underdog > 1 ? $", {RaidService.Pct(check.Underdog - 1)} harder for being richer than you" : "")}",
-                $"**Chance to win:** {RaidService.ChancePercent(check.Chance)}% (you need {RaidService.NeededRoll(check.Chance)}+ on a d100)",
+                $"**You:** {RaidService.CardLabel(attacker)}, power {check.AttackPower:0}{(check.IsRevenge ? " with 🔥 revenge (+25%)" : "")}",
+                $"**{target.Name}:** {RaidService.CardLabel(target)}, defends at {check.DefencePower:0}: {target.RaidStance}{(check.Guarded ? ", with guards" : "")}{(check.Underdog > 1 ? $", {RaidService.Pct(check.Underdog - 1)} harder for being richer than you" : "")}",
             };
+            if (check.Matchup.Length > 0) lines.Add($"🔺 {check.Matchup}.");
+            if (Archetypes.Normalise(attacker.BattlePerson?.Archetype ?? Archetype.None) == Archetype.Gambler)
+                lines.Add($"🎰 Your Gambler's power swings {Archetypes.GamblerSwing * 100:0}% up or down on a coin flip when you raid, so the chance below is the middle of it.");
+            lines.Add($"**Chance to win:** {RaidService.ChancePercent(check.Chance)}% (you need {RaidService.NeededRoll(check.Chance)}+ on a d100)");
             if (check.MaxStake >= check.MinStake)
             {
-                double best = RaidRules.Loot(check.MaxStake, target.RaidStance, check.TargetWorth);
+                double best = RaidRules.Loot(check.MaxStake, target.RaidStance, check.TargetWorth, Archetypes.LootMultiple(attacker.BattlePerson?.Archetype ?? Archetype.None, RaidRules.LootMultiple));
                 lines.Add($"**Stake:** {RaidService.Money(check.MinStake)} to {RaidService.Money(check.MaxStake)}. At the most, a win takes {RaidService.Money(best)} from them (you keep 90%, 10% becomes a bounty on you).");
             }
             if (target.Bounty > 0) lines.Add($"💰 **Bounty on {target.Name}:** {RaidService.Money(target.Bounty)}, yours if you win.");
@@ -231,8 +274,7 @@ namespace DiscordBot.Managers
             lines.Add(card.Level >= CardLevels.MaxLevel
                 ? "**Training:** max level."
                 : $"**Training:** {RaidService.Money(CardLevels.TrainCost(card))} for level {card.Level + 1} (`.train`, or `.train max`).");
-            lines.Add($"**Focus:** {card.Focus} (`.card focus attack|defense|crit|balanced`)");
-            lines.Add($"**Raid power:** {RaidRules.AttackPower(card, false):0} attacking, {RaidRules.DefencePower(card, account.RaidStance, account.GuardsUntilUtcTicks > now.Ticks, 1):0} defending");
+            lines.Add($"**Raid power:** {RaidRules.AttackPower(card, null, false):0} attacking, {RaidRules.DefencePower(card, null, account.RaidStance, account.GuardsUntilUtcTicks > now.Ticks, 1):0} defending");
             lines.Add($"**Stance:** {RaidRules.Describe(account.RaidStance)}");
             lines.Add(account.GuardsUntilUtcTicks > now.Ticks
                 ? $"**Guards:** on duty for {RaidService.Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}"
@@ -243,7 +285,7 @@ namespace DiscordBot.Managers
             if (account.RevengeTokens.Count > 0)
                 lines.Add("🔥 **Revenge ready on:** " + string.Join(", ", account.RevengeTokens.Select(r => r.Name)));
             var s = account.Stats;
-            lines.Add($"**Raids:** won {s.RaidsWon} / lost {s.RaidsLost} · **defences:** won {s.DefencesWon} / lost {s.DefencesLost}");
+            lines.Add($"**Raids:** won {s.RaidsWon} / lost {s.RaidsLost} · **defences:** won {s.DefencesWon} / lost {s.DefencesLost}" + (account.RaidStreak >= 2 ? $" · 🔥 {account.RaidStreak} raid wins in a row" : ""));
             return string.Join("\n", lines);
         }
 
@@ -263,11 +305,6 @@ namespace DiscordBot.Managers
                 stance.AddOption(option.ToString(), option.ToString(), Trim(RaidRules.Describe(option), 100), isDefault: option == account.RaidStance);
             builder.WithSelectMenu(stance, 1);
 
-            var focus = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Card, "focus", owner)).WithPlaceholder($"Focus: {card.Focus}");
-            foreach (CardFocus option in Enum.GetValues(typeof(CardFocus)))
-                focus.AddOption(option.ToString(), option.ToString(),
-                    option == CardFocus.Balanced ? "Grow as the card naturally does" : $"{option} grows 1.5x per level, the others 0.75x", isDefault: option == card.Focus);
-            builder.WithSelectMenu(focus, 2);
             return builder.Build();
         }
 
@@ -293,15 +330,6 @@ namespace DiscordBot.Managers
             account.RaidStance = stance;
             await _coinService.Update();
             return $"🛡️ {account.Name}'s raid stance is now **{RaidRules.Describe(stance)}**.";
-        }
-
-        private async Task<string> FocusText(CoinAccount account, CardFocus focus)
-        {
-            var card = account.BattlePerson ?? throw new BadInputException("You don't have a Battle Person yet. Type `.cardpull` to get one.");
-            card.Focus = focus;
-            await _coinService.Update();
-            string how = focus == CardFocus.Balanced ? "grows as it naturally does" : $"grows {focus} 1.5x as fast per level, and the others 0.75x";
-            return $"🎯 {card.Name} now {how}. Attack {card.Attack:0.0}, defense {card.Defense:0.0}, crit {card.CritMultiplier:0.00}x.";
         }
 
         // ---- clicks
@@ -334,14 +362,6 @@ namespace DiscordBot.Managers
                     if (!Enum.TryParse(value, out RaidStance stance)) break;
                     await component.DeferAsync(ephemeral: true);
                     await component.FollowupAsync(await StanceText(account, stance), ephemeral: true);
-                    return;
-                }
-                case "focus":
-                {
-                    string value = component.Data.Values?.FirstOrDefault();
-                    if (!Enum.TryParse(value, out CardFocus focus)) break;
-                    await component.DeferAsync(ephemeral: true);
-                    await component.FollowupAsync(await FocusText(account, focus), ephemeral: true);
                     return;
                 }
             }

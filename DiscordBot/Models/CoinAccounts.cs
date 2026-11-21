@@ -1,5 +1,5 @@
 ﻿using Discord.WebSocket;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -116,6 +116,8 @@ namespace DiscordBot.Models
             //raids (`.raid`, Services/RaidService.cs)
             /// <summary>How the card defends against raids while the player is away.</summary>
             public RaidStance RaidStance { get; set; } = RaidStance.Guard;
+            /// <summary>Raids won in a row. A lost raid resets it.</summary>
+            public int RaidStreak { get; set; }
             /// <summary>Hired guards (`.guards`) defend until then (UTC ticks).</summary>
             public long GuardsUntilUtcTicks { get; set; }
             /// <summary>Safe from raids until then (UTC ticks), after being raided successfully. Revenge raids ignore it.</summary>

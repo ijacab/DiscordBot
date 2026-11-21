@@ -19,7 +19,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
   DiscordBot.service           systemd unit
   Managers/
     CommandManager_Main.cs     ctor, _commands registry, RunCommand dispatch/parsing
-    CommandManager_Games.cs    .roulette .blackjack .faceoff .duckrace .dungeon handlers (typed paths)
+    CommandManager_Games.cs    .roulette .blackjack .duckrace .dungeon handlers (typed paths)
     CommandManager_Stocks.cs   .stocks .buy .sell .portfolio .stocksthread, old shorts (.cover)
     CommandManager_Bets.cs     .call .put .options: leveraged bets, payout tables, settled-bet announcements
     CommandManager_Property.cs .property .buyproperty .sellproperty .autosell
@@ -41,14 +41,14 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     BaseMultiplayerGame.cs     game base class
     BlackjackView.cs           the blackjack table embed (lobby, hands, results), edited in place
     SlotMachine.cs  SlotView.cs   slot machine rules (reels, paytable, jackpot payout) and its embed/buttons
-    Blackjack.cs  Roulette.cs  BattleArena.cs     game rules (BattleArena = Face Off: targets, d20 tiers, round cap, shared wins)
+    Blackjack.cs  Roulette.cs     game rules
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     CrashGame.cs                 crash rules: crash point (97% payback for any target), multiplier over time
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
       SlotMachineManager.cs        slot sessions, spin settlement and result display
       CrashManager.cs              crash rounds: launch, live multiplier edits, cash out, settle through BetManager
-      BlackjackManager.cs  BattleArenaManager.cs  DuckRaceManager.cs   (BattleArenaManager: Face Off lobby, hidden picks, reveal, backers, 1 s timer loop)
+      BlackjackManager.cs  DuckRaceManager.cs
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
     Models/
       Dungeon/DungeonSession.cs    pure session rules: lobby, floor-per-tick crawl, boss doors, checkpoints, PvP pool, idle cash out
@@ -56,10 +56,10 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       Dungeon/Combat.cs            shared attack rules: hit, d10 damage, crit, lifesteal, thorns, Second Wind, round cap
       Dungeon/PvpArena.cs          auto-resolved winner-takes-all PvP over the survivors' hauls (10 rounds max)
       Dungeon/Loot.cs              random loot: tiers, sprite kinds, effect pool and drop chances
-      BasePlayer.cs IPlayer.cs BlackjackPlayer.cs BattleArenaPlayer.cs DuckRacePlayer.cs
+      BasePlayer.cs IPlayer.cs BlackjackPlayer.cs DuckRacePlayer.cs
       GameContext.cs             who acts and where (from a typed command or a button click)
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
-      BattleArena/             BattleAction, BattlePerson, BattleStats, CardTraits, CardLevels (XP, training, focus), RoundOutcome, SpectatorPool (side bets)
+      Cards/                   BattlePerson (rarity + archetype + level = Power), Archetypes (5 kinds, matchups, battle cries), CardNamer, CardTraits (rarity/foil rolls), CardLevels (power, XP, training)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           hourly rubber-banded raffle; the power-up won goes off straight away (kept for `.pu use` if it can't)
@@ -76,7 +76,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     PixelFont.cs               5x7 bitmap font + rectangle fill, shared by the charts and dungeon pictures
     PixelSprites.cs            16x16 pixel-art monsters, bosses and items, drawn at scale
     DungeonSceneRenderer.cs    dashboard picture: current enemy or room, and one panel per player (HP, floor pips, potions)
-    FaceOffRenderer.cs         Face Off arena picture: card art, rarity borders, HP bars, picked/reveal/winner states
+    RaidRenderer.cs            the raid result picture: both cards' art, names, power, VS and the dice
     LiveMessage.cs             a dashboard message edited in place: images swapped per frame, embeds, buttons, bump
     LootCardRenderer.cs        PNG of a loot item: tier band, icon, effects
     ConvoService.cs            LLM conversation (Ollama), the `.convo` fallback outside the scraped server

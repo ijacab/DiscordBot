@@ -1,4 +1,4 @@
-﻿using DiscordBot.Games.Models.BattleArena;
+﻿using DiscordBot.Games.Models.Cards;
 using System;
 
 namespace DiscordBot.Models
@@ -23,17 +23,16 @@ namespace DiscordBot.Models
     }
 
     /// <summary>
-    /// The numbers behind raids (`.raid`, <see cref="Services.RaidService"/>). Each side's card has a power; the defender's is
-    /// raised by their stance, hired guards and how much richer they are than the raider; the chance to win comes from the two.
-    /// The raider stakes cash: a win takes back the stake plus twice it in loot from the target (cash first, then debt), a loss
-    /// hands the stake to the defender.
+    /// The numbers behind raids (`.raid`, <see cref="Services.RaidService"/>). Each side's card has a power (base + rarity + level);
+    /// archetypes and their matchups (<see cref="Archetypes"/>) change it for a raid, the defender's is raised by their stance, hired guards
+    /// and how much richer they are than the raider, and the chance to win comes from the two. The raider stakes cash: a win takes back the
+    /// stake plus twice it in loot from the target (cash first, then debt), a loss hands the stake to the defender.
     /// </summary>
     public static class RaidRules
     {
-        /// <summary>Every card's power starts here, and a player with no card defends with just this.</summary>
-        public const double BasePower = 25;
-        public const double CritWeight = 10;
-        /// <summary>How strongly a power lead turns into odds. 1.2 makes an average level 30 card beat an average new one about 75% of the time.</summary>
+        /// <summary>A player with no card defends with just this.</summary>
+        public const double BasePower = CardLevels.BasePower;
+        /// <summary>How strongly a power lead turns into odds. 1.2 makes an average level 30 card beat a new one of the same rarity about 75% of the time.</summary>
         public const double OddsExponent = 1.2;
         public const double MinChance = 0.05;
         public const double MaxChance = 0.95;
@@ -42,8 +41,6 @@ namespace DiscordBot.Models
         public const double CounterStance = 1.0;
         public const double HoardStance = 0.8;
         public const double GuardsMultiplier = 1.5;
-        /// <summary>CritBoost raises attack power, Shield defence power, by this share.</summary>
-        public const double AbilityBonus = 0.10;
         public const double RevengeBonus = 0.25;
         /// <summary>The defender's power rises this much for each doubling of how much richer they are than the raider...</summary>
         public const double UnderdogPerDoubling = 0.20;
@@ -65,8 +62,6 @@ namespace DiscordBot.Models
         public const int RaidsPerHour = 3;
         public static readonly TimeSpan PairCooldown = TimeSpan.FromHours(6);
         public static readonly TimeSpan Protection = TimeSpan.FromHours(1);
-        /// <summary>Protection after a lost defence for a card with the Heal ability.</summary>
-        public static readonly TimeSpan HealProtection = TimeSpan.FromHours(2);
         public static readonly TimeSpan RevengeWindow = TimeSpan.FromHours(24);
         public static readonly TimeSpan GuardsDuration = TimeSpan.FromHours(6);
         /// <summary>Guards can be hired ahead up to this far.</summary>
@@ -74,23 +69,32 @@ namespace DiscordBot.Models
         /// <summary>Hiring guards costs this share of your worth, into the jackpot.</summary>
         public const double GuardsCostShare = 0.02;
 
-        /// <summary>A card's raw power at its level and focus.</summary>
-        public static double Power(BattlePerson card) =>
-            card == null ? BasePower : BasePower + card.Attack + card.Defense + CritWeight * card.CritMultiplier;
+        /// <summary>A card's raw power: base + rarity + level, or just the base for a player with no card.</summary>
+        public static double Power(BattlePerson card) => card == null ? BasePower : card.Power;
 
-        public static double AttackPower(BattlePerson card, bool revenge)
+        /// <summary>The raider's power: their archetype's attack bonus, +20% against the archetype theirs counters, and revenge's bonus.</summary>
+        public static double AttackPower(BattlePerson card, BattlePerson defender, bool revenge)
         {
             double power = Power(card);
-            if (card?.Ability == CardAbility.CritBoost) power *= 1 + AbilityBonus;
+            if (card != null)
+            {
+                power *= Archetypes.AttackMultiplier(card.Archetype);
+                if (defender != null && Archetypes.Counters(card.Archetype, defender.Archetype)) power *= 1 + Archetypes.CounterBonus;
+            }
             if (revenge) power *= 1 + RevengeBonus;
             return power;
         }
 
-        public static double DefencePower(BattlePerson card, RaidStance stance, bool guarded, double underdog)
+        /// <summary>The defender's power: archetype, +20% against the raider's archetype if it counters it, stance, guards and the underdog bonus.</summary>
+        public static double DefencePower(BattlePerson card, BattlePerson attacker, RaidStance stance, bool guarded, double underdog)
         {
             double power = Power(card) * StanceMultiplier(stance) * underdog;
+            if (card != null)
+            {
+                power *= Archetypes.DefenceMultiplier(card.Archetype);
+                if (attacker != null && Archetypes.Counters(card.Archetype, attacker.Archetype)) power *= 1 + Archetypes.CounterBonus;
+            }
             if (guarded) power *= GuardsMultiplier;
-            if (card?.Ability == CardAbility.Shield) power *= 1 + AbilityBonus;
             return power;
         }
 
@@ -116,10 +120,10 @@ namespace DiscordBot.Models
         public static (double Min, double Max) StakeLimits(double attackerWorth, double targetWorth) =>
             (Math.Max(1, Math.Ceiling(Math.Max(0, attackerWorth) * MinStakeShare)), Math.Floor(Math.Max(0, targetWorth) * MaxStakeShare));
 
-        /// <summary>What a winning raid takes: twice the stake, halved by Hoard, never more than a fifth of the target's worth.</summary>
-        public static double Loot(double stake, RaidStance stance, double targetWorth)
+        /// <summary>What a winning raid takes: <paramref name="lootMultiple"/> times the stake, halved by Hoard, never more than a fifth of the target's worth.</summary>
+        public static double Loot(double stake, RaidStance stance, double targetWorth, double lootMultiple = LootMultiple)
         {
-            double loot = stake * LootMultiple * (stance == RaidStance.Hoard ? HoardLootShare : 1);
+            double loot = stake * lootMultiple * (stance == RaidStance.Hoard ? HoardLootShare : 1);
             return Math.Floor(Math.Max(0, Math.Min(loot, targetWorth * MaxLootShare)));
         }
 
@@ -127,9 +131,9 @@ namespace DiscordBot.Models
         {
             switch (stance)
             {
-                case RaidStance.Counter: return "Counter: normal defence, and a beaten raider pays you their stake twice over";
-                case RaidStance.Hoard: return "Hoard: weaker defence, but a raider who gets through takes half as much";
-                default: return "Guard: 30% stronger defence, and a beaten raider loses their stake to you";
+                case RaidStance.Counter: return $"Counter: normal defence, and a beaten raider pays you their stake {CounterHitMultiple:0.#} more time{(CounterHitMultiple == 1 ? "" : "s")}";
+                case RaidStance.Hoard: return $"Hoard: {(1 - HoardStance) * 100:0}% weaker defence, but a raider who gets through takes half as much";
+                default: return $"Guard: {(GuardStance - 1) * 100:0}% stronger defence, and a beaten raider loses their stake to you";
             }
         }
 

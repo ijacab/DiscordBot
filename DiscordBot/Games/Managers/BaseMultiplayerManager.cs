@@ -101,10 +101,10 @@ namespace DiscordBot.Games.Managers
         /// <summary>Buttons for a turn, like Hit and Stay. None by default.</summary>
         public virtual MessageComponent PlayButtons => null;
 
-        /// <summary>Buttons under the results. None by default (Face Off has its own dashboard).</summary>
+        /// <summary>Buttons under the results. None by default.</summary>
         protected virtual MessageComponent ResultButtons => null;
 
-        /// <summary>Whether money lost in this game goes into the jackpot. Face Off turns it off: its losers' money is paid to the winner.</summary>
+        /// <summary>Whether money lost in this game goes into the jackpot.</summary>
         protected virtual bool LossesFeedJackpot => true;
 
         /// <summary>How one player came out of a game, for the results.</summary>

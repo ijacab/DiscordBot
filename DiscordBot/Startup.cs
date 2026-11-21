@@ -61,7 +61,6 @@ namespace DiscordBot
             services.AddSingleton<HangWatchdog>();
             services.AddTransient<StrawmanChecker>();
             services.AddSingleton<BlackjackManager>();
-            services.AddSingleton<BattleArenaManager>();
             services.AddSingleton<DuckRaceManager>();
             services.AddSingleton<DungeonManager>();
             services.AddSingleton<SlotMachineManager>();

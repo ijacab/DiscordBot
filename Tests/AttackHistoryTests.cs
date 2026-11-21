@@ -1,4 +1,4 @@
-using Common.Services;
+﻿using Common.Services;
 using DiscordBot;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -53,8 +53,8 @@ namespace Tests
         {
             var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
             coins.GetAll().Accounts.Clear();
-            var a = new CoinAccount { UserId = 1, Name = "raider", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0, DiscordBot.Games.Models.BattleArena.CardAbility.CritBoost) };
-            var b = new CoinAccount { UserId = 2, Name = "target", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0, DiscordBot.Games.Models.BattleArena.CardAbility.CritBoost) };
+            var a = new CoinAccount { UserId = 1, Name = "raider", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0) };
+            var b = new CoinAccount { UserId = 2, Name = "target", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0) };
             coins.GetAll().Accounts.Add(a);
             coins.GetAll().Accounts.Add(b);
 

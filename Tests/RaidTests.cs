@@ -1,7 +1,7 @@
 ﻿using Common.Services;
 using DiscordBot;
 using DiscordBot.Exceptions;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using System;
@@ -15,18 +15,13 @@ namespace Tests
     {
         private static readonly DateTime Now = new DateTime(2026, 11, 19, 12, 0, 0, DateTimeKind.Utc);
 
-        /// <summary>A card with the average of every rolled stat (common rarity), at a level.</summary>
-        public static BattlePerson AverageCard(int level, CardAbility ability = CardAbility.Heal) => new BattlePerson
+        /// <summary>A common card at a level, with an archetype (none by default, so it has no trait).</summary>
+        public static BattlePerson AverageCard(int level, Archetype kind = Archetype.None, CardRarity rarity = CardRarity.Common) => new BattlePerson
         {
             Name = $"card{level}",
             Level = level,
-            Ability = ability,
-            Stats = new BattleStats
-            {
-                Attack = 15, AttackBonusPerLevel = 1.5,
-                Defense = 11.25, DefenseBonusPerLevel = 1.125,
-                CritMultiplier = 0.3, CritMultiplierBonusPerLevel = 0.03,
-            },
+            Archetype = kind,
+            Rarity = rarity,
         };
 
         private sealed class FixedRandom : Random
@@ -56,25 +51,25 @@ namespace Tests
         [Fact]
         public void Odds_Level30BeatsAFreshCardAboutThreeTimesInFour()
         {
-            double chance = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(30), false),
-                RaidRules.DefencePower(AverageCard(0), RaidStance.Counter, false, 1));
+            double chance = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(30), AverageCard(0), false),
+                RaidRules.DefencePower(AverageCard(0), AverageCard(30), RaidStance.Counter, false, 1));
             Assert.InRange(chance, 0.72, 0.80);
 
-            double even = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(10), false), RaidRules.DefencePower(AverageCard(10), RaidStance.Counter, false, 1));
+            double even = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(10), AverageCard(10), false), RaidRules.DefencePower(AverageCard(10), AverageCard(10), RaidStance.Counter, false, 1));
             Assert.Equal(0.5, even, 3);
         }
 
         [Fact]
         public void Odds_GuardGuardsAndBeingRicherAllMakeARaidHarder()
         {
-            double attack = RaidRules.AttackPower(AverageCard(10), false);
+            double attack = RaidRules.AttackPower(AverageCard(10), AverageCard(10), false);
             var card = AverageCard(10);
-            double counter = RaidRules.WinChance(attack, RaidRules.DefencePower(card, RaidStance.Counter, false, 1));
-            double guard = RaidRules.WinChance(attack, RaidRules.DefencePower(card, RaidStance.Guard, false, 1));
-            double guarded = RaidRules.WinChance(attack, RaidRules.DefencePower(card, RaidStance.Guard, true, 1));
-            double richer = RaidRules.WinChance(attack, RaidRules.DefencePower(card, RaidStance.Guard, true, RaidRules.UnderdogMultiplier(1_000, 64_000)));
+            double counter = RaidRules.WinChance(attack, RaidRules.DefencePower(card, card, RaidStance.Counter, false, 1));
+            double guard = RaidRules.WinChance(attack, RaidRules.DefencePower(card, card, RaidStance.Guard, false, 1));
+            double guarded = RaidRules.WinChance(attack, RaidRules.DefencePower(card, card, RaidStance.Guard, true, 1));
+            double richer = RaidRules.WinChance(attack, RaidRules.DefencePower(card, card, RaidStance.Guard, true, RaidRules.UnderdogMultiplier(1_000, 64_000)));
             Assert.True(counter > guard && guard > guarded && guarded > richer);
-            Assert.True(RaidRules.WinChance(attack, RaidRules.DefencePower(card, RaidStance.Hoard, false, 1)) > counter);
+            Assert.True(RaidRules.WinChance(attack, RaidRules.DefencePower(card, card, RaidStance.Hoard, false, 1)) > counter);
 
             Assert.Equal(1, RaidRules.UnderdogMultiplier(5_000, 1_000));
             Assert.Equal(1.4, RaidRules.UnderdogMultiplier(1_000, 4_000), 6);
@@ -87,7 +82,7 @@ namespace Tests
             //what one dollar of stake returns on average, after the bounty is set aside
             double ExpectedPerStake(RaidStance stance, bool guards, double underdog)
             {
-                double p = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(5), false), RaidRules.DefencePower(AverageCard(5), stance, guards, underdog));
+                double p = RaidRules.WinChance(RaidRules.AttackPower(AverageCard(5), AverageCard(5), false), RaidRules.DefencePower(AverageCard(5), AverageCard(5), stance, guards, underdog));
                 double loot = RaidRules.LootMultiple * (stance == RaidStance.Hoard ? RaidRules.HoardLootShare : 1) * (1 - RaidRules.BountyShare);
                 double loss = 1 + (stance == RaidStance.Counter ? RaidRules.CounterHitMultiple : 0);
                 return p * loot - (1 - p) * loss;
@@ -202,7 +197,6 @@ namespace Tests
 
             //a successful raid protects the target from everyone else for an hour
             var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.0);
-            y.BattlePerson.Ability = CardAbility.CritBoost; //Heal would protect for 2 hours
             raids2.Raid(x, y, 10_000, Now);
             var z = new CoinAccount { UserId = 9, Name = "z", NetWorth = 1_000_000, BattlePerson = AverageCard(0) };
             Assert.Contains("protected", raids2.Check(z, y, Now.AddMinutes(30)).Refusal);
@@ -221,7 +215,7 @@ namespace Tests
             Assert.Null(check.Refusal);
             Assert.True(check.IsRevenge);
             Assert.Equal(1, check.Underdog); //a is 10x richer, but revenge ignores it
-            Assert.Equal(RaidRules.Power(b.BattlePerson) * 1.25, check.AttackPower, 6);
+            Assert.Equal(RaidRules.Power(b.BattlePerson) * 1.25, check.AttackPower, 6); //no archetypes, so only revenge's bonus
 
             var result = raids.Raid(b, a, 10_000, Now.AddMinutes(5));
             Assert.True(result.Won);
@@ -256,19 +250,18 @@ namespace Tests
         }
 
         [Fact]
-        public void Abilities_RerollOnceADayAndHealProtectsLonger()
+        public void Trickster_RerollsOneFailedRaidADay_AndGuardianProtectionLastsLonger()
         {
             var (_, raids, a, b) = Setup(1_000_000, 1_000_000, 0.99, 0.0);
-            a.BattlePerson.Ability = CardAbility.Reroll;
-            b.BattlePerson.Ability = CardAbility.CritBoost;
+            a.BattlePerson.Archetype = Archetype.Trickster;
             var result = raids.Raid(a, b, 10_000, Now);
             Assert.True(result.Rerolled);
             Assert.True(result.Won);
             Assert.Equal(RaidRules.Protection, result.ProtectedFor);
 
             var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.0);
-            y.BattlePerson.Ability = CardAbility.Heal;
-            Assert.Equal(RaidRules.HealProtection, raids2.Raid(x, y, 10_000, Now).ProtectedFor);
+            y.BattlePerson.Archetype = Archetype.Guardian;
+            Assert.Equal(Archetypes.GuardianProtection, raids2.Raid(x, y, 10_000, Now).ProtectedFor);
         }
 
         [Fact]

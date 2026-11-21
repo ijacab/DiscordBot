@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Games.Managers;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using Microsoft.Extensions.Logging;
@@ -31,7 +32,6 @@ namespace DiscordBot.Managers
         private readonly FaceService _faceService;
         private readonly BlackjackManager _blackjackManager;
         private readonly BetManager _betManager;
-        private readonly BattleArenaManager _battleArenaManager;
         private readonly DuckRaceManager _duckRaceManager;
         private readonly DungeonManager _dungeonManager;
         private readonly SlotMachineManager _slotMachineManager;
@@ -51,7 +51,7 @@ namespace DiscordBot.Managers
 
         private static readonly HashSet<string> _moneyCommands = new HashSet<string>
         {
-            "roulette", "r", "blackjack", "bj", "faceoff", "fo", "duckrace", "duck", "dungeon", "dng", "slots", "slot", "crash",
+            "roulette", "r", "blackjack", "bj", "duckrace", "duck", "dungeon", "dng", "slots", "slot", "crash",
             "buy", "sell", "short", "cover", "call", "put", "donate", "cardpull", "buyproperty", "sellproperty", "raid", "train", "guards"
         };
 
@@ -60,7 +60,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, BattleArenaManager battleArenaManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
+            BlackjackManager blackjackManager, BetManager betManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
             TranslationService translationService, BanService banService, RaidService raidService, CrashManager crashManager)
         {
             _logger = logger;
@@ -79,7 +79,6 @@ namespace DiscordBot.Managers
             _faceService = faceService;
             _blackjackManager = blackjackManager;
             _betManager = betManager;
-            _battleArenaManager = battleArenaManager;
             _duckRaceManager = duckRaceManager;
             _dungeonManager = dungeonManager;
             _slotMachineManager = slotMachineManager;
@@ -101,8 +100,6 @@ namespace DiscordBot.Managers
                 new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
                 new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
                 new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
-                new Command("faceoff", GameFaceOff) { Description = "A multiplayer fight using your Battle Person card and virtual money, on one live dashboard with buttons. Join the lobby (it starts 60 seconds after the second fighter joins, up to 6 fighters). Each round everyone privately picks Attack, Defend, Focus or Gamble and rolls a d20; picks stay hidden until the round resolves. Attack and Gamble hit one opponent you choose. Picks counter each other: Attack beats Focus, Focus beats Gamble, Gamble beats Defend, Defend beats Attack. A natural 20 is always the best roll. Last one standing takes the whole pot; after 12 rounds the highest HP wins, and ties split it. Spectators can back a fighter until round 1 resolves, and backers of the winner share everything backed. Type '.leaderboard' to see how much money you have", Syntax = "`.fo betAmount` to open or join the lobby (for example `.fo 1000`, `.fo 25%` or `.fo max`), then use the buttons. Typed: `.fo start`, `.fo attack|defend|focus|gamble [name]`, `.fo ability`, `.fo leave`, `.fo back name amount`, `.fo status`" },
-                new Command("fo", GameFaceOff) { Hidden = true, Syntax = "`.fo betAmount` to open or join the lobby, then use the buttons. For example `.fo 1000`" },
                 new Command("duckrace", GameDuckRace) { Description = "Plays a multiplayer duck race using virtual money. You race against the other players and one bot, so more players means a bigger payout. Type '.leaderboard' to see how much money you have", Syntax = "`.duckrace betAmount` to start where betAmount is the amount you want to bet. For example `.duckrace 1000`" },
                 new Command("duck", GameDuckRace) { Hidden = true, Syntax = "`.duckrace betAmount` to start where betAmount is the amount you want to bet. For example `.duckrace 1000`" },
                 new Command("dungeon", GameDungeon) { Description = "Only one dungeon session can be open at a time, across all channels. Open a lobby with a buy-in from your cash, and anyone presses Join on the dashboard within 60 seconds. Then each player presses Go to crawl their own run, floor by floor, in blocks of 10 floors. At each boss door (floors 5 and 10) you choose: fight it, sneak past (half the time it works, otherwise the boss strikes first), or drink a potion and fight. Every block is about a 50% chance, so 20 floors is about 25% and 30 floors about 12.5%. After each block you're at a checkpoint: cash out to bank your haul, or enter the PvP pool. Once every run has decided, the pool fights, the winner takes the pot of the hauls and crawls on, and the losers are out. Stalled runs are cashed out after 15 minutes. Loot and potions drop automatically. Dying loses the haul and the buy-in. Everything is on the dashboard's buttons; typed commands work too. Shorthand: `.dng`", Syntax = "`.dungeon 1000` to open a lobby with a 1000 buy-in each, then use the buttons. Typed: `.dng join`, `.dng leave`, `.dng start`, `.dng go`, `.dng boss`, `.dng sneak`, `.dng potion`, `.dng fight`, `.dng cash`, or `.dng` to bring the dashboard to the bottom" },
@@ -112,7 +109,7 @@ namespace DiscordBot.Managers
                 new Command("slot", GameSlots) { Hidden = true, Syntax = "`.slots 1000`" },
                 new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
                 new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
-                new Command("stats", Stats) { Description = "Shows your stats (or someone else's) on one page with a menu to switch: overview, betting, per-game results, stocks, property and debt, jackpot and income, power-ups, dungeon and Face Off, donations.", Syntax = "`.stats`, `.stats me`, `.stats @someone`, or add a page: `.stats me stocks`" },
+                new Command("stats", Stats) { Description = "Shows your stats (or someone else's) on one page with a menu to switch: overview, betting, per-game results, stocks, property and debt, jackpot and income, power-ups, dungeon, raids and your card, donations.", Syntax = "`.stats`, `.stats me`, `.stats @someone`, or add a page: `.stats me stocks`" },
                 new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
                 new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock over a time window. Prices change every 5 minutes. Higher risk tiers (3-6) swing more, 6 is crypto. Graphs are green above the launch price and red below.", Syntax = "`.stocks`, `.stocks SYMBOL` or `.stocks SYMBOL 48h`" },
                 new Command("stocksthread", StocksThread) { Description = "Bot admins only. Opens a thread here with one live message: a line per stock and one image with every stock's chart, all time and the last 3 hours. Updates every 5 minutes. One per server; running it again moves it and deletes the old thread.", Syntax = "`.stocksthread` or `.stocksthread stop`", RequiresAdmin = true },
@@ -141,14 +138,14 @@ namespace DiscordBot.Managers
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },
                 new Command("dbz", ImageSearchDbz) { Description = "Gets a DBZ image" },
-                new Command("cardpull", CardPull) { Description = "Pulls a new Battle Person card. Costs $1,000, but your first pull each day is free. Keep it by typing the `.cardpull keep` line that follows.", Syntax = "`.cardpull`" },
-                new Command("card", CardView) { Description = "Shows your Battle Person card and its control panel: level and XP, training, focus, raid stance, guards, bounty and revenge. Your level is yours: it carries over to a new card you keep, and resets each season. XP comes from raids and Face Off.", Syntax = "`.card`, `.card focus attack|defense|crit|balanced`" },
-                new Command("raid", Raid) { Description = "Raid another player with your Battle Person card to take their money. Stake some cash (at least 1% of your worth, at most 10% of theirs): win and you get it back plus twice it from them (cash first, then their debt); lose and they keep it. The odds come from both cards' power, their stance and guards, and how much richer they are than you. 3 raids an hour, the same person once every 6 hours, and someone just raided is safe for an hour. Whoever you raid can take revenge for 24 hours, and 10% of your loot becomes a bounty for whoever beats you.", Syntax = "`.raid` (revenge and bounties), `.raid @person` (odds), `.raid @person 5000`, `.raid @person 10%` or `.raid name max`" },
+                new Command("cardpull", CardPull) { Description = $"Pulls a new Battle Person: a face, a funny name, a rarity, one of five archetypes (🥊 Brute, 🛡️ Guardian, 🦝 Thief, 🃏 Trickster, 🎰 Gambler) and one Power number. Costs {Money.Format(BattlePerson.PullCost)}, but your first pull each day is free, and every pull gives your current card {CardLevels.PullXp} XP. Press Keep to swap it in: you keep your level and XP.", Syntax = "`.cardpull`" },
+                new Command("card", CardView) { Description = "Shows your Battle Person and its control panel: archetype, power, level and XP, training, raid stance, guards, bounty and revenge. Your level is yours: it carries over to a new card you keep, and resets each season. XP comes from raids and card pulls.", Syntax = "`.card`" },
+                new Command("raid", Raid) { Description = $"Raid another player with your Battle Person to take their money. Stake cash (at least {RaidRules.MinStakeShare:0%} of your worth, at most {RaidRules.MaxStakeShare:0%} of theirs): win and you keep the stake and take {RaidRules.LootMultiple:0.#}x it from them (cash first, then their debt), lose and they keep it. The odds come from both cards' power, archetype matchups (🥊 Brute beats 🦝 Thief beats 🛡️ Guardian beats 🥊 Brute), their stance and guards, and how much richer they are than you. {RaidRules.RaidsPerHour} raids an hour, the same person once every {RaidRules.PairCooldown.TotalHours:0} hours, and someone just raided is safe for {RaidRules.Protection.TotalHours:0} hour. Whoever you raid can take revenge for {RaidRules.RevengeWindow.TotalHours:0} hours, and {RaidRules.BountyShare:0%} of your loot becomes a bounty for whoever beats you.", Syntax = "`.raid` (revenge and bounties), `.raid @person` (odds), `.raid @person 5000`, `.raid @person 10%` or `.raid name max`" },
                 new Command("attacks", Attacks) { Description = $"Recaps the latest attacks on you: who hit you, with what (a power-up, a raid or the daily roll steal), what it cost you and when. Shows the last {AttackHistory.DefaultShown} by default and keeps {AttackHistory.MaxKept}. Only the attacks on you, not the ones you made.", Syntax = "`.attacks` or `.attacks 10`" },
                 new Command("hits", Attacks) { Hidden = true, Syntax = "`.attacks`" },
-                new Command("train", Train) { Description = "Trains your Battle Person card a level for cash (into the jackpot). Each level costs 30% more than the last, less the XP you already have.", Syntax = "`.train` or `.train max`" },
-                new Command("stance", Stance) { Description = "Sets how your card defends against raids while you're away. Guard: 30% stronger. Counter: normal, but a beaten raider pays you their stake twice over. Hoard: weaker, but a raider who gets through takes half as much.", Syntax = "`.stance guard`, `.stance counter` or `.stance hoard`" },
-                new Command("guards", Guards) { Description = "Hires guards for 6 hours: your card defends 50% harder against raids. Costs 2% of your worth, into the jackpot.", Syntax = "`.guards`" },
+                new Command("train", Train) { Description = $"Trains your Battle Person a level for cash (into the jackpot). The first level costs {Money.Format(CardLevels.TrainBaseCost)} and each one costs {CardLevels.TrainGrowth - 1:0%} more than the last, less the XP you already have. Max level is {CardLevels.MaxLevel}.", Syntax = "`.train` or `.train max`" },
+                new Command("stance", Stance) { Description = $"Sets how your card defends against raids while you're away. Guard: {RaidRules.GuardStance - 1:0%} stronger. Counter: normal, but a beaten raider pays you their stake again. Hoard: {1 - RaidRules.HoardStance:0%} weaker, but a raider who gets through takes half as much.", Syntax = "`.stance guard`, `.stance counter` or `.stance hoard`" },
+                new Command("guards", Guards) { Description = $"Hires guards for {RaidRules.GuardsDuration.TotalHours:0} hours: your card defends {RaidRules.GuardsMultiplier - 1:0%} harder against raids. Costs {RaidRules.GuardsCostShare:0%} of your worth, into the jackpot.", Syntax = "`.guards`" },
                 new Command("add", Add) { Description = "Adds (or overwrites if exists) a custom command. When 'key' is typed, 'value' will be displayed.", Syntax = "`.add \"key\" \"value\"`" },
                 new Command("remove", Remove) { Description = "Removes a custom command that has been added using .add command.", Syntax = "`.remove \"key\"`" },
                 new Command("clear", Clear, hidden: true, requiresAdmin: true),

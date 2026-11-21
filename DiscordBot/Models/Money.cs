@@ -137,7 +137,7 @@ namespace DiscordBot.Models
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, double> _held = new System.Collections.Concurrent.ConcurrentDictionary<ulong, double>();
 
         /// <summary>
-        /// Notes cash a player has put somewhere other than a bet (a dungeon buy-in, a Face Off backing), so it still counts as
+        /// Notes cash a player has put somewhere other than a bet (a dungeon buy-in), so it still counts as
         /// theirs: the jackpot and the interest bonus can't be gamed by parking cash there and betting a dollar.
         /// </summary>
         public static void Hold(ulong userId, double amount)

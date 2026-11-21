@@ -1,7 +1,7 @@
 ﻿using Common.Services;
 using DiscordBot;
 using DiscordBot.Exceptions;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Models;
 using DiscordBot.Services;
 using System;
@@ -64,16 +64,26 @@ namespace Tests
         }
 
         [Fact]
-        public void Focus_GrowsOneStatFasterAndTheOthersSlower()
+        public void Power_IsBasePlusRarityPlusLevels()
         {
-            var card = RaidTests.AverageCard(20);
-            double attack = card.Attack, defense = card.Defense;
-            card.Focus = CardFocus.Attack;
-            Assert.Equal(15 + 1.5 * 1.5 * 20, card.Attack, 6);
-            Assert.True(card.Defense < defense);
-            Assert.True(card.Attack > attack);
-            card.Focus = CardFocus.Balanced;
-            Assert.Equal(attack, card.Attack, 6);
+            Assert.Equal(CardLevels.BasePower + CardLevels.RarityPower(CardRarity.Common), CardLevels.PowerOf(CardRarity.Common, 0));
+            Assert.Equal(CardLevels.PowerOf(CardRarity.Epic, 0) + 10 * CardLevels.PowerPerLevel, CardLevels.PowerOf(CardRarity.Epic, 10), 6);
+            Assert.Equal(CardLevels.PowerOf(CardRarity.Common, CardLevels.MaxLevel), CardLevels.PowerOf(CardRarity.Common, 99)); //capped at max level
+
+            var card = RaidTests.AverageCard(7, rarity: CardRarity.Rare);
+            Assert.Equal(CardLevels.PowerOf(CardRarity.Rare, 7), card.Power, 6);
+            double[] byRarity = new[] { CardRarity.Common, CardRarity.Rare, CardRarity.Epic, CardRarity.Legendary }.Select(r => CardLevels.PowerOf(r, 0)).ToArray();
+            Assert.Equal(byRarity.OrderBy(x => x), byRarity); //a better rarity is always stronger
+        }
+
+        [Fact]
+        public void ARarity_IsWorthAboutTheTrainingItWouldTake()
+        {
+            //a legendary starts 13 power ahead of a common one, about 7 levels, which cost about $37,000 to train: so pulling one is worth tens of thousands, and at $1,000 a pull (3% legendary) costs about that
+            double levelsAhead = (CardLevels.RarityPower(CardRarity.Legendary) - CardLevels.RarityPower(CardRarity.Common)) / CardLevels.PowerPerLevel;
+            double trainingCost = Enumerable.Range(0, (int)Math.Round(levelsAhead)).Sum(CardLevels.FullLevelCost);
+            Assert.InRange(trainingCost, 25_000, 50_000);
+            Assert.InRange(BattlePerson.PullCost / 0.03, 25_000, 50_000);
         }
 
         [Fact]
@@ -81,12 +91,11 @@ namespace Tests
         {
             var old = RaidTests.AverageCard(12);
             old.Xp = 77;
-            old.Focus = CardFocus.Crit;
+            old.Archetype = Archetype.Thief;
             var pulled = new BattlePerson("new card");
             CardLevels.CarryOver(old, pulled);
             Assert.Equal(12, pulled.Level);
             Assert.Equal(77, pulled.Xp);
-            Assert.Equal(CardFocus.Crit, pulled.Focus);
         }
 
         [Fact]

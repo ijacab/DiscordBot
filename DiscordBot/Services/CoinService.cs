@@ -1,5 +1,5 @@
 ﻿using Common.Services;
-using DiscordBot.Games.Models.BattleArena;
+using DiscordBot.Games.Models.Cards;
 using DiscordBot.Models;
 using Newtonsoft.Json;
 using System;
