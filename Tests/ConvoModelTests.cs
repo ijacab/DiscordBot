@@ -393,5 +393,83 @@ namespace Tests
                 Directory.Delete(dir, true);
             }
         }
+
+        private static string TempCorpus(out string messages, out string samples)
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "convo_test_" + Guid.NewGuid().ToString("N"));
+            messages = Path.Combine(dir, ConvoCorpusService.MessagesDir);
+            samples = Path.Combine(dir, ConvoCorpusService.SamplesDir);
+            Directory.CreateDirectory(messages);
+            Directory.CreateDirectory(samples);
+            return dir;
+        }
+
+        private static void WriteState(string dir, params (ulong Id, bool Done)[] channels) =>
+            File.WriteAllText(Path.Combine(dir, ConvoCorpusService.StateFile),
+                Newtonsoft.Json.JsonConvert.SerializeObject(channels.ToDictionary(c => c.Id, c => new ConvoCorpusService.ChannelProgress { Done = c.Done })));
+
+        [Fact]
+        public void AChannelStillBeingScraped_UsesItsRandomSample_NotItsNewestTail()
+        {
+            string dir = TempCorpus(out string messages, out string samples);
+            try
+            {
+                //the scrape reads newest first, so the partial file holds only the newest messages (ids 900-999)...
+                File.WriteAllLines(Path.Combine(messages, "7.tsv"), Enumerable.Range(900, 100).Select(i => ConvoCorpusService.ToLine((ulong)i, "recent", "the latest chatter")));
+                //...while the sample was taken from across the whole history
+                File.WriteAllLines(Path.Combine(samples, "7.tsv"), Enumerable.Range(1, 5).Select(i => ConvoCorpusService.ToLine((ulong)(i * 200), "old", "from way back")));
+                WriteState(dir, (7, false));
+
+                var model = ConvoCorpusService.LoadFrom(dir, 1000, new Random(1));
+                Assert.Equal(5, model.MessageCount);
+                Assert.All(model.Generate(new Random(1)), l => Assert.Equal("old", l.Speaker));
+            }
+            finally { Directory.Delete(dir, true); }
+        }
+
+        [Fact]
+        public void AFinishedChannel_UsesAllItsMessages_AndIgnoresItsSample()
+        {
+            string dir = TempCorpus(out string messages, out string samples);
+            try
+            {
+                File.WriteAllLines(Path.Combine(messages, "7.tsv"), Enumerable.Range(1, 100).Select(i => ConvoCorpusService.ToLine((ulong)i, "everyone", "all of history")));
+                File.WriteAllLines(Path.Combine(samples, "7.tsv"), Enumerable.Range(1, 5).Select(i => ConvoCorpusService.ToLine((ulong)i, "everyone", "all of history")));
+                WriteState(dir, (7, true));
+                Assert.Equal(100, ConvoCorpusService.LoadFrom(dir, 1000, new Random(1)).MessageCount);
+            }
+            finally { Directory.Delete(dir, true); }
+        }
+
+        [Fact]
+        public void ASampleOnlyChannel_IsUsed_AndAPartialChannelWithNoSampleYetFallsBackToItsFile()
+        {
+            string dir = TempCorpus(out string messages, out string samples);
+            try
+            {
+                File.WriteAllLines(Path.Combine(samples, "8.tsv"), new[] { ConvoCorpusService.ToLine(5, "kris", "sampled only") });  //not started yet: no full file
+                File.WriteAllLines(Path.Combine(messages, "9.tsv"), new[] { ConvoCorpusService.ToLine(6, "bruce77", "from an older scrape") }); //partial, never sampled
+                WriteState(dir, (8, false), (9, false));
+                var files = ConvoCorpusService.SourceFiles(dir).Select(f => Path.GetFileName(Path.GetDirectoryName(f)) + "/" + Path.GetFileName(f)).ToArray();
+                Assert.Equal(new[] { "samples/8.tsv", "messages/9.tsv" }, files);
+                Assert.Equal(2, ConvoCorpusService.LoadFrom(dir, 1000, new Random(1)).MessageCount);
+            }
+            finally { Directory.Delete(dir, true); }
+        }
+
+        [Fact]
+        public void RandomMessageIds_SpreadAcrossTheWholeHistory_NotTheNewestEnd()
+        {
+            var random = new Random(3);
+            const ulong low = 1_000_000, high = 2_000_000;
+            var ids = Enumerable.Range(0, 20_000).Select(_ => ConvoCorpusService.RandomMessageId(low, high, random)).ToList();
+            Assert.All(ids, id => Assert.InRange(id, low, high));
+            for (int tenth = 0; tenth < 10; tenth++)
+            {
+                int inTenth = ids.Count(id => id >= low + (ulong)tenth * 100_000 && id < low + (ulong)(tenth + 1) * 100_000);
+                Assert.InRange(inTenth, 1_800, 2_200); //each tenth of the history gets about a tenth of the windows
+            }
+            Assert.Equal(low, ConvoCorpusService.RandomMessageId(low, low, random));
+        }
     }
 }

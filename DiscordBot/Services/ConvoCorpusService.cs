@@ -38,8 +38,13 @@ namespace DiscordBot.Services
         /// <summary>Pause between pages so the scrape never crowds out the bot's own requests.</summary>
         public static readonly TimeSpan PagePause = TimeSpan.FromMilliseconds(250);
         private const int PageSize = 100;
-        /// <summary>The quick first pass takes this many pages (the newest ~1,000 messages) of every channel, so `.convo` works within minutes.</summary>
-        public const int QuickPassPages = 10;
+        public const string SamplesDir = "samples";
+        /// <summary>
+        /// The first pass reads this many pages (100 messages each) taken at random moments across a channel's whole history, so
+        /// `.convo` works within minutes without leaning on whatever was posted most recently. Favoured channels read more.
+        /// </summary>
+        public const int SamplePages = 20;
+        public const int FavouredSamplePages = 100;
         /// <summary>How often the model is rebuilt while a scrape runs, so `.convo` keeps learning as the history comes in.</summary>
         public static readonly TimeSpan ReloadDuringScrape = TimeSpan.FromMinutes(15);
 
@@ -150,8 +155,7 @@ namespace DiscordBot.Services
         /// </summary>
         public static ConvoModel LoadFrom(string dataPath, int maxMessages, Random random)
         {
-            var dir = Path.Join(dataPath, MessagesDir);
-            var files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.tsv").OrderBy(f => f).ToArray() : Array.Empty<string>();
+            var files = SourceFiles(dataPath);
             long favoured = files.Where(IsFavoured).Sum(f => (long)File.ReadLines(f).Count());
             long others = files.Where(f => !IsFavoured(f)).Sum(f => (long)File.ReadLines(f).Count());
             //the favoured channels are kept whole (up to the cap), and the rest are sampled into what's left
@@ -159,6 +163,41 @@ namespace DiscordBot.Services
             long room = Math.Max(0, maxMessages - (long)(favoured * keepFavoured));
             double keepOthers = others <= room ? 1.0 : (double)room / others;
             return ConvoModel.Build(Channels(files, keepFavoured, keepOthers, random), FavouredShare);
+        }
+
+        /// <summary>
+        /// The file each channel is read from. A channel whose history is all saved uses its full file. A channel still being scraped
+        /// has only its newest messages saved (the scrape reads newest first), and learning from that would make `.convo` lean on
+        /// whatever was posted lately, so it uses its random sample from across its whole history instead (and its partial file only
+        /// when it has no sample yet). With no scrape state at all, every channel file is read as it is.
+        /// </summary>
+        public static string[] SourceFiles(string dataPath)
+        {
+            var messagesDir = Path.Join(dataPath, MessagesDir);
+            var samplesDir = Path.Join(dataPath, SamplesDir);
+            var state = LoadStateFrom(Path.Join(dataPath, StateFile));
+            var ids = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var dir in new[] { messagesDir, samplesDir })
+                if (Directory.Exists(dir))
+                    foreach (var f in Directory.GetFiles(dir, "*.tsv")) ids.Add(Path.GetFileNameWithoutExtension(f));
+
+            var files = new List<string>();
+            foreach (var id in ids)
+            {
+                string full = Path.Join(messagesDir, id + ".tsv");
+                string sample = Path.Join(samplesDir, id + ".tsv");
+                bool partial = ulong.TryParse(id, out ulong channelId) && state.TryGetValue(channelId, out var progress) && !progress.Done;
+                string chosen = partial && File.Exists(sample) ? sample : File.Exists(full) ? full : null;
+                if (chosen != null) files.Add(chosen);
+            }
+            return files.ToArray();
+        }
+
+        /// <summary>A random message id at a random moment between two ids, so a window read around it is a random part of the history.</summary>
+        public static ulong RandomMessageId(ulong low, ulong high, Random random)
+        {
+            if (high <= low) return low;
+            return low + (ulong)(random.NextDouble() * (high - low));
         }
 
         /// <summary>Whether a channel file (named by its channel id) is one of <see cref="FavouredChannelIds"/>.</summary>
@@ -228,15 +267,19 @@ namespace DiscordBot.Services
             public ulong NewestId { get; set; }
             /// <summary>The whole history back to the first message is saved.</summary>
             public bool Done { get; set; }
+            /// <summary>The random sample across the whole history (<see cref="SamplesDir"/>) has been read.</summary>
+            public bool Sampled { get; set; }
             public bool NoAccess { get; set; }
             public long Saved { get; set; }
         }
 
         private static string StatePath => Path.Join(DataPath, StateFile);
 
-        private static Dictionary<ulong, ChannelProgress> LoadState() =>
-            File.Exists(StatePath)
-                ? JsonConvert.DeserializeObject<Dictionary<ulong, ChannelProgress>>(File.ReadAllText(StatePath)) ?? new Dictionary<ulong, ChannelProgress>()
+        private static Dictionary<ulong, ChannelProgress> LoadState() => LoadStateFrom(StatePath);
+
+        private static Dictionary<ulong, ChannelProgress> LoadStateFrom(string path) =>
+            File.Exists(path)
+                ? JsonConvert.DeserializeObject<Dictionary<ulong, ChannelProgress>>(File.ReadAllText(path)) ?? new Dictionary<ulong, ChannelProgress>()
                 : new Dictionary<ulong, ChannelProgress>();
 
         private static void SaveState(Dictionary<ulong, ChannelProgress> state)
@@ -338,9 +381,10 @@ namespace DiscordBot.Services
             _channelTotal = channels.Count;
             _logger.LogInformation("Convo scrape: {Count} channels", channels.Count);
 
-            //first the newest messages of every channel, so .convo has something from everywhere within minutes, then all the way back
-            _pass = "quick pass";
-            await ScrapeChannels(channels, state, QuickPassPages, token);
+            //first a random sample from across every channel's whole history, so .convo has something unbiased from everywhere within
+            //minutes (not just the newest messages), then all the way back; a channel is only used in full once all of it is saved
+            _pass = "random sample";
+            await SampleChannels(channels, state, token);
             if (!token.IsCancellationRequested)
             {
                 lock (_gate) _loadStarted = true;
@@ -349,6 +393,68 @@ namespace DiscordBot.Services
             }
             _pass = "full history";
             await ScrapeChannels(channels, state, int.MaxValue, token);
+        }
+
+        private async Task SampleChannels(List<IMessageChannel> channels, Dictionary<ulong, ChannelProgress> state, CancellationToken token)
+        {
+            _channelIndex = 0;
+            foreach (var channel in channels)
+            {
+                if (token.IsCancellationRequested)
+                    break;
+                _channelIndex++;
+                _currentChannel = channel.Name;
+                if (!state.TryGetValue(channel.Id, out var progress))
+                    state[channel.Id] = progress = new ChannelProgress();
+                progress.Name = channel.Name;
+                if (progress.NoAccess || progress.Sampled || progress.Done)
+                    continue;
+                try
+                {
+                    await SampleChannel(channel, progress, state, token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (HttpException ex) when (ex.HttpCode == HttpStatusCode.Forbidden || ex.HttpCode == HttpStatusCode.NotFound)
+                {
+                    progress.NoAccess = true;
+                    SaveState(state);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Convo sample: #{Channel} failed", channel.Name);
+                }
+            }
+            SaveState(state);
+        }
+
+        /// <summary>Reads windows of messages around random moments between the channel's creation and now, and saves them apart from the full history.</summary>
+        private async Task SampleChannel(IMessageChannel channel, ChannelProgress progress, Dictionary<ulong, ChannelProgress> state, CancellationToken token)
+        {
+            Directory.CreateDirectory(Path.Join(DataPath, SamplesDir));
+            string file = Path.Join(DataPath, SamplesDir, $"{channel.Id}.tsv");
+            var options = new RequestOptions { CancelToken = token, RetryMode = RetryMode.AlwaysRetry };
+            ulong low = channel.Id; //a channel's id is when it was made, and nothing was posted before that
+            ulong high = SnowflakeUtils.ToSnowflake(DateTimeOffset.UtcNow);
+            int pages = FavouredChannelIds.Contains(channel.Id) ? FavouredSamplePages : SamplePages;
+            var seen = new HashSet<ulong>();
+            for (int i = 0; i < pages && !token.IsCancellationRequested; i++)
+            {
+                ulong around = RandomMessageId(low, high, Random.Shared);
+                var page = (await channel.GetMessagesAsync(around, Direction.Around, PageSize, CacheMode.AllowDownload, options).FlattenAsync())
+                    .Where(m => seen.Add(m.Id)).ToList();
+                var lines = LinesOf(page);
+                if (lines.Count > 0)
+                    File.AppendAllLines(file, lines);
+                await Task.Delay(PagePause, token);
+            }
+            if (!token.IsCancellationRequested)
+            {
+                progress.Sampled = true;
+                SaveState(state);
+            }
         }
 
         private async Task ScrapeChannels(List<IMessageChannel> channels, Dictionary<ulong, ChannelProgress> state, int maxPages, CancellationToken token)
@@ -437,7 +543,7 @@ namespace DiscordBot.Services
             _ = StartReload();
         }
 
-        private void Save(string file, List<IMessage> page, ChannelProgress progress)
+        private static List<string> LinesOf(IEnumerable<IMessage> page)
         {
             var lines = new List<string>();
             foreach (var message in page)
@@ -446,6 +552,12 @@ namespace DiscordBot.Services
                 if (text != null)
                     lines.Add(ToLine(message.Id, message.Author.Username, text));
             }
+            return lines;
+        }
+
+        private void Save(string file, List<IMessage> page, ChannelProgress progress)
+        {
+            var lines = LinesOf(page);
             if (lines.Count == 0)
                 return;
             File.AppendAllLines(file, lines);
