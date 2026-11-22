@@ -48,6 +48,30 @@ namespace Tests
         private static readonly Regex LineFormat = new Regex(@"^[^:\n]+: \S[^\n]*$");
 
         [Fact]
+        public void Temperature_MakesRareFollowUpsLikelierThanTheyReallyWere()
+        {
+            //after "go", "common" was said 19 times and "rare" once: 5% of the time for real
+            var messages = new List<ConvoMessage>();
+            ulong id = 1;
+            foreach (var who in new[] { "ann", "ben" })
+                for (int i = 0; i < 20; i++)
+                    messages.Add(new ConvoMessage { Id = id++, Speaker = who, Text = i == 0 ? "go rare" : "go common" });
+            var model = ConvoModel.Build(new[] { messages });
+
+            int rare = 0, common = 0;
+            for (int seed = 0; seed < 3000; seed++)
+                foreach (var line in model.Generate(new Random(seed)))
+                    foreach (var word in line.Text.Split(' '))
+                    {
+                        if (word == "rare") rare++;
+                        else if (word == "common") common++;
+                    }
+            double share = rare / (double)(rare + common);
+            _output.WriteLine($"rare share {share:P1} (really 5%)");
+            Assert.InRange(share, 0.08, 0.40);
+        }
+
+        [Fact]
         public void EveryConvo_IsThreeToTenLinesOfUserColonSentence()
         {
             var model = Model();

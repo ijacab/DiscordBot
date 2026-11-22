@@ -34,7 +34,13 @@ namespace DiscordBot.Models
     public sealed class ConvoModel
     {
         /// <summary>How often a word is picked from one word of context instead of two. Higher is crazier.</summary>
-        public const double Chaos = 0.75;
+        public const double Chaos = 0.85;
+        /// <summary>
+        /// Like an LLM's temperature, for the plain chain steps: 1 picks a follow-up word as often as it was really said, higher makes
+        /// the rare ones likelier (weight = count^(1/temperature)), 3 is nearly a coin flip between every word ever used there.
+        /// </summary>
+        public const double Temperature = 1.5;
+        private const int WarmSample = 400;
         /// <summary>How often a reply picks up a word from the line before it.</summary>
         public const double ReplyHookChance = 0.35;
         /// <summary>How often a line starts with a word its speaker really starts messages with.</summary>
@@ -469,8 +475,40 @@ namespace DiscordBot.Models
                     next = EndToken;
                     return false;
                 }
-                next = _next[lo + random.Next(hi - lo)];
+                next = Temperature <= 1.0 ? _next[lo + random.Next(hi - lo)] : PickWarm(lo, hi, random);
                 return true;
+            }
+
+            /// <summary>
+            /// A next word where each distinct word's weight is its count to the power 1/<see cref="Temperature"/>, so rare follow-ups
+            /// are likelier than they really were. Big ranges are judged on a random sample of <see cref="WarmSample"/> entries.
+            /// </summary>
+            private int PickWarm(int lo, int hi, Random random)
+            {
+                var counts = new Dictionary<int, int>();
+                int n = hi - lo;
+                if (n <= WarmSample)
+                    for (int i = lo; i < hi; i++)
+                        counts[_next[i]] = counts.TryGetValue(_next[i], out int c) ? c + 1 : 1;
+                else
+                    for (int i = 0; i < WarmSample; i++)
+                    {
+                        int w = _next[lo + random.Next(n)];
+                        counts[w] = counts.TryGetValue(w, out int c) ? c + 1 : 1;
+                    }
+                double total = 0;
+                foreach (var count in counts.Values)
+                    total += Math.Pow(count, 1.0 / Temperature);
+                double roll = random.NextDouble() * total;
+                int last = EndToken;
+                foreach (var pair in counts)
+                {
+                    last = pair.Key;
+                    roll -= Math.Pow(pair.Value, 1.0 / Temperature);
+                    if (roll <= 0)
+                        break;
+                }
+                return last;
             }
 
             /// <summary>A next word for the context that is one of <paramref name="wanted"/>, picked by how often each was said.</summary>
