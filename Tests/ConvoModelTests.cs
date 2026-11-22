@@ -385,6 +385,42 @@ namespace Tests
         }
 
         [Fact]
+        public void LoadReport_SaysHowManyMessagesWereReadAndHowOldTheyAre()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "convo_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(dir, ConvoCorpusService.MessagesDir));
+                //snowflake ids: milliseconds since 2015 shifted left 22 bits
+                ulong IdAt(DateTime t) => (ulong)(t - new DateTime(2015, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds << 22;
+                var now = DateTime.UtcNow;
+                var lines = new List<string>();
+                for (int i = 0; i < 30; i++) lines.Add(ConvoCorpusService.ToLine(IdAt(now.AddDays(-2).AddSeconds(i)), "kris", "recent words"));
+                for (int i = 0; i < 70; i++) lines.Add(ConvoCorpusService.ToLine(IdAt(now.AddDays(-1000).AddSeconds(i)), "john123", "old words"));
+                File.WriteAllLines(Path.Combine(dir, ConvoCorpusService.MessagesDir, "12345.tsv"), lines);
+
+                var report = new ConvoCorpusService.LoadReport();
+                var model = ConvoCorpusService.LoadFrom(dir, 1000, new Random(1), report);
+
+                Assert.Equal(100, model.MessageCount);
+                Assert.Equal(100, report.Messages);
+                Assert.Equal(100, report.OnDisk);
+                Assert.Equal(1, report.Files);
+                Assert.Equal(0, report.SampleFiles);
+                Assert.True(report.KeptEverything);
+                Assert.Equal(0.30, report.ShareLast30Days, 2);
+                Assert.Equal(0.30, report.ShareLastYear, 2);
+                Assert.True(report.Oldest < now.AddDays(-900));
+                Assert.Contains("100 of 100", report.ToString());
+                Assert.Contains("30%", report.ToString());
+            }
+            finally
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+
+        [Fact]
         public void LoadFrom_DropsRepeatsAndSortsEachChannelByTime()
         {
             string dir = Path.Combine(Path.GetTempPath(), "convo_test_" + Guid.NewGuid().ToString("N"));

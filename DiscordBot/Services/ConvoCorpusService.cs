@@ -74,6 +74,7 @@ namespace DiscordBot.Services
         public bool IsLoading => !_loadTask.IsCompleted;
         public bool IsScraping => _scraping;
         /// <summary>Messages saved by the scrape that's running (or the last one).</summary>
+        private volatile LoadReport _loadReport;
         public long SavedThisRun => Interlocked.Read(ref _savedThisRun);
 
         /// <summary>
@@ -119,9 +120,14 @@ namespace DiscordBot.Services
                 {
                     try
                     {
-                        var model = LoadFrom(DataPath, MaxMessages, new Random());
+                        var report = new LoadReport();
+                        var model = LoadFrom(DataPath, MaxMessages, new Random(), report);
                         if (model.MessageCount > 0)
+                        {
                             _model = model;
+                            _loadReport = report;
+                        }
+                        _logger.LogInformation("Convo model sources: {Report}", report);
                         _logger.LogInformation("Convo model loaded: {Messages} messages, {Speakers} people", model.MessageCount, model.SpeakerCount);
                     }
                     catch (Exception ex)
@@ -153,7 +159,7 @@ namespace DiscordBot.Services
         /// channel in time order (message ids are) and builds the model, keeping an even random sample when there are more than
         /// <paramref name="maxMessages"/>.
         /// </summary>
-        public static ConvoModel LoadFrom(string dataPath, int maxMessages, Random random)
+        public static ConvoModel LoadFrom(string dataPath, int maxMessages, Random random, LoadReport report = null)
         {
             var files = SourceFiles(dataPath);
             long favoured = files.Where(IsFavoured).Sum(f => (long)File.ReadLines(f).Count());
@@ -162,7 +168,57 @@ namespace DiscordBot.Services
             double keepFavoured = favoured <= maxMessages ? 1.0 : (double)maxMessages / favoured;
             long room = Math.Max(0, maxMessages - (long)(favoured * keepFavoured));
             double keepOthers = others <= room ? 1.0 : (double)room / others;
-            return ConvoModel.Build(Channels(files, keepFavoured, keepOthers, random), FavouredShare);
+            report?.Start(files, favoured + others, favoured <= maxMessages && others <= room);
+            return ConvoModel.Build(Channels(files, keepFavoured, keepOthers, random, report), FavouredShare);
+        }
+
+        /// <summary>
+        /// What a model build actually read: how many messages, from how many files (full histories or random samples), and how they
+        /// spread over time, so "is it only recent chat?" can be answered with numbers (`.scrapeconvo status`).
+        /// </summary>
+        public sealed class LoadReport
+        {
+            private static readonly DateTime DiscordEpoch = new DateTime(2015, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            private long _inLast30Days, _inLast365Days;
+            private readonly DateTime _now = DateTime.UtcNow;
+            public int Files { get; private set; }
+            public int SampleFiles { get; private set; }
+            public long OnDisk { get; private set; }
+            public bool KeptEverything { get; private set; }
+            public long Messages { get; private set; }
+            public long FavouredMessages { get; private set; }
+            public DateTime Oldest { get; private set; } = DateTime.MaxValue;
+            public DateTime Newest { get; private set; } = DateTime.MinValue;
+
+            public static DateTime TimeOf(ulong id) => DiscordEpoch.AddMilliseconds(id >> 22);
+
+            internal void Start(string[] files, long onDisk, bool keptEverything)
+            {
+                Files = files.Length;
+                SampleFiles = files.Count(f => Path.GetFileName(Path.GetDirectoryName(f)) == SamplesDir);
+                OnDisk = onDisk;
+                KeptEverything = keptEverything;
+            }
+
+            internal void Add(ConvoMessage message, bool favoured)
+            {
+                var time = TimeOf(message.Id);
+                Messages++;
+                if (favoured) FavouredMessages++;
+                if (time < Oldest) Oldest = time;
+                if (time > Newest) Newest = time;
+                if (_now - time <= TimeSpan.FromDays(30)) _inLast30Days++;
+                if (_now - time <= TimeSpan.FromDays(365)) _inLast365Days++;
+            }
+
+            public double ShareLast30Days => Messages == 0 ? 0 : _inLast30Days / (double)Messages;
+            public double ShareLastYear => Messages == 0 ? 0 : _inLast365Days / (double)Messages;
+
+            public override string ToString() => Messages == 0
+                ? "Nothing read yet."
+                : $"Built from {Messages:N0} of {OnDisk:N0} saved messages ({Files} files, {SampleFiles} of them random samples{(KeptEverything ? "" : ", randomly thinned to the cap")}), "
+                  + $"{FavouredMessages:N0} from favoured channels. They run from {Oldest:yyyy-MM-dd} to {Newest:yyyy-MM-dd}: "
+                  + $"{ShareLast30Days * 100:0}% from the last 30 days, {ShareLastYear * 100:0}% from the last year.";
         }
 
         /// <summary>
@@ -204,7 +260,7 @@ namespace DiscordBot.Services
         public static bool IsFavoured(string file) =>
             ulong.TryParse(Path.GetFileNameWithoutExtension(file), out ulong id) && FavouredChannelIds.Contains(id);
 
-        private static IEnumerable<IReadOnlyList<ConvoMessage>> Channels(string[] files, double keepFavoured, double keepOthers, Random random)
+        private static IEnumerable<IReadOnlyList<ConvoMessage>> Channels(string[] files, double keepFavoured, double keepOthers, Random random, LoadReport report = null)
         {
             foreach (var file in files)
             {
@@ -219,6 +275,7 @@ namespace DiscordBot.Services
                         continue;
                     message.Favoured = favoured;
                     messages.Add(message);
+                    report?.Add(message, favoured);
                 }
                 messages.Sort((x, y) => x.Id.CompareTo(y.Id));
                 yield return messages;
@@ -305,7 +362,8 @@ namespace DiscordBot.Services
             string scrapeText = _scraping
                 ? $"Scraping ({_pass}) channel {_channelIndex}/{_channelTotal} (#{_currentChannel}), {SavedThisRun:N0} new messages this run."
                 : "Not scraping.";
-            return $"{scrapeText}\nSaved: {saved:N0} messages, {done}/{state.Count} channels finished.\n{modelText}";
+            string sources = _loadReport == null ? "" : $"\n{_loadReport}";
+            return $"{scrapeText}\nSaved: {saved:N0} messages, {done}/{state.Count} channels finished.\n{modelText}{sources}";
         }
 
         /// <summary>Starts a scrape in the background and returns at once; the result is posted to <paramref name="reportTo"/> (or only logged). False when one is already running.</summary>
