@@ -228,7 +228,7 @@ namespace DiscordBot.Managers
             if (check.MaxStake >= check.MinStake)
             {
                 double best = RaidRules.Loot(check.MaxStake, target.RaidStance, check.TargetWorth, Archetypes.LootMultiple(attacker.BattlePerson?.Archetype ?? Archetype.None, RaidRules.LootMultiple));
-                lines.Add($"**Stake:** {RaidService.Money(check.MinStake)} to {RaidService.Money(check.MaxStake)}. At the most, a win takes {RaidService.Money(best)} from them (you keep 90%, 10% becomes a bounty on you).");
+                lines.Add($"**Stake:** {RaidService.Money(check.MinStake)} to {RaidService.Money(check.MaxStake)}{(check.IsRevenge ? $" (a revenge raid can stake what {target.Name} raided you with, at most)" : "")}. At the most, a win takes {RaidService.Money(best)} from them (you keep 90%, 10% becomes a bounty on you).");
             }
             if (target.Bounty > 0) lines.Add($"💰 **Bounty on {target.Name}:** {RaidService.Money(target.Bounty)}, yours if you win.");
             if (target.RaidStance == RaidStance.Counter) lines.Add("⚠️ They're on Counter: if you lose, they also take your stake again from you.");

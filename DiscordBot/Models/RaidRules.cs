@@ -20,6 +20,12 @@ namespace DiscordBot.Models
         public ulong UserId { get; set; }
         public string Name { get; set; }
         public long ExpiresUtcTicks { get; set; }
+        /// <summary>
+        /// What they staked on the raid. A revenge raid can stake at most this, whoever is richer, so a rich victim can always hit back at
+        /// a poor raider (the normal limits would refuse it) without being able to stake more than was risked on them. 0 on tokens saved
+        /// before this existed, which fall back to the normal limit.
+        /// </summary>
+        public double Stake { get; set; }
     }
 
     /// <summary>
@@ -114,6 +120,18 @@ namespace DiscordBot.Models
             double a = Math.Pow(Math.Max(1, attackPower), OddsExponent);
             double d = Math.Pow(Math.Max(1, defencePower), OddsExponent);
             return Math.Clamp(a / (a + d), MinChance, MaxChance);
+        }
+
+        /// <summary>
+        /// The stake limits for a revenge raid: from the normal minimum (or less, when the raider's stake was smaller, and at least $1) up to
+        /// the stake they raided with. The 10% of the target's worth limit doesn't apply, but the loot is still never more than
+        /// <see cref="MaxLootShare"/> of the target's worth, so a small target can't be drained.
+        /// </summary>
+        public static (double Min, double Max) RevengeStakeLimits(double attackerWorth, double targetWorth, double originalStake)
+        {
+            var (min, max) = StakeLimits(attackerWorth, targetWorth);
+            double cap = originalStake > 0 ? Math.Floor(originalStake) : max;
+            return (Math.Max(1, Math.Min(min, cap)), cap);
         }
 
         /// <summary>The smallest and biggest stake allowed. The smallest is more than the biggest when the target is too poor to raid.</summary>

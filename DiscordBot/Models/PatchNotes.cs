@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-22", "Revenge raids always work now, however rich either of you is, but you can only stake up to what they raided you with. Raid results show the d100 you needed and what you rolled."),
             new PatchNote("2026-11-21", "Face Off is gone: raids are the main fight now. Cards got simpler: one Power number, five archetypes (Brute, Guardian, Thief, Trickster, Gambler) with matchups, and funny names."),
             new PatchNote("2026-11-21", "Raids now come with a picture of both cards, battle cries, win streaks and archetype matchups: Brute beats Thief beats Guardian beats Brute. Every card pull also gives your card XP."),
             new PatchNote("2026-11-21", "`.convo` no longer leans on the newest messages while the history is still being read: it learns from a random sample across all of it."),

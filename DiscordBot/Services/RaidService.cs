@@ -107,7 +107,10 @@ namespace DiscordBot.Services
             check.DefencePower = RaidRules.DefencePower(target.BattlePerson, attacker.BattlePerson, target.RaidStance, check.Guarded, check.Underdog);
             check.Matchup = MatchupLine(attacker.BattlePerson, target.BattlePerson);
             check.Chance = RaidRules.WinChance(check.AttackPower, check.DefencePower);
-            (check.MinStake, check.MaxStake) = RaidRules.StakeLimits(check.AttackerWorth, check.TargetWorth);
+            var revenge = check.IsRevenge ? attacker.RevengeTokens.First(t => t.UserId == target.UserId) : null;
+            (check.MinStake, check.MaxStake) = revenge != null
+                ? RaidRules.RevengeStakeLimits(check.AttackerWorth, check.TargetWorth, revenge.Stake)
+                : RaidRules.StakeLimits(check.AttackerWorth, check.TargetWorth);
             check.Refusal = Refusal(attacker, target, check, now);
             return check;
         }
@@ -160,7 +163,9 @@ namespace DiscordBot.Services
                 if (stake < check.MinStake)
                     throw new BadInputException($"The smallest stake you can put up is {Money(check.MinStake)} (1% of your worth).");
                 if (stake > check.MaxStake)
-                    throw new BadInputException($"The most you can stake against {target.Name} is {Money(check.MaxStake)} (10% of their worth).");
+                    throw new BadInputException(check.IsRevenge
+                        ? $"The most you can stake on a revenge raid is {Money(check.MaxStake)}: what {target.Name} raided you with."
+                        : $"The most you can stake against {target.Name} is {Money(check.MaxStake)} (10% of their worth).");
                 if (stake > attacker.NetWorth)
                     throw new BadInputException($"You only have {Money(Math.Max(0, attacker.NetWorth))} in cash to stake.");
 
@@ -198,7 +203,7 @@ namespace DiscordBot.Services
                 if (!check.IsRevenge)
                 {
                     target.RevengeTokens.RemoveAll(t => t.UserId == attacker.UserId);
-                    target.RevengeTokens.Add(new RevengeToken { UserId = attacker.UserId, Name = attacker.Name, ExpiresUtcTicks = (now + RaidRules.RevengeWindow).Ticks });
+                    target.RevengeTokens.Add(new RevengeToken { UserId = attacker.UserId, Name = attacker.Name, ExpiresUtcTicks = (now + RaidRules.RevengeWindow).Ticks, Stake = stake });
                 }
                 return result;
             }
@@ -393,7 +398,7 @@ namespace DiscordBot.Services
             if (loser.BattlePerson != null)
                 lines.Add($"{Archetypes.Emoji(loser.BattlePerson.Archetype)} **{loser.BattlePerson.Name}**: “{Archetypes.Cry(loser.BattlePerson.Archetype, false, random)}”");
             lines.Add($"XP: {a.Name} {r.AttackerXp}; {t.Name} {(t.BattlePerson == null ? "has no card (`.cardpull`)" : r.DefenderXp)}.");
-            if (!c.IsRevenge) lines.Add($"{t.Name} can take 🔥 revenge with `.raid {a.Name}` in the next 24 hours.");
+            if (!c.IsRevenge) lines.Add($"{t.Name} can take 🔥 revenge with `.raid {a.Name}` in the next {RaidRules.RevengeWindow.TotalHours:0} hours, however rich either of you is, staking up to {Money(r.Stake)}.");
             return string.Join("\n", lines);
         }
 

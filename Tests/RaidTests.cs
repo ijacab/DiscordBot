@@ -310,5 +310,62 @@ namespace Tests
             Assert.Contains("$2,000", text);
             Assert.Contains("revenge", text);
         }
+
+        [Fact]
+        public void ARichVictim_CanAlwaysHitBackAtAPoorRaider_ButOnlyUpToTheirStake()
+        {
+            //the raider has $10,000 and the victim $10,000,000: the normal limits (1% of the victim's worth up to 10% of the raider's) would refuse the revenge
+            var (coins, raids, poor, rich) = Setup(10_000, 10_000_000, 0.0, 0.0);
+            Assert.True(raids.Raid(poor, rich, 1_000, Now).Won);   //the poor player's raid works
+            rich.RaidProtectedUntilUtcTicks = 0;
+            double richCash = rich.NetWorth;
+
+            var normal = RaidRules.StakeLimits(rich.NetWorth, poor.NetWorth);
+            Assert.True(normal.Min > normal.Max, "the ordinary limits really would have refused it");
+
+            var check = raids.Check(rich, poor, Now.AddMinutes(5));
+            Assert.Null(check.Refusal);
+            Assert.True(check.IsRevenge);
+            Assert.Equal(1_000, check.MaxStake);                    //what the poor raider staked
+            Assert.InRange(check.MinStake, 1, 1_000);
+
+            Assert.Throws<DiscordBot.Exceptions.BadInputException>(() => raids.Raid(rich, poor, 1_001, Now.AddMinutes(5)));
+            double before = Total(coins, poor, rich);
+            var result = raids.Raid(rich, poor, 1_000, Now.AddMinutes(5));
+            Assert.True(result.Won);
+            Assert.True(result.Loot <= 2_000, "the loot is at most twice the capped stake");
+            Assert.Equal(before, Total(coins, poor, rich), 6);
+            Assert.Equal(richCash - 1_000 + 1_000 + result.Loot - result.BountySet + result.BountyCollected, rich.NetWorth, 2);
+            Assert.Empty(rich.RevengeTokens);                       //and nothing to take revenge for the revenge
+        }
+
+        [Fact]
+        public void Revenge_StillRespectsTheLootCapAndTheHourlyLimit_AndOldTokensStillWork()
+        {
+            //a tiny target: a big revenge stake still never takes more than 20% of what they have
+            var (coins, raids, tiny, big) = Setup(1_000, 1_000_000, 0.0);
+            big.RevengeTokens.Add(new RevengeToken { UserId = 1, Name = "raider", ExpiresUtcTicks = Now.AddHours(1).Ticks, Stake = 50_000 });
+            double before = Total(coins, tiny, big);
+            var result = raids.Raid(big, tiny, 50_000, Now);
+            Assert.True(result.Won);
+            Assert.Equal(1_000 * RaidRules.MaxLootShare, result.Loot, 2);
+            Assert.True(tiny.NetWorth >= 800 - 1e-6);
+            Assert.Equal(before, Total(coins, tiny, big), 6);
+
+            //a token saved before stakes were recorded falls back to the normal limits instead of breaking
+            var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.0);
+            x.RevengeTokens.Add(new RevengeToken { UserId = 2, Name = "target", ExpiresUtcTicks = Now.AddHours(1).Ticks });
+            var old = raids2.Check(x, y, Now);
+            Assert.Null(old.Refusal);
+            Assert.Equal(RaidRules.StakeLimits(1_000_000, 1_000_000).Max, old.MaxStake);
+
+            //the raids-an-hour limit still applies to revenge
+            var (coins3, raids3, p, q) = Setup(1_000_000, 1_000_000, 0.99);
+            var extras = Enumerable.Range(10, 3).Select(id => new CoinAccount { UserId = (ulong)id, Name = $"e{id}", NetWorth = 1_000_000, BattlePerson = AverageCard(0) }).ToList();
+            coins3.GetAll().Accounts.AddRange(extras);
+            foreach (var e in extras) raids3.Raid(p, e, 10_000, Now);
+            p.RevengeTokens.Add(new RevengeToken { UserId = 2, Name = "target", ExpiresUtcTicks = Now.AddHours(1).Ticks, Stake = 5_000 });
+            Assert.Contains("3 times", raids3.Check(p, q, Now.AddMinutes(10)).Refusal);
+        }
     }
 }
