@@ -61,7 +61,10 @@ namespace DiscordBot.Services
         private string _currentChannel;
         private long _savedThisRun;
         private string _pass;
-        private bool _autoScrapeTried;
+        private DateTime _autoScrapeNotBefore = DateTime.MinValue;
+        private volatile bool _stoppedByAdmin;
+        /// <summary>After a scrape ends with channels still unfinished (an error, a channel that failed), it tries again after this long.</summary>
+        public static readonly TimeSpan AutoScrapeRetry = TimeSpan.FromMinutes(10);
         private DateTime _lastReload = DateTime.MinValue;
 
         public ConvoCorpusService(ILogger<ConvoCorpusService> logger)
@@ -93,9 +96,10 @@ namespace DiscordBot.Services
         public void EnsureScrapeStarted(DiscordSocketClient client)
         {
             bool canSee = client.ConnectionState == ConnectionState.Connected && client.GetGuild(GuildId) != null;
-            if (!ShouldAutoScrape(File.Exists(StatePath), canSee && HasUnfinishedChannels(LoadState().Values), canSee, _scraping, _autoScrapeTried))
+            bool waiting = _stoppedByAdmin || DateTime.UtcNow < _autoScrapeNotBefore;
+            if (!ShouldAutoScrape(File.Exists(StatePath), canSee && HasUnfinishedChannels(LoadState().Values), canSee, _scraping, waiting))
                 return;
-            _autoScrapeTried = true;
+            _autoScrapeNotBefore = DateTime.UtcNow + AutoScrapeRetry;
             if (StartScrape(client, null))
                 _logger.LogInformation("Convo scrape started by itself: the history isn't all saved yet");
         }
@@ -379,6 +383,7 @@ namespace DiscordBot.Services
                 if (_scraping)
                     return false;
                 _scraping = true;
+                _stoppedByAdmin = false;
                 _scrapeCts = new CancellationTokenSource();
             }
             var token = _scrapeCts.Token;
@@ -400,8 +405,12 @@ namespace DiscordBot.Services
                 finally
                 {
                     lock (_gate) _scraping = false;
+                    _autoScrapeNotBefore = DateTime.UtcNow + AutoScrapeRetry;
                 }
 
+                int unfinished = LoadState().Values.Count(p => !p.Done && !p.NoAccess);
+                if (unfinished > 0 && !_stoppedByAdmin)
+                    summary += $" {unfinished} channels aren't fully saved yet, so it carries on by itself in {AutoScrapeRetry.TotalMinutes:0} minutes.";
                 lock (_gate) _loadStarted = true;
                 await StartReload();
                 _logger.LogInformation("Convo scrape: {Summary}", summary);
@@ -417,6 +426,7 @@ namespace DiscordBot.Services
             {
                 if (!_scraping)
                     return false;
+                _stoppedByAdmin = true;
                 _scrapeCts.Cancel();
                 return true;
             }
