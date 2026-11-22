@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-22", "`.convo` history scraping now resumes by itself after a restart or update instead of stopping half way, so the whole server history (and random samples of it) gets read."),
             new PatchNote("2026-11-22", "`.scrapeconvo status` now shows how many messages `.convo` really learned from and how old they are (date range, share from the last 30 days and year)."),
             new PatchNote("2026-11-22", "`.convo` is wilder: it now picks rarer follow-up words more often (a temperature setting) and goes off-script more, so the chats are less predictable."),
             new PatchNote("2026-11-22", "Revenge raids always work now, however rich either of you is, but you can only stake up to what they raided you with. Raid results show the d100 you needed and what you rolled."),

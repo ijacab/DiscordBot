@@ -73,26 +73,31 @@ namespace DiscordBot.Services
         public ConvoModel Model => _model;
         public bool IsLoading => !_loadTask.IsCompleted;
         public bool IsScraping => _scraping;
-        /// <summary>Messages saved by the scrape that's running (or the last one).</summary>
+        /// <summary>What the last model build read.</summary>
         private volatile LoadReport _loadReport;
+        /// <summary>Messages saved by the scrape that's running (or the last one).</summary>
         public long SavedThisRun => Interlocked.Read(ref _savedThisRun);
 
         /// <summary>
-        /// Whether to start the first scrape by itself: once per process, only when nothing was ever scraped (a later refresh is
-        /// `.scrapeconvo`), the bot can see the server and no scrape is running.
+        /// Whether to start a scrape by itself: once per process, when nothing was ever scraped or an earlier scrape was cut off
+        /// (every deploy restarts the bot, which kills a scrape that takes hours) and some channel is still unfinished, the bot can
+        /// see the server and no scrape is running. A later refresh for new messages is `.scrapeconvo`.
         /// </summary>
-        public static bool ShouldAutoScrape(bool stateExists, bool canSeeGuild, bool scraping, bool alreadyTried) =>
-            !stateExists && canSeeGuild && !scraping && !alreadyTried;
+        public static bool ShouldAutoScrape(bool stateExists, bool unfinishedChannels, bool canSeeGuild, bool scraping, bool alreadyTried) =>
+            (!stateExists || unfinishedChannels) && canSeeGuild && !scraping && !alreadyTried;
 
-        /// <summary>Called every minute: starts the very first scrape on its own once the bot is connected to the server.</summary>
+        /// <summary>A channel the scrape has found but not finished (neither all saved nor out of reach).</summary>
+        public static bool HasUnfinishedChannels(IEnumerable<ChannelProgress> channels) => channels.Any(p => !p.Done && !p.NoAccess);
+
+        /// <summary>Called every minute: starts (or, after a restart, resumes) the scrape on its own once the bot is connected to the server.</summary>
         public void EnsureScrapeStarted(DiscordSocketClient client)
         {
             bool canSee = client.ConnectionState == ConnectionState.Connected && client.GetGuild(GuildId) != null;
-            if (!ShouldAutoScrape(File.Exists(StatePath), canSee, _scraping, _autoScrapeTried))
+            if (!ShouldAutoScrape(File.Exists(StatePath), canSee && HasUnfinishedChannels(LoadState().Values), canSee, _scraping, _autoScrapeTried))
                 return;
             _autoScrapeTried = true;
             if (StartScrape(client, null))
-                _logger.LogInformation("Convo scrape started by itself: nothing scraped yet");
+                _logger.LogInformation("Convo scrape started by itself: the history isn't all saved yet");
         }
 
         public static string DataPath => Path.Join(Directory.GetCurrentDirectory(), DataDir);

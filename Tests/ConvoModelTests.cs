@@ -328,14 +328,26 @@ namespace Tests
         }
 
         [Theory]
-        [InlineData(false, true, false, false, true)]
-        [InlineData(true, true, false, false, false)]
-        [InlineData(false, false, false, false, false)]
-        [InlineData(false, true, true, false, false)]
-        [InlineData(false, true, false, true, false)]
-        public void AutoScrape_StartsOnlyTheVeryFirstTime(bool stateExists, bool canSeeGuild, bool scraping, bool alreadyTried, bool expected)
+        //stateExists, unfinished, canSeeGuild, scraping, alreadyTried
+        [InlineData(false, false, true, false, false, true)]   //never scraped: start
+        [InlineData(true, true, true, false, false, true)]     //cut off by a restart: resume
+        [InlineData(true, false, true, false, false, false)]   //everything saved: only `.scrapeconvo` refreshes
+        [InlineData(false, false, false, false, false, false)] //can't see the server yet
+        [InlineData(true, true, true, true, false, false)]     //already running
+        [InlineData(true, true, true, false, true, false)]     //already tried this process
+        public void AutoScrape_StartsFirstTimeAndResumesAfterARestart(bool stateExists, bool unfinished, bool canSeeGuild, bool scraping, bool alreadyTried, bool expected)
         {
-            Assert.Equal(expected, ConvoCorpusService.ShouldAutoScrape(stateExists, canSeeGuild, scraping, alreadyTried));
+            Assert.Equal(expected, ConvoCorpusService.ShouldAutoScrape(stateExists, unfinished, canSeeGuild, scraping, alreadyTried));
+        }
+
+        [Fact]
+        public void UnfinishedChannels_IgnoreOnesThatAreDoneOrOutOfReach()
+        {
+            var done = new ConvoCorpusService.ChannelProgress { Done = true };
+            var locked = new ConvoCorpusService.ChannelProgress { NoAccess = true };
+            var partial = new ConvoCorpusService.ChannelProgress();
+            Assert.False(ConvoCorpusService.HasUnfinishedChannels(new[] { done, locked }));
+            Assert.True(ConvoCorpusService.HasUnfinishedChannels(new[] { done, partial }));
         }
 
         [Theory]
