@@ -235,7 +235,7 @@ namespace Tests
             var (_, raids, a, b) = Setup(Archetype.Brute, Archetype.Thief, 0.0);
             string text = RaidService.Describe(raids.Raid(a, b, 10_000, Now), new Random(3));
             Assert.Contains("beats", text);
-            Assert.Contains("Raid succeeded", text);
+            Assert.Contains("Took **", text);
             Assert.Contains("“", text); //a battle cry in quotes
             Assert.Contains("revenge", text);
         }

@@ -363,42 +363,47 @@ namespace DiscordBot.Services
         {
             var (a, t, c) = (r.Attacker, r.Target, r.Check);
             var kind = Archetypes.Normalise(a.BattlePerson?.Archetype ?? Archetype.None);
+
+            //the picture shows both cards and the dice, so the text only has who, the roll, the money and one cry
             var lines = new List<string>
             {
-                $"{(c.IsRevenge ? "🔥 **Revenge raid!** " : "⚔️ ")}**{a.Name}** sent {CardLabel(a)} to raid **{t.Name}**'s {CardLabel(t)} ({t.RaidStance} stance{(c.Guarded ? ", guards on" : "")}) with a {Money(r.Stake)} stake.",
+                $"{(c.IsRevenge ? "🔥 **Revenge raid!** " : "⚔️ ")}**{a.Name}** raided **{t.Name}** · {Money(r.Stake)} stake · {t.RaidStance} stance{(c.Guarded ? " + guards" : "")}",
             };
-            if (c.Matchup.Length > 0) lines.Add($"🔺 {c.Matchup}.");
-            if (r.Swing > 0)
-                lines.Add($"🎰 {a.Name}'s Gambler is running {(r.Swing > 1 ? "hot: +" : "cold: -")}{Archetypes.GamblerSwing * 100:0}% power this raid.");
-            lines.Add($"🎲 Needed **{r.Needed}+** on a d100 ({ChancePercent(c.Chance)}% chance), rolled **{r.Roll}** {(r.Won ? "✅" : "❌")}{(r.Rerolled ? " (🃏 the Trickster rolled again after a miss)" : "")}");
-            if (kind == Archetype.Gambler && r.Roll == 100) lines.Add("🎰 **NATURAL 100!** The loot is doubled.");
-            if (kind == Archetype.Gambler && r.Roll == 1) lines.Add("🎰 **SNAKE EYES!** The loss is doubled.");
-            if (c.Underdog > 1) lines.Add($"{t.Name} defended {Pct(c.Underdog - 1)} harder for being richer.");
+
+            var dice = new List<string> { $"🎲 Needed **{r.Needed}+** ({ChancePercent(c.Chance)}%), rolled **{r.Roll}** {(r.Won ? "✅" : "❌")}" };
+            if (r.Rerolled) dice.Add("🃏 rerolled");
+            if (c.Matchup.Length > 0) dice.Add(c.Matchup);
+            if (r.Swing > 0) dice.Add($"🎰 Gambler {(r.Swing > 1 ? "hot +" : "cold -")}{Archetypes.GamblerSwing * 100:0}%");
+            if (c.Underdog > 1) dice.Add($"{t.Name} defends {Pct(c.Underdog - 1)} harder for being richer");
+            if (kind == Archetype.Gambler && r.Roll == 100) dice.Add("**NATURAL 100**: loot doubled");
+            if (kind == Archetype.Gambler && r.Roll == 1) dice.Add("**SNAKE EYES**: loss doubled");
+            lines.Add(string.Join(" · ", dice));
+
+            var money = new List<string>();
             if (r.Won)
             {
-                string debt = r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} of it on their debt" : "";
-                string parachute = r.Parachuted ? " 🪂 Their Golden Parachute kept it to their cash." : "";
-                lines.Add($"✅ **Raid succeeded!** {a.Name} took {Money(r.Loot)} from {t.Name} ({r.LootMultiple:0.#}x the stake){debt}.{parachute} {Money(r.BountySet)} of it is now a 💰 bounty on {a.Name}.");
-                if (r.BountyCollected > 0) lines.Add($"💰 {a.Name} also collected the {Money(r.BountyCollected)} bounty on {t.Name}.");
-                lines.Add($"{t.Name} is protected from raids for {Wait(r.ProtectedFor)}.");
-                if (r.Streak >= 2) lines.Add($"🔥 {a.Name} has won {r.Streak} raids in a row.");
+                money.Add($"💰 Took **{Money(r.Loot)}** ({r.LootMultiple:0.#}x){(r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} on their debt" : "")}{(r.Parachuted ? " (🪂 parachute)" : "")}");
+                money.Add($"{Money(r.BountySet)} is now a bounty on {a.Name}");
+                if (r.BountyCollected > 0) money.Add($"collected the {Money(r.BountyCollected)} bounty on {t.Name}");
+                money.Add($"{t.Name} is safe for {Wait(r.ProtectedFor)}");
             }
             else
             {
-                string counter = r.CounterHit > 0 ? $" and countered for {Money(r.CounterHit)} more{(r.CounterToDebt > 0 ? $" ({Money(r.CounterToDebt)} on {a.Name}'s debt)" : "")}" : "";
-                lines.Add($"🛡️ **Raid failed!** {t.Name} kept the {Money(r.Stake)} stake{counter}.");
-                if (r.ExtraLoss > 0) lines.Add($"💸 {a.Name} paid {Money(r.ExtraLoss)} extra for {(kind == Archetype.Thief ? "getting caught" : "rolling snake eyes")}.");
-                if (r.BountyCollected > 0) lines.Add($"💰 {t.Name} collected the {Money(r.BountyCollected)} bounty on {a.Name}.");
+                money.Add($"🛡️ Lost the {Money(r.Stake)} stake to {t.Name}");
+                if (r.CounterHit > 0) money.Add($"countered for {Money(r.CounterHit)} more{(r.CounterToDebt > 0 ? $" ({Money(r.CounterToDebt)} on debt)" : "")}");
+                if (r.ExtraLoss > 0) money.Add($"{Money(r.ExtraLoss)} extra for {(kind == Archetype.Thief ? "getting caught" : "rolling snake eyes")}");
+                if (r.BountyCollected > 0) money.Add($"{t.Name} collected the {Money(r.BountyCollected)} bounty on {a.Name}");
             }
+            lines.Add(string.Join(" · ", money));
 
             var winner = r.Won ? a : t;
             if (winner.BattlePerson != null)
                 lines.Add($"{Archetypes.Emoji(winner.BattlePerson.Archetype)} **{winner.BattlePerson.Name}**: “{Archetypes.Cry(winner.BattlePerson.Archetype, true, random)}”");
-            var loser = r.Won ? t : a;
-            if (loser.BattlePerson != null)
-                lines.Add($"{Archetypes.Emoji(loser.BattlePerson.Archetype)} **{loser.BattlePerson.Name}**: “{Archetypes.Cry(loser.BattlePerson.Archetype, false, random)}”");
-            lines.Add($"XP: {a.Name} {r.AttackerXp}; {t.Name} {(t.BattlePerson == null ? "has no card (`.cardpull`)" : r.DefenderXp)}.");
-            if (!c.IsRevenge) lines.Add($"{t.Name} can take 🔥 revenge with `.raid {a.Name}` in the next {RaidRules.RevengeWindow.TotalHours:0} hours, however rich either of you is, staking up to {Money(r.Stake)}.");
+
+            var footer = new List<string> { $"XP +{r.AttackerXp} / {(t.BattlePerson == null ? "none (no card, `.cardpull`)" : "+" + r.DefenderXp)}" };
+            if (r.Won && r.Streak >= 2) footer.Add($"🔥 {r.Streak} raids in a row");
+            if (!c.IsRevenge) footer.Add($"{t.Name} can take revenge for {RaidRules.RevengeWindow.TotalHours:0}h");
+            lines.Add(string.Join(" · ", footer));
             return string.Join("\n", lines);
         }
 

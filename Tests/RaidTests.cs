@@ -292,7 +292,7 @@ namespace Tests
             Assert.Equal(9, lost.Roll);
             Assert.False(lost.Won);
             string text = RaidService.Describe(lost);
-            Assert.Contains($"Needed **{lost.Needed}+** on a d100 ({RaidService.ChancePercent(lost.Check.Chance)}% chance), rolled **9** ❌", text);
+            Assert.Contains($"Needed **{lost.Needed}+** ({RaidService.ChancePercent(lost.Check.Chance)}%), rolled **9** ❌", text);
 
             var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.0); //rolls a 100
             var won = raids2.Raid(x, y, 10_000, Now);
@@ -306,9 +306,33 @@ namespace Tests
         {
             var (_, raids, a, b) = Setup(10_000, 100_000, 0.0);
             string text = RaidService.Describe(raids.Raid(a, b, 1_000, Now));
-            Assert.Contains("Raid succeeded", text);
-            Assert.Contains("$2,000", text);
+            Assert.Contains("Took **$2,000**", text);
             Assert.Contains("revenge", text);
+        }
+
+        [Fact]
+        public void Describe_StaysShort_ForWinsLossesAndRevenge()
+        {
+            var (_, raids, a, b) = Setup(10_000, 100_000, 0.0);
+            var win = raids.Raid(a, b, 1_000, Now);
+            string winText = RaidService.Describe(win);
+            Assert.InRange(winText.Split('\n').Length, 4, 6);
+            Assert.Contains("rolled **100** ✅", winText);
+            Assert.DoesNotContain("Raid succeeded", winText); //the embed title and the picture say it
+
+            var (_, raids2, x, y) = Setup(1_000_000, 1_000_000, 0.99);
+            string lossText = RaidService.Describe(raids2.Raid(x, y, 10_000, Now));
+            Assert.InRange(lossText.Split('\n').Length, 3, 5);
+            Assert.Contains("Lost the $10,000 stake", lossText);
+
+            //a revenge raid has no further revenge note
+            var (_, raids3, p, q) = Setup(1_000_000, 1_000_000, 0.0);
+            raids3.Raid(q, p, 10_000, Now);
+            var revenge = raids3.Raid(p, q, 10_000, Now.AddSeconds(5));
+            string revengeText = RaidService.Describe(revenge);
+            Assert.StartsWith("🔥 **Revenge raid!**", revengeText);
+            Assert.DoesNotContain("can take revenge", revengeText);
+            Assert.True(revengeText.Length < 1000);
         }
 
         [Fact]
