@@ -243,35 +243,44 @@ namespace Tests
         private static double NetRent(PropertyKind kind) => PropertyCatalog.GrossRentPerHour(kind, 1.0) * (1 - PropertyCatalog.AgencyFeeRate);
 
         [Fact]
-        public void Squatters_TakeOnlyTheBestRentalAndTheOwnerKeepsTheRest()
+        public void Squatters_MoveIntoEveryPropertyTheLeaderOwns()
         {
             var w = Board((1, 1000), (2, 500), (3, 300), (4, 0));
             w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
             w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
 
             string message = Use(w, 4, PowerUpIds.Squatters);
             PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
 
-            Assert.Contains("house", message);
-            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
-            Assert.Equal(1000 + NetRent(PropertyKind.Apartment), w[1].NetWorth, 2);
+            Assert.Contains("3 properties", message);
+            Assert.Equal(NetRent(PropertyKind.Apartment) + 2 * NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Equal(1000, w[1].NetWorth, 2); //the owner's rent all went to the squatter
+
+            PropertyService.PayRentOneHour(w.Data, Now.AddHours(13)); //the squat is over
+            Assert.Equal(1000 + NetRent(PropertyKind.Apartment) + 2 * NetRent(PropertyKind.House), w[1].NetWorth, 2);
         }
 
         [Fact]
-        public void Squatters_ASecondSquatterTakesAnotherPropertyAndAThirdIsRefused()
+        public void Squatters_ASecondSquatterIsRefusedWhileEveryPropertyIsTaken_ButCanTakeANewOne()
         {
             var w = Board((1, 1000), (2, 500), (3, 300), (4, 0), (5, 0));
             w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
-            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
 
             Use(w, 4, PowerUpIds.Squatters);
-            Use(w, 5, PowerUpIds.Squatters);
+            Assert.Throws<BadInputException>(() => Use(w, 5, PowerUpIds.Squatters)); //nothing left to move into
+
+            //a house bought after the squatters moved in has nobody in it yet
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
+            string message = Use(w, 5, PowerUpIds.Squatters);
             PropertyService.PayRentOneHour(w.Data, Now.AddHours(1));
 
-            Assert.Equal(NetRent(PropertyKind.House), w[4].NetWorth, 2);
+            Assert.Contains("a property", message);
+            Assert.Contains("2 more already had squatters", message);
+            Assert.Equal(2 * NetRent(PropertyKind.House), w[4].NetWorth, 2);
             Assert.Equal(NetRent(PropertyKind.Apartment), w[5].NetWorth, 2);
             Assert.Equal(1000, w[1].NetWorth, 2);
-            Assert.Throws<BadInputException>(() => Use(w, 4, PowerUpIds.Squatters));
         }
 
         [Fact]
@@ -377,18 +386,20 @@ namespace Tests
         }
 
         [Fact]
-        public async System.Threading.Tasks.Task OnlyTheSquattedPropertyIsLocked_TheOwnersOtherPropertiesCanBeSold()
+        public async System.Threading.Tasks.Task EverySquattedPropertyIsLocked_ButAHouseBoughtLaterCanBeSold()
         {
             var w = Board((1, 1000), (4, 0));
             w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.Apartment });
-            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House }); //the best rental, so the one squatted
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House });
             Use(w, 4, PowerUpIds.Squatters);
 
+            await Assert.ThrowsAsync<BadInputException>(() => Properties(w).Sell(w[1], 1, Now.AddHours(1)));
             await Assert.ThrowsAsync<BadInputException>(() => Properties(w).Sell(w[1], 2, Now.AddHours(1)));
-            await Properties(w).Sell(w[1], 1, Now.AddHours(1));
 
-            Assert.Single(w[1].Properties);
-            Assert.Equal(PropertyKind.House, w[1].Properties[0].Kind);
+            w[1].Properties.Add(new PropertyHolding { Kind = PropertyKind.House }); //bought after the squatters moved in
+            await Properties(w).Sell(w[1], 3, Now.AddHours(1));
+
+            Assert.Equal(2, w[1].Properties.Count);
         }
 
         [Fact]

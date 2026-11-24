@@ -259,7 +259,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Bailout, Name = "Bailout", Weight = Common, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "1st place pays off your debt (up to 20% of their net worth) and hands you 5% of their net worth on top. Can't be dodged; what they can't pay goes on their debt." },
             new PowerUpDefinition { Id = PowerUpIds.Squatters, Name = "Squatters", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
-                Description = "Move into 1st place's best rental: that property's rent comes to you for 12 hours. Can't be dodged." },
+                Description = "Move into every property 1st place owns: their rent comes to you for 12 hours, and none of them can be sold meanwhile. Can't be dodged." },
             new PowerUpDefinition { Id = PowerUpIds.Leech, Name = "Leech", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "Latch onto 1st place for 6 hours: 15% of every bet they win comes to you. Can't be dodged." },
         };
@@ -272,7 +272,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Frozen, Name = "Frozen", Kind = PowerUpKind.Timed, Duration = FreezeDuration, Category = PowerUpCategory.Debuff,
                 Description = "You can't use power-ups." },
             new PowerUpDefinition { Id = PowerUpIds.Squatted, Name = "Squatters", Kind = PowerUpKind.Timed, Duration = SquatDuration, Category = PowerUpCategory.Debuff,
-                Description = "One of your properties has squatters; its rent goes to them." },
+                Description = "Squatters are in your properties; their rent goes to them, and they can't be sold until the squatters leave." },
             new PowerUpDefinition { Id = PowerUpIds.Leeched, Name = "Leech", Kind = PowerUpKind.Timed, Duration = LeechDuration, Category = PowerUpCategory.Debuff,
                 Description = "15% of every bet you win goes to the leech." },
         };

@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-29", "Squatters now move into every property 1st place owns, not just the best one: all their rent comes to you for 12 hours and none of those houses can be sold meanwhile."),
             new PatchNote("2026-11-28", "`.sell property all` sells every house at once. Blackjack Play again now bets the same percentage of your cash as your last bet, not the same dollar amount."),
             new PatchNote("2026-11-27", "`.convo` now shows the name of each speaker in bold."),
             new PatchNote("2026-11-26", "Bot admins can tune `.convo` live with `.convoset`: chaos, temperature, topic pull, line count and more, saved across restarts. `.convoset reset` undoes it."),
