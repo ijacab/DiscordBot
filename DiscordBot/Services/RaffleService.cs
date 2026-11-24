@@ -713,17 +713,21 @@ namespace DiscordBot.Services
                     if (leader.Properties.Count == 0)
                         throw new BadInputException($"{leader.Name} doesn't own any property to squat in. Keep it for later.");
                     double index = _coinService.GetAll().PropertyIndex;
+                    //the best rentals first; the cheapest few are spared, but there is always at least one to squat in
+                    var byRent = leader.Properties.OrderByDescending(p => PropertyCatalog.GrossRentPerHour(p.Kind, index)).ToList();
+                    int squattable = Math.Max(1, byRent.Count - PowerUpCatalog.SquattersSpared);
                     //every property they own that nobody is in yet; one already full of squatters is left to them
                     var taken = leader.Running(PowerUpIds.Squatted, now).Select(s => PropertyService.SquattedPropertyId(leader, s)).ToHashSet();
-                    var homes = leader.Properties.Where(p => !taken.Contains(p.Id)).ToList();
+                    var homes = byRent.Take(squattable).Where(p => !taken.Contains(p.Id)).ToList();
                     if (homes.Count == 0)
-                        throw new BadInputException($"Every one of {leader.Name}'s properties already has squatters. Keep it for later.");
+                        throw new BadInputException($"Every property of {leader.Name}'s that squatters can reach already has squatters. Keep it for later.");
                     foreach (var home in homes)
                         leader.AddDebuff(PowerUpIds.Squatted, now, user.UserId, home.Id);
                     double rent = homes.Sum(h => PropertyCatalog.NetRentPerHour(h.Kind, index));
                     string places = homes.Count == 1 ? "a property" : $"{homes.Count} properties";
                     AttackHistory.Record(leader, user.UserId, user.Name, power.Name, 0, $"they moved into {(homes.Count == 1 ? "your property" : $"{homes.Count} of your properties")} for 12 hours", now);
-                    string already = homes.Count < leader.Properties.Count ? $" ({leader.Properties.Count - homes.Count} more already had squatters.)" : "";
+                    int alreadyTaken = squattable - homes.Count;
+                    string already = alreadyTaken > 0 ? $" ({alreadyTaken} more already had squatters.)" : "";
                     return $"🏚️ **Squatters!** You moved into {places} of {leader.Name}'s. Their rent (about {Money(rent)} an hour in all) comes to you for the next 12 hours.{already}";
                 }
                 case PowerUpIds.Leech:

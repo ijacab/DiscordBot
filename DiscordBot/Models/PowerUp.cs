@@ -155,6 +155,8 @@ namespace DiscordBot.Models
         public const double BailoutDebtCapPercent = 0.20;
         public const double BailoutBonusPercent = 0.05;
         public static readonly TimeSpan SquatDuration = TimeSpan.FromHours(12);
+        /// <summary>Squatters leave this many of the leader's properties alone (their cheapest rentals), but always move into at least one.</summary>
+        public const int SquattersSpared = 2;
         public static readonly TimeSpan LeechDuration = TimeSpan.FromHours(6);
         public const double LeechSkim = 0.15;
 
@@ -259,7 +261,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Bailout, Name = "Bailout", Weight = Common, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "1st place pays off your debt (up to 20% of their net worth) and hands you 5% of their net worth on top. Can't be dodged; what they can't pay goes on their debt." },
             new PowerUpDefinition { Id = PowerUpIds.Squatters, Name = "Squatters", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
-                Description = "Move into every property 1st place owns: their rent comes to you for 12 hours, and none of them can be sold meanwhile. Can't be dodged." },
+                Description = $"Move into every property 1st place owns except their {SquattersSpared} cheapest rentals (but always at least one): that rent comes to you for 12 hours, and those properties can't be sold meanwhile. Can't be dodged." },
             new PowerUpDefinition { Id = PowerUpIds.Leech, Name = "Leech", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "Latch onto 1st place for 6 hours: 15% of every bet they win comes to you. Can't be dodged." },
         };
@@ -272,7 +274,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Frozen, Name = "Frozen", Kind = PowerUpKind.Timed, Duration = FreezeDuration, Category = PowerUpCategory.Debuff,
                 Description = "You can't use power-ups." },
             new PowerUpDefinition { Id = PowerUpIds.Squatted, Name = "Squatters", Kind = PowerUpKind.Timed, Duration = SquatDuration, Category = PowerUpCategory.Debuff,
-                Description = "Squatters are in your properties; their rent goes to them, and they can't be sold until the squatters leave." },
+                Description = "Squatters are in some of your properties; their rent goes to them, and those can't be sold until the squatters leave." },
             new PowerUpDefinition { Id = PowerUpIds.Leeched, Name = "Leech", Kind = PowerUpKind.Timed, Duration = LeechDuration, Category = PowerUpCategory.Debuff,
                 Description = "15% of every bet you win goes to the leech." },
         };
