@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-24", "New `.sug your idea` adds a suggestion to the master list. `.sug` on its own shows the whole list, and a bot admin can empty it with `.sug clear`."),
             new PatchNote("2026-11-23", "Raid results are shorter: the picture shows the cards and the dice, the text just has the roll, the money and one battle cry."),
             new PatchNote("2026-11-22", "`.convo` history scraping now resumes by itself after a restart, update or error instead of stopping half way, so the whole server history (and random samples of it) gets read."),
             new PatchNote("2026-11-22", "`.scrapeconvo status` now shows how many messages `.convo` really learned from and how old they are (date range, share from the last 30 days and year)."),

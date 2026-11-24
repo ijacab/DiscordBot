@@ -27,6 +27,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_PowerUps.cs .pu: power-ups, catalog, using one
     CommandManager_Cards.cs    .cardpull and the Keep button
     CommandManager_Attacks.cs  .attacks: recap of the latest attacks on you
+    CommandManager_Suggest.cs  .sug/.suggest: master suggestions list
     CommandManager_Crash.cs    .crash and its Cash out / Again buttons
     CommandManager_Fun.cs      .roll .time .img .dbz (searches DuckDuckGo, downloads a working picture, posts it as a file) .face .lang .convo .scrapeconvo
     CommandManager_Admin.cs    .clear .start .stop .ban .unban, disk space
@@ -67,6 +68,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     DebtService.cs             `.autosell`: sells stocks, covers shorts, cashes out options, then sells property, every minute to pay off debt
     RaidService.cs             `.raid` (odds, stakes, loot, limits, revenge, bounties), guards and card training
     WorthService.cs            the one total-worth formula (cash + stocks/bets + property - debt) and leaderboard order
+    SuggestionList.cs          the `.sug` master suggestions file (`suggestions.txt`, gitignored)
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck
