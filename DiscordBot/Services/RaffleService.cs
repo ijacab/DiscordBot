@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using DiscordBot.Exceptions;
 using DiscordBot.Models;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,17 +29,20 @@ namespace DiscordBot.Services
         private readonly CoinService _coinService;
         private readonly AppSettings _appSettings;
         private readonly Func<CoinAccount, double> _totalWorth;
+        private readonly ILogger _logger;
+        private readonly AnnouncementQueue _waiting = new AnnouncementQueue();
 
-        public RaffleService(CoinService coinService, StockService stockService, AppSettings appSettings)
-            : this(coinService, appSettings, new WorthService(coinService, stockService, appSettings).TotalWorth)
+        public RaffleService(CoinService coinService, StockService stockService, AppSettings appSettings, ILogger<RaffleService> logger = null)
+            : this(coinService, appSettings, new WorthService(coinService, stockService, appSettings).TotalWorth, logger)
         {
         }
 
-        public RaffleService(CoinService coinService, AppSettings appSettings, Func<CoinAccount, double> totalWorth)
+        public RaffleService(CoinService coinService, AppSettings appSettings, Func<CoinAccount, double> totalWorth, ILogger logger = null)
         {
             _coinService = coinService;
             _appSettings = appSettings;
             _totalWorth = totalWorth;
+            _logger = logger;
         }
 
         public static long SlotOf(DateTime utc) =>
@@ -216,21 +220,21 @@ namespace DiscordBot.Services
         /// <summary>Called every minute. Draws the raffle once per slot and announces the winner in one line in the last active channel.</summary>
         public async Task RunIfDue(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)
         {
+            await FlushWaiting(client); //anything that couldn't be sent earlier goes first
+
             long slotBefore = _coinService.GetAll().LastRaffleSlot;
             var result = Draw(DateTime.UtcNow, _random.NextDouble, betOpenUserIds);
             if (_coinService.GetAll().LastRaffleSlot == slotBefore) return; //nothing due
             await _coinService.Update(); //records the slot even if nobody entered, and what the prize did
 
             if (result == null) return;
-            ulong channelId = _coinService.GetAll().LastActiveChannelId;
-            if (!(client.GetChannel(channelId) is IMessageChannel channel)) return;
 
             //named, not pinged: there's a draw every hour
             string text = Announcement(result);
             if (text.Length > 1900) text = text.Substring(0, 1900) + "…";
             //anyone can open their own power-ups privately from here
             var mine = new ComponentBuilder().WithButton("My power-ups", ComponentId.Build(MoneyComponents.PowerUp, "mine"), ButtonStyle.Secondary).Build();
-            await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: mine);
+            await Announce(client, text, mine);
         }
 
         /// <summary>Called every minute after the raffle: sets off kept power-ups that can go off now and announces each in the last active channel.</summary>
@@ -240,12 +244,53 @@ namespace DiscordBot.Services
             if (went.Count == 0) return;
             await _coinService.Update();
 
-            if (!(client.GetChannel(_coinService.GetAll().LastActiveChannelId) is IMessageChannel channel)) return;
             foreach (var group in went.GroupBy(w => w.Owner.UserId))
+                await Announce(client, KeptAnnouncement(group.First().Owner, group.Select(g => g.Effect)), null);
+        }
+
+        /// <summary>
+        /// Posts a message in the last channel money was used in, trying the other recent channels if that one can't be reached or
+        /// written to. If none works it waits in <see cref="AnnouncementQueue"/> and is tried again each minute, so a winner is
+        /// never just lost. Never throws.
+        /// </summary>
+        private async Task Announce(DiscordSocketClient client, string text, MessageComponent components)
+        {
+            try
             {
-                string text = KeptAnnouncement(group.First().Owner, group.Select(g => g.Effect));
-                await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
+                if (!await TrySend(client, text, components))
+                {
+                    _logger?.LogWarning("Raffle message couldn't be sent to any recent channel; it will be tried again: {Text}", text);
+                    _waiting.Enqueue(text, components, DateTime.UtcNow);
+                }
             }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Raffle announcement failed");
+                _waiting.Enqueue(text, components, DateTime.UtcNow);
+            }
+        }
+
+        private Task FlushWaiting(DiscordSocketClient client) =>
+            _waiting.Count == 0 ? Task.CompletedTask : _waiting.Flush(item => TrySend(client, item.Text, item.Components), DateTime.UtcNow);
+
+        /// <summary>Tries the recent channels newest first (looking a channel up from Discord when it isn't cached) and stops at the first that takes the message.</summary>
+        private async Task<bool> TrySend(DiscordSocketClient client, string text, MessageComponent components)
+        {
+            foreach (ulong id in _coinService.RecentChannels())
+            {
+                try
+                {
+                    var channel = client.GetChannel(id) as IMessageChannel ?? await client.GetChannelAsync(id) as IMessageChannel;
+                    if (channel == null) continue;
+                    await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: components);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Couldn't send a raffle message to channel {Channel}: {Message}", id, ex.Message);
+                }
+            }
+            return false;
         }
 
         public static string KeptAnnouncement(CoinAccount owner, IEnumerable<string> effects)

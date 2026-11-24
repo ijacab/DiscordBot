@@ -69,6 +69,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     RaidService.cs             `.raid` (odds, stakes, loot, limits, revenge, bounties), guards and card training
     WorthService.cs            the one total-worth formula (cash + stocks/bets + property - debt) and leaderboard order
     SuggestionList.cs          the `.sug` master suggestions file (`suggestions.txt`, gitignored)
+    AnnouncementQueue.cs       raffle messages that couldn't be sent, retried every minute for 30 minutes
     StockService.cs            fake stock market: 5-min price ticks, buy/sell, portfolios (stockmarket.json)
     StockChart.cs              text price graph for `.stocks {symbol}`
     HangWatchdog.cs            restarts the bot (fail fast, systemd restarts) after 10 min offline or with the minute loop stuck

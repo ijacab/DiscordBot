@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-25", "Fixed power-up raffle messages sometimes not appearing: they now try your other recent channels and are retried for 30 minutes if Discord refuses them."),
             new PatchNote("2026-11-25", "`.sug list` numbers the suggestions with who wrote them. Bot admins can remove some: `.sug clear 3`, `.sug clear 2-4` or `.sug clear @person`."),
             new PatchNote("2026-11-24", "New `.sug your idea` adds a suggestion to the master list. `.sug` on its own shows the whole list, and a bot admin can empty it with `.sug clear`."),
             new PatchNote("2026-11-23", "Raid results are shorter: the picture shows the cards and the dice, the text just has the roll, the money and one battle cry."),
