@@ -28,6 +28,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Cards.cs    .cardpull and the Keep button
     CommandManager_Attacks.cs  .attacks: recap of the latest attacks on you
     CommandManager_Suggest.cs  .sug/.suggest: master suggestions list
+    CommandManager_ConvoSettings.cs  .convoset: change `.convo` randomness live (ConvoSettings, convo_settings.json)
     CommandManager_Crash.cs    .crash and its Cash out / Again buttons
     CommandManager_Fun.cs      .roll .time .img .dbz (searches DuckDuckGo, downloads a working picture, posts it as a file) .face .lang .convo .scrapeconvo
     CommandManager_Admin.cs    .clear .start .stop .ban .unban, disk space

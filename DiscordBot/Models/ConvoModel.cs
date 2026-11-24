@@ -93,7 +93,8 @@ namespace DiscordBot.Models
         /// <summary>Messages from the favoured channels and from the rest, for where a run of speakers starts.</summary>
         private int[] _favouredMsgs;
         private int[] _otherMsgs;
-        private double _favouredShare;
+        /// <summary>The knobs this model generates with. Shared with the service, so `.convoset` changes apply to the next `.convo`.</summary>
+        public ConvoSettings Settings { get; set; } = new ConvoSettings();
         /// <summary>Hashes of every real message, so a line that just repeats one word for word is made again.</summary>
         private readonly HashSet<long> _realMessages = new HashSet<long>();
 
@@ -115,7 +116,7 @@ namespace DiscordBot.Models
         /// </summary>
         public static ConvoModel Build(IEnumerable<IReadOnlyList<ConvoMessage>> channels, double favouredShare = DefaultFavouredShare)
         {
-            var model = new ConvoModel { _favouredShare = favouredShare };
+            var model = new ConvoModel { Settings = new ConvoSettings { FavouredShare = favouredShare } };
             var speakerIds = new Dictionary<string, int>(StringComparer.Ordinal);
             var speakers = new List<string>();
             var triSpeaker = new List<int>();
@@ -209,8 +210,8 @@ namespace DiscordBot.Models
         /// <summary>A person's entries from one pool (the favoured channels or the rest).</summary>
         private static int Group(int speaker, int pool) => speaker * 2 + pool;
 
-        /// <summary>The favoured pool <see cref="_favouredShare"/> of the time, else the rest.</summary>
-        private int PickPool(Random random) => random.NextDouble() < _favouredShare ? FavouredPool : OtherPool;
+        /// <summary>The favoured pool <see cref="ConvoSettings.FavouredShare"/> of the time, else the rest.</summary>
+        private int PickPool(Random random) => random.NextDouble() < Settings.FavouredShare ? FavouredPool : OtherPool;
 
         private int MessagesBy(int speaker) => _speakerMsgs[Group(speaker, FavouredPool)].Length + _speakerMsgs[Group(speaker, OtherPool)].Length;
 
@@ -218,7 +219,7 @@ namespace DiscordBot.Models
         private bool TryPickOwn<TKey>(Chain<TKey> chain, int speaker, TKey key, Random random, out int next) where TKey : struct, IComparable<TKey>
         {
             int pool = PickPool(random);
-            return chain.TryPick(Group(speaker, pool), key, random, out next) || chain.TryPick(Group(speaker, 1 - pool), key, random, out next);
+            return chain.TryPick(Group(speaker, pool), key, Settings.Temperature, random, out next) || chain.TryPick(Group(speaker, 1 - pool), key, Settings.Temperature, random, out next);
         }
 
         /// <summary>
@@ -232,7 +233,7 @@ namespace DiscordBot.Models
             if (MessageCount == 0)
                 return null;
 
-            int count = random.Next(MinLines, MaxLines + 1);
+            int count = random.Next(Settings.MinLines, Settings.MaxLines + 1);
             var speakers = PickSpeakers(random, count);
             var lines = new List<ConvoLine>();
             int total = 0;
@@ -246,11 +247,11 @@ namespace DiscordBot.Models
                 for (int attempt = 0; attempt < 8 && string.IsNullOrEmpty(text); attempt++)
                 {
                     var prefix = new List<string>();
-                    if (topic != null && attempt < 4 && (i == 0 || random.NextDouble() < TopicLineChance))
+                    if (topic != null && attempt < 4 && (i == 0 || random.NextDouble() < Settings.TopicLineChance))
                         prefix.AddRange(LeadInto(topic, speakers[i], sharedLeadIns, random));
-                    else if (i > 0 && attempt < 4 && random.NextDouble() < ReplyHookChance && PickHook(random, lines[i - 1].Text, speakers[i]) is string hook)
+                    else if (i > 0 && attempt < 4 && random.NextDouble() < Settings.ReplyHookChance && PickHook(random, lines[i - 1].Text, speakers[i]) is string hook)
                         prefix.Add(hook);
-                    else if (attempt < 4 && random.NextDouble() < OwnStartChance)
+                    else if (attempt < 4 && random.NextDouble() < Settings.OwnStartChance)
                     {
                         int pool = PickPool(random);
                         var own = _speakerMsgs[Group(speakers[i], pool)];
@@ -322,7 +323,7 @@ namespace DiscordBot.Models
 
         /// <summary>Whether a line is a real message repeated word for word (short ones don't count).</summary>
         public bool IsCopy(string text) =>
-            !string.IsNullOrEmpty(text) && Tokenize(text).Length > MaxCopiedWords && _realMessages.Contains(HashOf(string.Join(" ", Tokenize(text))));
+            !string.IsNullOrEmpty(text) && Tokenize(text).Length > Settings.MaxCopiedWords && _realMessages.Contains(HashOf(string.Join(" ", Tokenize(text))));
 
         /// <summary>A stable 64-bit hash (FNV-1a) of a message's text.</summary>
         private static long HashOf(string text)
@@ -355,7 +356,7 @@ namespace DiscordBot.Models
             return Enumerable.Range(0, count).Select(_ => _msgSpeaker[random.Next(MessageCount)]).ToList();
         }
 
-        /// <summary>Where a run of speakers starts: a favoured channel's message <see cref="_favouredShare"/> of the time, if there are any.</summary>
+        /// <summary>Where a run of speakers starts: a favoured channel's message <see cref="ConvoSettings.FavouredShare"/> of the time, if there are any.</summary>
         private int RunStart(Random random)
         {
             var from = PickPool(random) == FavouredPool ? _favouredMsgs : _otherMsgs;
@@ -402,15 +403,15 @@ namespace DiscordBot.Models
             {
                 int next = EndToken;
                 bool found = false;
-                if (!mentioned && random.NextDouble() < TopicPull)
+                if (!mentioned && random.NextDouble() < Settings.TopicPull)
                     found = TryPickOwnFrom(_speakerTri, speaker, Pack(a, b), topic, random, out next)
                         || TryPickOwnFrom(_speakerBi, speaker, b, topic, random, out next);
-                bool chaos = b != StartToken && random.NextDouble() < Chaos;
+                bool chaos = b != StartToken && random.NextDouble() < Settings.Chaos;
                 if (!found)
                     found = !chaos && TryPickOwn(_speakerTri, speaker, Pack(a, b), random, out next);
                 if (!found && !(chaos && rare))
                     found = TryPickOwn(_speakerBi, speaker, b, random, out next);
-                if (!found && !_bi.TryPick(0, b, random, out next))
+                if (!found && !_bi.TryPick(0, b, Settings.Temperature, random, out next))
                     next = EndToken;
                 if (next == EndToken || next == StartToken)
                     break;
@@ -468,22 +469,22 @@ namespace DiscordBot.Models
 
             public bool Has(int group, TKey key) => Range(group, key, out _, out _);
 
-            public bool TryPick(int group, TKey key, Random random, out int next)
+            public bool TryPick(int group, TKey key, double temperature, Random random, out int next)
             {
                 if (!Range(group, key, out int lo, out int hi))
                 {
                     next = EndToken;
                     return false;
                 }
-                next = Temperature <= 1.0 ? _next[lo + random.Next(hi - lo)] : PickWarm(lo, hi, random);
+                next = temperature <= 1.0 ? _next[lo + random.Next(hi - lo)] : PickWarm(lo, hi, temperature, random);
                 return true;
             }
 
             /// <summary>
-            /// A next word where each distinct word's weight is its count to the power 1/<see cref="Temperature"/>, so rare follow-ups
+            /// A next word where each distinct word's weight is its count to the power 1/the temperature (<see cref="ConvoSettings.Temperature"/>), so rare follow-ups
             /// are likelier than they really were. Big ranges are judged on a random sample of <see cref="WarmSample"/> entries.
             /// </summary>
-            private int PickWarm(int lo, int hi, Random random)
+            private int PickWarm(int lo, int hi, double temperature, Random random)
             {
                 var counts = new Dictionary<int, int>();
                 int n = hi - lo;
@@ -498,13 +499,13 @@ namespace DiscordBot.Models
                     }
                 double total = 0;
                 foreach (var count in counts.Values)
-                    total += Math.Pow(count, 1.0 / Temperature);
+                    total += Math.Pow(count, 1.0 / temperature);
                 double roll = random.NextDouble() * total;
                 int last = EndToken;
                 foreach (var pair in counts)
                 {
                     last = pair.Key;
-                    roll -= Math.Pow(pair.Value, 1.0 / Temperature);
+                    roll -= Math.Pow(pair.Value, 1.0 / temperature);
                     if (roll <= 0)
                         break;
                 }

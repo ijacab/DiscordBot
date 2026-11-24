@@ -72,6 +72,12 @@ namespace DiscordBot.Services
             _logger = logger;
         }
 
+        /// <summary>The knobs `.convoset` changes, loaded from <see cref="ConvoSettings.FileName"/>. The same object is handed to every model, so a change applies to the next `.convo`.</summary>
+        public ConvoSettings Settings { get; } = ConvoSettings.Load(ConvoSettings.DefaultPath);
+
+        /// <summary>Writes the current settings to their file so they survive a restart or deploy.</summary>
+        public void SaveSettings() => Settings.Save(ConvoSettings.DefaultPath);
+
         /// <summary>The model, or null until the history has been scraped and loaded.</summary>
         public ConvoModel Model => _model;
         public bool IsLoading => !_loadTask.IsCompleted;
@@ -130,7 +136,7 @@ namespace DiscordBot.Services
                     try
                     {
                         var report = new LoadReport();
-                        var model = LoadFrom(DataPath, MaxMessages, new Random(), report);
+                        var model = LoadFrom(DataPath, MaxMessages, new Random(), report, Settings);
                         if (model.MessageCount > 0)
                         {
                             _model = model;
@@ -168,7 +174,7 @@ namespace DiscordBot.Services
         /// channel in time order (message ids are) and builds the model, keeping an even random sample when there are more than
         /// <paramref name="maxMessages"/>.
         /// </summary>
-        public static ConvoModel LoadFrom(string dataPath, int maxMessages, Random random, LoadReport report = null)
+        public static ConvoModel LoadFrom(string dataPath, int maxMessages, Random random, LoadReport report = null, ConvoSettings settings = null)
         {
             var files = SourceFiles(dataPath);
             long favoured = files.Where(IsFavoured).Sum(f => (long)File.ReadLines(f).Count());
@@ -178,7 +184,9 @@ namespace DiscordBot.Services
             long room = Math.Max(0, maxMessages - (long)(favoured * keepFavoured));
             double keepOthers = others <= room ? 1.0 : (double)room / others;
             report?.Start(files, favoured + others, favoured <= maxMessages && others <= room);
-            return ConvoModel.Build(Channels(files, keepFavoured, keepOthers, random, report), FavouredShare);
+            var model = ConvoModel.Build(Channels(files, keepFavoured, keepOthers, random, report), settings?.FavouredShare ?? FavouredShare);
+            if (settings != null) model.Settings = settings;
+            return model;
         }
 
         /// <summary>
