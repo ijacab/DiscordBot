@@ -83,14 +83,29 @@ namespace DiscordBot.Managers
 
         private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count > 1 || (args.Count == 1 && !int.TryParse(args[0], out _))) throw new BadSyntaxException();
+            bool all = args.Count == 1 && (args[0].Equals("all", StringComparison.OrdinalIgnoreCase) || args[0].Equals("max", StringComparison.OrdinalIgnoreCase));
+            if (args.Count > 1 || (args.Count == 1 && !all && !int.TryParse(args[0], out _))) throw new BadSyntaxException();
             EnsureNotBetting(message.Author.Id, "buying or selling property");
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            if (all)
+            {
+                await message.Channel.SendMessageAsync(await SellAllPropertyText(message.Author.Mention, account));
+                return;
+            }
             //with one house there's no need to say which
             int number = args.Count == 1 ? int.Parse(args[0]) : account.Properties.Count == 1 ? 1
-                : throw new BadInputException("Which one? `.sell property 1` (the numbers are on `.property`).");
+                : throw new BadInputException("Which one? `.sell property 1` (the numbers are on `.property`), or `.sell property all`.");
             var (holding, proceeds) = await _propertyService.Sell(account, number);
             await message.Channel.SendMessageAsync(SoldPropertyText(message.Author.Mention, account, holding, proceeds));
+        }
+
+        /// <summary>`.sell property all`: sells every house that can be sold (one with squatters in it can't be) and says what it all came to.</summary>
+        private async Task<string> SellAllPropertyText(string mention, CoinAccount account)
+        {
+            var (sold, stuck, total) = await _propertyService.SellAll(account);
+            string left = stuck == 0 ? "" : $" {stuck} {(stuck == 1 ? "house has" : "houses have")} squatters in, so you still own {(stuck == 1 ? "it" : "them")}.";
+            return $"{mention} sold {sold} {(sold == 1 ? "house" : "houses")} for ${FormatHelper.GetCommaNumber(total)} in all, after agent commission and marketing. " +
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.{left}";
         }
 
         private static string SoldPropertyText(string mention, CoinAccount account, PropertyHolding holding, double proceeds) =>

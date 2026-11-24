@@ -82,6 +82,11 @@ namespace DiscordBot.Games.Managers
 
         private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, double> _lastBets = new System.Collections.Concurrent.ConcurrentDictionary<ulong, double>();
 
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, double> _lastBetShares = new System.Collections.Concurrent.ConcurrentDictionary<ulong, double>();
+
+        /// <summary>The share of their cash (0 to 1) this player bet in their last finished game (kept in memory), for Play again.</summary>
+        public bool TryGetLastBetShare(ulong userId, out double share) => _lastBetShares.TryGetValue(userId, out share) && share > 0;
+
         /// <summary>The bet this player had in their last finished game (kept in memory), for Play again.</summary>
         public bool TryGetLastBet(ulong userId, out double bet) => _lastBets.TryGetValue(userId, out bet);
 
@@ -200,6 +205,7 @@ namespace DiscordBot.Games.Managers
             if (context.GuildId == 0)
                 throw new BadInputException($"{GameName} is played in a server channel.");
             CoinAccount coinAcc = await _coinService.Get(playerId, context.Username);
+            double cashBeforeBet = coinAcc.NetWorth;
             await _betManager.InitiateBet(coinAcc, inputMoney, 10);
 
             var player = new TPlayer()
@@ -208,6 +214,7 @@ namespace DiscordBot.Games.Managers
                 ChannelId = context.Channel.Id,
                 ServerId = context.GuildId,
                 BetAmount = inputMoney,
+                BetShare = cashBeforeBet > 0 ? Math.Min(1, inputMoney / cashBeforeBet) : 0,
                 Username = context.Username,
                 CoinAccount = coinAcc
             };
@@ -434,7 +441,10 @@ namespace DiscordBot.Games.Managers
 
                 var players = game.Players.Where(p => !p.IsDealer).ToList();
                 foreach (var p in players)
+                {
                     _lastBets[p.UserId] = p.BetAmount;
+                    _lastBetShares[p.UserId] = p.BetShare;
+                }
                 await _betManager.ResolveBet(players, LossesFeedJackpot, game: GameName);
                 var results = new List<PlayerResult>();
                 foreach (var player in players)

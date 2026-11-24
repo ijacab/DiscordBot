@@ -137,7 +137,44 @@ namespace Tests
         }
 
         [Fact]
-        public async Task Blackjack_PlayAgainUsesTheLastBetRaisedToTheMinimumAndHeldToYourCash()
+        public async Task Blackjack_PlayAgainKeepsABigShare_NotTheDollarAmount()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            var bets = new BetManager(coins, new StockService(new LocalFileService(), coins), new AppSettings { PrestigeDisabled = true });
+            var blackjack = new BlackjackManager(new DiscordSocketClient(), bets, coins);
+            const ulong id = 920_302;
+            var account = new CoinAccount { UserId = id, Name = "big", NetWorth = 10_000 };
+            coins.GetAll().Accounts.RemoveAll(a => a.UserId == id);
+            coins.GetAll().Accounts.Add(account);
+
+            var channel = new Mock<IMessageChannel>();
+            channel.SetupGet(c => c.Id).Returns(44);
+            var table = new Mock<IUserMessage>();
+            channel.Setup(c => c.SendMessageAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<Embed>(), It.IsAny<RequestOptions>(), It.IsAny<AllowedMentions>(),
+                    It.IsAny<MessageReference>(), It.IsAny<MessageComponent>(), It.IsAny<ISticker[]>(), It.IsAny<Embed[]>(), It.IsAny<MessageFlags>(), It.IsAny<PollProperties>()))
+                .ReturnsAsync(table.Object);
+            var context = new GameContext { UserId = id, Username = "big", Channel = channel.Object, GuildId = 7 };
+
+            try
+            {
+                await blackjack.CreateOrJoin(id, 5_000, context); //half of the 10,000 in cash
+                await blackjack.Start(id, context);
+                if (blackjack.TryGetPlayer(id, out var player) && !player.IsFinishedPlaying)
+                    await blackjack.Stay(id, context);
+
+                Assert.True(blackjack.TryGetLastBetShare(id, out double share));
+                Assert.Equal(0.5, share, 6);
+                Assert.Equal(1_000, blackjack.PlayAgainBet(id, 2_000)); //half of what you have now, not 5,000
+                Assert.Equal(15_000, blackjack.PlayAgainBet(id, 30_000));
+            }
+            finally
+            {
+                bets.InitiatedBetUserIds.Remove(id);
+            }
+        }
+
+        [Fact]
+        public async Task Blackjack_PlayAgainRepeatsTheShareOfCashYouBetRaisedToTheMinimumAndHeldToYourCash()
         {
             var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
             var bets = new BetManager(coins, new StockService(new LocalFileService(), coins), new AppSettings { PrestigeDisabled = true });
@@ -166,9 +203,12 @@ namespace Tests
 
                 Assert.True(blackjack.TryGetLastBet(id, out double last));
                 Assert.Equal(1_000, last);
-                Assert.Equal(1_000, blackjack.PlayAgainBet(id, 5_000)); //the same bet
-                Assert.Equal(3_000, blackjack.PlayAgainBet(id, 30_000)); //raised to 10% of a bigger bank
-                Assert.Equal(400, blackjack.PlayAgainBet(id, 400.9)); //held to what you have
+                //1,000 of 10,000 cash was 10%, so Play again bets 10% of whatever you have now
+                Assert.True(blackjack.TryGetLastBetShare(id, out double share));
+                Assert.Equal(0.1, share, 6);
+                Assert.Equal(500, blackjack.PlayAgainBet(id, 5_000));
+                Assert.Equal(3_000, blackjack.PlayAgainBet(id, 30_000));
+                Assert.Equal(41, blackjack.PlayAgainBet(id, 400.9)); //never below the 10% minimum, never above your cash
                 Assert.Null(blackjack.PlayAgainBet(id, 0.5));
             }
             finally

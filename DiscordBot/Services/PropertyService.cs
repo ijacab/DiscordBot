@@ -78,6 +78,36 @@ namespace DiscordBot.Services
             return Sell(account, index + 1, now);
         }
 
+        /// <summary>
+        /// Sells every property that can be sold, one at a time at market value less selling costs. A property with squatters in it
+        /// is left (<see cref="SquatIn"/>). Returns how many were sold, how many were left and what they brought in.
+        /// </summary>
+        /// <exception cref="BadInputException">There is no property, or squatters are in every one.</exception>
+        public async Task<(int Sold, int Left, double Proceeds)> SellAll(CoinAccount account, DateTime? now = null)
+        {
+            if (account.Properties.Count == 0)
+                throw new BadInputException("You don't own any property. Buy a house with `.buy property`.");
+
+            int sold = 0, left = 0;
+            double total = 0;
+            foreach (string id in account.Properties.Select(p => p.Id).ToList())
+            {
+                try
+                {
+                    var (_, proceeds) = await SellById(account, id, now);
+                    sold++;
+                    total += proceeds;
+                }
+                catch (BadInputException)
+                {
+                    left++; //squatters are living in it
+                }
+            }
+            if (sold == 0)
+                throw new BadInputException("Squatters are living in every house you own, so none of them can be sold until they leave.");
+            return (sold, left, total);
+        }
+
         public PropertyHolding Get(CoinAccount account, int number)
         {
             if (account.Properties.Count == 0)

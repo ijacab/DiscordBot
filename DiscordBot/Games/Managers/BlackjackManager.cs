@@ -24,7 +24,7 @@ namespace DiscordBot.Games.Managers
         {
         }
 
-        /// <summary>Play again deals a new game at once with the clicker's last bet; New bet… opens the amount form instead; Join max bets all their cash.</summary>
+        /// <summary>Play again deals a new game at once with the same share of the clicker's cash as their last bet; New bet… opens the amount form instead; Join max bets all their cash.</summary>
         protected override MessageComponent ResultButtons => new ComponentBuilder()
             .WithButton("Play again", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "again"), ButtonStyle.Success)
             .WithButton("New bet…", DiscordBot.Models.ComponentId.Build(ButtonPrefix, "join"), ButtonStyle.Secondary)
@@ -32,14 +32,16 @@ namespace DiscordBot.Games.Managers
             .Build();
 
         /// <summary>
-        /// The bet for Play again: the player's last bet, raised to the minimum a game takes (10% of their cash) and held to what they
-        /// have. Null when they haven't finished a game since the bot started, or have no cash.
+        /// The bet for Play again: the same share of the player's cash as their last bet (so 10% of 10,000 then 10% of whatever they
+        /// have now), raised to the minimum a game takes (10% of their cash) and held to what they have. Null when they haven't
+        /// finished a game since the bot started, or have no cash.
         /// </summary>
         public double? PlayAgainBet(ulong userId, double cash)
         {
-            if (!TryGetLastBet(userId, out double last) || Math.Floor(cash) < 1)
+            if (!TryGetLastBetShare(userId, out double share) || Math.Floor(cash) < 1)
                 return null;
-            return Math.Min(Math.Max(last, Math.Ceiling(cash * 0.10)), Math.Floor(cash));
+            double bet = Math.Round(cash * share);
+            return Math.Min(Math.Max(bet, Math.Ceiling(cash * 0.10)), Math.Floor(cash));
         }
 
         /// <summary>
