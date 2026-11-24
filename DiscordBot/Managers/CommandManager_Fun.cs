@@ -190,7 +190,7 @@ namespace DiscordBot.Managers
             var lines = model?.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args));
             if (lines != null && lines.Count > 0)
             {
-                await message.Channel.SendMessageAsync(ConvoModel.Format(lines), allowedMentions: AllowedMentions.None);
+                await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true), allowedMentions: AllowedMentions.None);
                 return;
             }
 
@@ -243,7 +243,7 @@ namespace DiscordBot.Managers
                     var lines = ConvoService.KeepChatLines(await _convoService.ProduceConvo(formattedMessages));
                     if (lines.Count >= ConvoModel.MinLines)
                     {
-                        await message.Channel.SendMessageAsync(string.Join("\n", lines), allowedMentions: AllowedMentions.None);
+                        await message.Channel.SendMessageAsync(string.Join("\n", lines.Select(ConvoService.BoldSpeaker)), allowedMentions: AllowedMentions.None);
                         return;
                     }
                 }

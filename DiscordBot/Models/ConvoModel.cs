@@ -337,9 +337,11 @@ namespace DiscordBot.Models
             return (long)hash;
         }
 
-        /// <summary>The lines as one message: "user: words", one per line.</summary>
-        public static string Format(IEnumerable<ConvoLine> lines) =>
-            string.Join("\n", lines.Select(l => $"{Discord.Format.Sanitize(l.Speaker)}: {l.Text}"));
+        /// <summary>The lines as one message: "user: words", one per line, with the speaker in bold ("**user**: words") when asked.</summary>
+        public static string Format(IEnumerable<ConvoLine> lines, bool boldSpeakers = false) =>
+            string.Join("\n", lines.Select(l => boldSpeakers
+                ? $"**{Discord.Format.Sanitize(l.Speaker)}**: {l.Text}"
+                : $"{Discord.Format.Sanitize(l.Speaker)}: {l.Text}"));
 
         /// <summary>The speakers of a real run of messages in one channel with at least two people in it, so the right people talk.</summary>
         private List<int> PickSpeakers(Random random, int count)

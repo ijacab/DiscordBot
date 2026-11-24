@@ -320,6 +320,29 @@ namespace Tests
         }
 
         [Fact]
+        public void SpeakersCanBeBold_WithoutChangingTheLineFormat()
+        {
+            var lines = new[] { new ConvoLine { Speaker = "john123", Text = "yo im eating" }, new ConvoLine { Speaker = "bruce_77*", Text = "eating what" } };
+            Assert.Equal("john123: yo im eating\nbruce\\_77\\*: eating what", ConvoModel.Format(lines));
+            Assert.Equal("**john123**: yo im eating\n**bruce\\_77\\***: eating what", ConvoModel.Format(lines, boldSpeakers: true));
+            //every generated line is still a bold name, a colon and the words
+            var model = Model();
+            for (int seed = 0; seed < 100; seed++)
+                Assert.All(ConvoModel.Format(model.Generate(new Random(seed)), boldSpeakers: true).Split('\n'),
+                    line => Assert.Matches(new Regex(@"^\*\*[^\n]+\*\*: \S[^\n]*$"), line));
+        }
+
+        [Theory]
+        [InlineData("john123: yo im eating", "**john123**: yo im eating")]
+        [InlineData("kris.k: watermelon: juicy", "**kris\\.k**: watermelon: juicy")] //Discord.Format.Sanitize escapes the dot; it still shows as kris.k
+        [InlineData("bruce_77: eating what", "**bruce\\_77**: eating what")]
+        [InlineData("no colon here", "no colon here")]
+        public void BoldSpeaker_BoldsTheNameBeforeTheFirstColon(string line, string expected)
+        {
+            Assert.Equal(expected, ConvoService.BoldSpeaker(line));
+        }
+
+        [Fact]
         public void KeepChatLines_KeepsUserColonSentenceLinesOnly()
         {
             var lines = ConvoService.KeepChatLines("Here is a convo:\njohn123: yo im eating\n  bruce77: eating what  \nkris.k: watermelon juicy juicy YEAHH\nand that is the end of the chat");

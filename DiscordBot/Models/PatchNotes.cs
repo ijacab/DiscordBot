@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-11-27", "`.convo` now shows the name of each speaker in bold."),
             new PatchNote("2026-11-26", "Bot admins can tune `.convo` live with `.convoset`: chaos, temperature, topic pull, line count and more, saved across restarts. `.convoset reset` undoes it."),
             new PatchNote("2026-11-25", "Fixed power-up raffle messages sometimes not appearing: they now try your other recent channels and are retried for 30 minutes if Discord refuses them."),
             new PatchNote("2026-11-25", "`.sug list` numbers the suggestions with who wrote them. Bot admins can remove some: `.sug clear 3`, `.sug clear 2-4` or `.sug clear @person`."),

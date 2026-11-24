@@ -45,6 +45,13 @@ namespace DiscordBot.Services
                 .Take(MaxLines)
                 .ToList();
 
+        /// <summary>"name: text" as "**name**: text" (the name escaped so odd characters can't break the bold). A line with no colon is returned as it is.</summary>
+        public static string BoldSpeaker(string line)
+        {
+            int colon = (line ?? "").IndexOf(':');
+            return colon <= 0 ? line : $"**{Discord.Format.Sanitize(line.Substring(0, colon))}**{line.Substring(colon)}";
+        }
+
         public async Task<string> ProduceConvo(List<string> formattedMessages)
         {
             _cts = new CancellationTokenSource(Timeout);
