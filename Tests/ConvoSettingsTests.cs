@@ -47,6 +47,7 @@ namespace Tests
         [InlineData("chaos", "1.5")]      //above 100%
         [InlineData("chaos", "-0.1")]
         [InlineData("temperature", "0")]  //below the minimum
+        [InlineData("temperature", "21")] //above the maximum (20)
         [InlineData("temperature", "abc")]
         [InlineData("temperature", "NaN")]
         [InlineData("maxlines", "2.5")]   //not whole
@@ -200,6 +201,15 @@ namespace Tests
                 Assert.Empty(loaded.AllowedList());
             }
             finally { System.IO.File.Delete(path); }
+        }
+
+        [Fact]
+        public void Temperature_GoesUpToTwenty()
+        {
+            var s = new ConvoSettings();
+            Assert.True(s.TrySet("temperature", "20", out _));
+            Assert.Equal(20.0, s.Temperature);
+            Assert.False(s.TrySet("temperature", "20.5", out _));
         }
     }
 }

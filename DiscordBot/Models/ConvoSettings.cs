@@ -79,7 +79,7 @@ namespace DiscordBot.Models
         public static readonly IReadOnlyList<Spec> Specs = new List<Spec>
         {
             new Spec { Name = "chaos", Property = nameof(Chaos), Min = 0, Max = 1, Share = true, About = "how often a word is picked from one word of context instead of two (higher = crazier)" },
-            new Spec { Name = "temperature", Property = nameof(Temperature), Min = 0.5, Max = 5, About = "1 = words as often as they were said, higher = rarer follow-ups come up more" },
+            new Spec { Name = "temperature", Property = nameof(Temperature), Min = 0.5, Max = 20, About = "1 = words as often as they were said, higher = rarer follow-ups come up more (20 is about a pure coin flip between every word ever used there)" },
             new Spec { Name = "hook", Property = nameof(ReplyHookChance), Min = 0, Max = 1, Share = true, About = "how often a reply picks up a word from the line before" },
             new Spec { Name = "ownstart", Property = nameof(OwnStartChance), Min = 0, Max = 1, Share = true, About = "how often a line opens with a word its speaker really opens with" },
             new Spec { Name = "topicline", Property = nameof(TopicLineChance), Min = 0, Max = 1, Share = true, About = "with a topic: how often a line is built around it" },
