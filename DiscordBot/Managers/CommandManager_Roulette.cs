@@ -107,6 +107,24 @@ namespace DiscordBot.Managers
                 return;
             }
 
+            //the table can't be edited or closed in the middle of a spin
+            if (!await session.Gate.WaitAsync(0))
+            {
+                await component.FollowupAsync("Hold on, it's still spinning.", ephemeral: true);
+                return;
+            }
+            try
+            {
+                await EditTable(component, message, session, action);
+            }
+            finally
+            {
+                session.Gate.Release();
+            }
+        }
+
+        private async Task EditTable(SocketMessageComponent component, IUserMessage message, RouletteSession session, string action)
+        {
             CoinAccount account = await _coinService.Get(session.UserId, session.Name);
             if (action == "cash")
             {
@@ -158,11 +176,28 @@ namespace DiscordBot.Managers
                 await ReplyPrivately(modal, $"Those bets don't look right. {RouletteView.HowToBet}");
                 return;
             }
+            catch (BadInputException ex)
+            {
+                await ReplyPrivately(modal, ex.Message);
+                return;
+            }
 
-            await modal.DeferAsync();
-            session.Bets = RouletteView.Scale(bets, "keep", account.NetWorth);
-            session.LastUsed = DateTime.UtcNow;
-            await _rouletteManager.Show(modal.Message, session, _rouletteManager.Idle(session, account.NetWorth));
+            if (!await session.Gate.WaitAsync(0))
+            {
+                await ReplyPrivately(modal, "Hold on, it's still spinning.");
+                return;
+            }
+            try
+            {
+                await modal.DeferAsync();
+                session.Bets = bets;
+                session.LastUsed = DateTime.UtcNow;
+                await _rouletteManager.Show(modal.Message, session, _rouletteManager.Idle(session, account.NetWorth));
+            }
+            finally
+            {
+                session.Gate.Release();
+            }
         }
     }
 }

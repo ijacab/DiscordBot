@@ -224,6 +224,18 @@ namespace Tests
         }
 
         [Fact]
+        public void ParseBets_RefusesWhatCouldNeverWinOrNeverBePlaced()
+        {
+            Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "37", "100" }, 10_000)); //no such pocket
+            Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "number", "100" }, 10_000));
+            Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "red", "100", "black", "100" }, 10_000));
+            Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "odd", "100", "even", "100" }, 10_000));
+            var tooMuch = Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "red", "50000" }, 1_000));
+            Assert.Contains("only have $1,000", tooMuch.Message);
+            Assert.Equal(2, RouletteManager.ParseBets(new[] { "36", "100", "00", "100" }, 10_000).Count);
+        }
+
+        [Fact]
         public void Scale_HalvesDoublesAndHoldsToTheCash()
         {
             var bets = new[] { new RouletteChoice { Choice = "red", Amount = 600 }, new RouletteChoice { Choice = "17", Amount = 400 } };

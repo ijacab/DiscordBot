@@ -22,7 +22,6 @@ namespace DiscordBot.Games.Managers
         public List<RouletteChoice> Bets { get; set; } = new List<RouletteChoice>();
         public int Spins { get; set; }
         public double SessionNet { get; set; }
-        public RouletteScreen Last { get; set; }
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
         /// <summary>Held for the whole of a spin, so a double click can't start two.</summary>
         public SemaphoreSlim Gate { get; } = new SemaphoreSlim(1, 1);
@@ -110,17 +109,24 @@ namespace DiscordBot.Games.Managers
                 string[] parts = pair.Split('-');
                 if (parts.Length != 2 || !Money.TryParse(parts[1], cash, out double amount))
                     throw new BadSyntaxException();
-                if (new RouletteBet(0, parts[0], 1).RoulleteBetType == BetType.NotValid)
+                var spot = new RouletteBet(0, parts[0], 1);
+                bool badNumber = spot.RoulleteBetType == BetType.Number && (spot.BetNumberChoice == null || spot.BetNumberChoice < -1 || spot.BetNumberChoice > 36);
+                if (spot.RoulleteBetType == BetType.NotValid || badNumber)
                     throw new BadInputException($"`{parts[0]}` isn't something you can bet on. {RouletteView.HowToBet}");
                 bets.Add(new RouletteChoice { Choice = parts[0], Amount = amount });
             }
+
+            //refused here, before any stake is taken, so a bad table never counts as a game played
+            new Roulette().EnsureValidCombinations(bets.Select(b => new RouletteBet(0, b.Choice, b.Amount)).ToList());
+            double total = bets.Sum(b => b.Amount);
+            if (total > Math.Floor(cash))
+                throw new BadInputException($"Those bets add up to ${Common.Helpers.FormatHelper.GetCommaNumber(total)} and you only have ${Common.Helpers.FormatHelper.GetCommaNumber(Math.Floor(cash))}.");
             return bets;
         }
 
         /// <summary>The table waiting for a spin: the last result (or none), the bets and the cash.</summary>
         public RouletteScreen Idle(RouletteSession session, double cash, string status = null)
         {
-            var last = session.Last;
             return new RouletteScreen
             {
                 Name = session.Name,
@@ -206,7 +212,6 @@ namespace DiscordBot.Games.Managers
                 SessionNet = session.SessionNet,
                 Notes = notes.Where(n => n != null).ToArray(),
             };
-            session.Last = screen;
             return screen;
         }
 

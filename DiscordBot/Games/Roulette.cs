@@ -123,7 +123,7 @@ namespace DiscordBot.Games
                 throw new BadInputException("Can't bet all 3 Columns at the same time");
 
             if (inputs.Count > 12)
-                throw new BadInputException("Can't bet more than 18 selections at once");
+                throw new BadInputException("Can't bet more than 12 selections at once");
         }
     }
 }

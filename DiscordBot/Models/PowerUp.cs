@@ -215,7 +215,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.JackpotDip, Name = "Jackpot Dip", Weight = Rare, Kind = PowerUpKind.Instant,
                 Description = "Claim 30% of the jackpot pool." },
             new PowerUpDefinition { Id = PowerUpIds.PotShot, Name = "Pot Shot", Weight = Uncommon, Kind = PowerUpKind.Instant,
-                Description = "Claim 10% of the jackpot pool." },
+                Description = $"Claim {PotShotPercent:0%} of the jackpot pool." },
             new PowerUpDefinition { Id = PowerUpIds.FreeCardPull, Name = "Free Card Pull", Weight = Common, Kind = PowerUpKind.Instant,
                 Description = "Your free daily card pull is available again." },
             new PowerUpDefinition { Id = PowerUpIds.InterestPass, Name = "Interest Pass", Weight = Common, Kind = PowerUpKind.Instant,
@@ -271,7 +271,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.Squatters, Name = "Squatters", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = $"Move into every property 1st place owns except their {SquattersSpared} cheapest rentals (but always at least one): that rent comes to you for 12 hours, and those properties can't be sold meanwhile. Can't be dodged." },
             new PowerUpDefinition { Id = PowerUpIds.PotShare, Name = "Pot Share", Weight = Rare, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
-                Description = "Take 40% of the jackpot and split it evenly between the poorest half of active players, you included. Not for the top of the leaderboard." },
+                Description = $"Take {PotSharePercent:0%} of the jackpot and split it evenly between the poorest half of active players, you included. Not for the top of the leaderboard." },
             new PowerUpDefinition { Id = PowerUpIds.Leech, Name = "Leech", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "Latch onto 1st place for 6 hours: 15% of every bet they win comes to you. Can't be dodged." },
         };

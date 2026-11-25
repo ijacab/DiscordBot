@@ -217,6 +217,8 @@ namespace DiscordBot.Services
             };
         }
 
+        private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
+
         /// <summary>Raffle results go to every channel money was used in within this long.</summary>
         public static readonly TimeSpan AnnounceWindow = TimeSpan.FromDays(7);
 
@@ -315,22 +317,24 @@ namespace DiscordBot.Services
         /// <summary>Sends to each active channel, newest first (looking a channel up from Discord when it isn't cached). True when at least one took it.</summary>
         private async Task<bool> TrySend(DiscordSocketClient client, string text, MessageComponent components)
         {
-            bool sent = false;
-            foreach (ulong id in _coinService.ActiveChannels(AnnounceWindow, DateTime.UtcNow))
+            //all channels at once, each held to a time limit, so one slow channel can't stall the minute loop
+            async Task<bool> SendTo(ulong id)
             {
                 try
                 {
                     var channel = client.GetChannel(id) as IMessageChannel ?? await client.GetChannelAsync(id) as IMessageChannel;
-                    if (channel == null) continue;
-                    await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: components);
-                    sent = true;
+                    if (channel == null) return false;
+                    await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: components).WaitAsync(SendTimeout);
+                    return true;
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "Couldn't send a raffle message to channel {Channel}: {Message}", id, ex.Message);
+                    return false;
                 }
             }
-            return sent;
+            var results = await Task.WhenAll(_coinService.ActiveChannels(AnnounceWindow, DateTime.UtcNow).Select(SendTo));
+            return results.Any(r => r);
         }
 
         public static string KeptAnnouncement(CoinAccount owner, IEnumerable<string> effects)

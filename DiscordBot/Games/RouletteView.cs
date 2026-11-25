@@ -1,5 +1,6 @@
 ﻿using Common.Helpers;
 using Discord;
+using DiscordBot.Games.Managers;
 using DiscordBot.Games.Models;
 using DiscordBot.Models;
 using System;
@@ -45,7 +46,7 @@ namespace DiscordBot.Games
     public static class RouletteView
     {
         public const string Title = "🎡 Roulette";
-        public const string HowToBet = "Type your bets like `red 1000` or `17 50 odd 25%`: each is a spot then an amount. Spots: a number (`0`-`36`, `00`), `red`, `black`, `odd`, `even`, `firstdozen`, `seconddozen`, `thirddozen`, `firstcolumn`, `secondcolumn`, `thirdcolumn`.";
+        public const string HowToBet = "Bet with `.roulette red 1000` or `.roulette 17 50 odd 25%`, or press **New bets…**: each bet is a spot then an amount. Spots: a number (`0`-`36`, `00`), `red`, `black`, `odd`, `even`, `firstdozen`, `seconddozen`, `thirddozen`, `firstcolumn`, `secondcolumn`, `thirdcolumn`.";
 
         private static readonly int[] Reds = { 32, 19, 21, 25, 34, 27, 36, 30, 23, 5, 16, 1, 14, 9, 18, 7, 12, 3 };
 
@@ -103,7 +104,7 @@ namespace DiscordBot.Games
 
         public static string PayTable() =>
             $"Number x{new RouletteBet(0, "1", 1).PayoutMultiple + 1} · Red, Black, Odd, Even x{new RouletteBet(0, "red", 1).PayoutMultiple + 1} · Dozens and columns x{new RouletteBet(0, "firstdozen", 1).PayoutMultiple + 1}\n"
-            + "0 and 00 only win a bet on that number. You must bet at least 10% of your cash.";
+            + $"0 and 00 only win a bet on that number. You must bet at least {RouletteManager.MinimumPercent}% of your cash.";
 
         /// <summary>The result line and colour for a settled spin.</summary>
         public static (string Status, Color Colour) Outcome(double staked, double totalPaid, double bonus)
