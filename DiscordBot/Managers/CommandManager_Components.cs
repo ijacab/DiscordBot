@@ -44,6 +44,9 @@ namespace DiscordBot.Managers
                     case MoneyComponents.Slots:
                         await SlotComponent(component, action, args);
                         break;
+                    case MoneyComponents.Roulette:
+                        await RouletteComponent(component, action, args);
+                        break;
                     case CrashManager.ComponentGame:
                         await CrashComponent(component, action, args);
                         break;
@@ -93,6 +96,9 @@ namespace DiscordBot.Managers
                 {
                     case MoneyComponents.Slots:
                         await SlotModal(modal, action, args);
+                        break;
+                    case MoneyComponents.Roulette:
+                        await RouletteModal(modal, action, args);
                         break;
                     case MoneyComponents.Stock:
                         await StockModal(modal, action, args);

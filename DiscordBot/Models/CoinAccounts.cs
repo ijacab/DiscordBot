@@ -7,6 +7,13 @@ using System.Threading.Tasks;
 
 namespace DiscordBot.Models
 {
+    public class WorthRecord
+    {
+        public string Name { get; set; }
+        public double Worth { get; set; }
+        public long UtcTicks { get; set; }
+    }
+
     public class CoinAccounts
     {
         public List<CoinAccount> Accounts { get; set; } = new List<CoinAccount>();
@@ -51,6 +58,36 @@ namespace DiscordBot.Models
         /// <summary>The last few channels money was used in, newest first. Market crash news and patch notes go to all of them.</summary>
         public List<ulong> RecentActiveChannelIds { get; set; } = new List<ulong>();
         public const int RecentChannelCount = 3;
+        /// <summary>
+        /// The highest total worth each player has ever reached, kept across seasons (`.clear coin` keeps it). Checked every hour and
+        /// whenever the all-time leaderboard is shown.
+        /// </summary>
+        public Dictionary<ulong, WorthRecord> AllTimeBest { get; set; } = new Dictionary<ulong, WorthRecord>();
+
+        /// <summary>Raises the player's record if <paramref name="worth"/> beats it. Returns true when it did.</summary>
+        public bool NoteWorth(ulong userId, string name, double worth, DateTime nowUtc)
+        {
+            if (!double.IsFinite(worth) || worth <= 0) return false;
+            lock (AllTimeBest)
+            {
+                if (AllTimeBest.TryGetValue(userId, out var record))
+                {
+                    record.Name = name;
+                    if (worth <= record.Worth) return false;
+                    record.Worth = worth;
+                    record.UtcTicks = nowUtc.Ticks;
+                    return true;
+                }
+                AllTimeBest[userId] = new WorthRecord { Name = name, Worth = worth, UtcTicks = nowUtc.Ticks };
+                return true;
+            }
+        }
+
+        /// <summary>When money was last used in each channel (UTC ticks), kept for <see cref="ChannelMemory"/>. Raffle results go to every channel used in the last week.</summary>
+        public Dictionary<ulong, long> ChannelLastActiveUtcTicks { get; set; } = new Dictionary<ulong, long>();
+        public static readonly TimeSpan ChannelMemory = TimeSpan.FromDays(30);
+        /// <summary>The most channels one raffle message goes to.</summary>
+        public const int MaxAnnounceChannels = 20;
         /// <summary>The newest patch note (<see cref="PatchNotes.KeyOf"/>) already announced after a restart.</summary>
         public string LastAnnouncedPatch { get; set; }
         /// <summary>Set once the old patch note posts in threads have been deleted (<c>CommandManager.CleanPatchNotesFromThreadsOnce</c>), so it only scans once.</summary>

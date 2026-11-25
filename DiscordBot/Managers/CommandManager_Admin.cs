@@ -42,6 +42,7 @@ namespace DiscordBot.Managers
             }
             else if (args[0].StartsWith("coin"))
             {
+                _coinService.AllTimeLeaders(_worth.TotalWorth, DateTime.UtcNow); //the season's peaks go on the all-time board before the reset
                 await _coinService.ClearAll();
                 await _stockService.ClearAll();
             }

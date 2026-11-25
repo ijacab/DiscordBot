@@ -21,13 +21,22 @@ namespace DiscordBot.Managers
         private async Task Suggest(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             bool admin = _adminIds.Contains(message.Author.Id);
-            bool clearWord = args.Count > 0 && (args[0].Equals("clear", StringComparison.OrdinalIgnoreCase) || args[0].Equals("remove", StringComparison.OrdinalIgnoreCase));
+            bool clearWord = args.Count > 0 && IsDeleteWord(args[0]);
+            bool bareClear = args.Count > 0 && args[0].Equals("clear", StringComparison.OrdinalIgnoreCase);
+
+            //anyone can delete their own: `.sug delete 3`, `.sug delete 2-4` or `.sug delete mine`. Anything else after "delete" is an idea.
+            if (args.Count > 1 && IsDeleteWord(args[0])
+                && (args.Skip(1).All(a => a.Equals("mine", StringComparison.OrdinalIgnoreCase)) || (!admin && SuggestionList.ParseNumbers(args.Skip(1)) != null)))
+            {
+                await DeleteOwnSuggestions(message, args.Skip(1).ToList());
+                return;
+            }
             //a non-admin's "clear the leaderboard bug" is still a suggestion; only a bare "clear" is refused
             if (clearWord && (admin || args.Count == 1))
             {
                 if (!admin)
-                    throw new BadInputException("Only a bot admin can clear suggestions.");
-                await ClearSuggestions(message, args.Skip(1).ToList(), args[0].Equals("remove", StringComparison.OrdinalIgnoreCase));
+                    throw new BadInputException("Only a bot admin can clear the whole list. Delete your own with `.sug delete 3` or `.sug delete mine`.");
+                await ClearSuggestions(message, args.Skip(1).ToList(), needsTarget: !bareClear);
                 return;
             }
 
@@ -42,7 +51,7 @@ namespace DiscordBot.Managers
                 var numbered = all.Select((s, i) => $"{i + 1}. {s.Text} — *{s.Author}*");
                 foreach (var chunk in SuggestionList.Chunks(numbered, _messageCharLimit - 100))
                     await message.Channel.SendMessageAsync(chunk, allowedMentions: AllowedMentions.None);
-                await message.Channel.SendMessageAsync("`.sug clear 3`, `.sug clear 2-4` or `.sug clear @person` removes some. `.sug clear` removes all.", allowedMentions: AllowedMentions.None);
+                await message.Channel.SendMessageAsync("`.sug delete 3` removes one of yours (`delete mine` all of yours). Bot admins can also `.sug clear 2-4`, `.sug clear @person` or `.sug clear`.", allowedMentions: AllowedMentions.None);
                 return;
             }
 
@@ -62,6 +71,21 @@ namespace DiscordBot.Managers
 
             int count = _suggestions.Add(PlainMentions(string.Join(" ", args), message), message.Author.Id, message.Author.Username);
             await message.Channel.SendMessageAsync($"📝 Added. {count} on the list.");
+        }
+
+        private static bool IsDeleteWord(string word) =>
+            word.Equals("delete", StringComparison.OrdinalIgnoreCase) || word.Equals("del", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("remove", StringComparison.OrdinalIgnoreCase) || word.Equals("clear", StringComparison.OrdinalIgnoreCase);
+
+        private async Task DeleteOwnSuggestions(SocketMessage message, List<string> what)
+        {
+            List<Suggestion> removed = what.All(w => w.Equals("mine", StringComparison.OrdinalIgnoreCase))
+                ? _suggestions.RemoveBy(message.Author.Id, "")
+                : _suggestions.RemoveOwnNumbers(SuggestionList.ParseNumbers(what), message.Author.Id);
+            if (removed.Count == 0)
+                throw new BadInputException("You haven't added any suggestions. `.sug list` shows who wrote what.");
+            string shown = string.Join("\n", removed.Take(5).Select(s => $"- {(s.Text.Length > 100 ? s.Text.Substring(0, 100) + "…" : s.Text)}"));
+            await message.Channel.SendMessageAsync($"🗑️ Deleted {removed.Count} of your suggestion{(removed.Count == 1 ? "" : "s")}:\n{shown}{(removed.Count > 5 ? $"\n…and {removed.Count - 5} more" : "")}", allowedMentions: AllowedMentions.None);
         }
 
         private async Task ClearSuggestions(SocketMessage message, List<string> what, bool needsTarget)

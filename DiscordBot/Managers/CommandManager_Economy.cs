@@ -37,8 +37,16 @@ namespace DiscordBot.Managers
             await Leaderboard(client, message, args, showHints: false);
         }
 
+        private static readonly string[] AllTimeWords = { "alltime", "all-time", "all", "best", "peak", "peaks", "record", "records", "top" };
+
         private async Task Leaderboard(DiscordSocketClient client, SocketMessage message, List<string> args, bool showHints = true)
         {
+            if (args.Count > 0 && AllTimeWords.Contains(args[0].ToLowerInvariant()))
+            {
+                await AllTimeLeaderboard(message);
+                return;
+            }
+
             var accounts = _coinService.GetAll();
             string output = "";
             int? prestige = null;
@@ -85,6 +93,32 @@ namespace DiscordBot.Managers
 
             await message.SendRichEmbedMessage("Leaderboard", output);
         }
+
+        /// <summary>The highest total worth each player has ever reached, across seasons.</summary>
+        private async Task AllTimeLeaderboard(SocketMessage message)
+        {
+            var leaders = _coinService.AllTimeLeaders(_worth.TotalWorth, DateTime.UtcNow);
+            if (leaders.Count == 0)
+                throw new BadInputException("Nobody has a record yet. Records are taken every hour.");
+
+            var live = _coinService.GetAll().Accounts.Select(a => a.UserId).ToHashSet();
+            var output = new StringBuilder();
+            int place = 1;
+            foreach (var (record, userId) in leaders.Take(AllTimeLeaderboardSize))
+            {
+                string medal = place == 1 ? "🥇" : place == 2 ? "🥈" : place == 3 ? "🥉" : $"{place}.";
+                string when = new DateTime(record.UtcTicks, DateTimeKind.Utc).ToString("d MMM yyyy");
+                output.AppendLine($"{medal} **{Format.Sanitize(record.Name ?? "unknown")}**: ${FormatHelper.GetCommaNumber(record.Worth)}  *({when})*");
+                place++;
+            }
+            int me = leaders.FindIndex(l => l.UserId == message.Author.Id);
+            if (me >= AllTimeLeaderboardSize)
+                output.AppendLine($"\n…you're {me + 1} with ${FormatHelper.GetCommaNumber(leaders[me].Record.Worth)}.");
+            output.AppendLine("\n*Each person's highest total worth (cash, stocks, property less debt) ever, across seasons. Sampled every hour.*");
+            await message.SendRichEmbedMessage("All-time leaderboard", output.ToString());
+        }
+
+        private const int AllTimeLeaderboardSize = 20;
 
         private async Task ArchiveLeaderboard(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
@@ -309,7 +343,8 @@ namespace DiscordBot.Managers
         {
             return message.Channel.SendMessageAsync($"The jackpot is ${FormatHelper.GetCommaNumber(_coinService.JackpotPool)}. 75% of every lost bet, every sell tax, donation tax and debt repayment goes in. " +
                 $"Bet all your cash (`max`) up to ${BetManager.JackpotSmallBetLimit:N0}, or {BetManager.JackpotBigBetShare:P0} of your cash or more on a bigger bet, with no stocks or property held, and you have a {BetManager.JackpotWinChance:P0} chance to win it all, with {BetManager.JackpotRollsPerHour} rolls per hour each. " +
-                "Three 💎 on the `.slots` machine win it too.");
+                "Three 💎 on the `.slots` machine win it too. " +
+                $"Every hour {PowerUpCatalog.JackpotDividendPercent:0%} of it is paid out to the poorer half of that draw's players, and the Jackpot Dip, Pot Shot, Pot Share and Scratchie power-ups take shares of it.");
         }
 
         private async Task Stats(DiscordSocketClient client, SocketMessage message, List<string> args)

@@ -30,6 +30,8 @@ namespace DiscordBot.Models
         public const string Pickpocket = "pickpocket";
         public const string Stimulus = "stimulus";
         public const string JackpotDip = "jackpotdip";
+        public const string PotShot = "potshot";
+        public const string PotShare = "potshare";
         public const string FreeCardPull = "freecardpull";
         public const string InterestPass = "interestpass";
         public const string RedShell = "redshell";
@@ -139,6 +141,10 @@ namespace DiscordBot.Models
         public const double StimulusPercent = 0.10;
         public const double StimulusMin = 5_000;
         public const double JackpotDipPercent = 0.30;
+        public const double PotShotPercent = 0.10;
+        public const double PotSharePercent = 0.40;
+        /// <summary>The share of the jackpot paid out every hourly draw to the poorer half of the players entered in it, so the pool can't only grow.</summary>
+        public const double JackpotDividendPercent = 0.05;
         public const double RedShellPercent = 0.10;
         public const double LightningBoltPercent = 0.04;
         public const int LightningBoltVictims = 5;
@@ -208,6 +214,8 @@ namespace DiscordBot.Models
                 Description = "Get 10% of your net worth, at least $5,000." },
             new PowerUpDefinition { Id = PowerUpIds.JackpotDip, Name = "Jackpot Dip", Weight = Rare, Kind = PowerUpKind.Instant,
                 Description = "Claim 30% of the jackpot pool." },
+            new PowerUpDefinition { Id = PowerUpIds.PotShot, Name = "Pot Shot", Weight = Uncommon, Kind = PowerUpKind.Instant,
+                Description = "Claim 10% of the jackpot pool." },
             new PowerUpDefinition { Id = PowerUpIds.FreeCardPull, Name = "Free Card Pull", Weight = Common, Kind = PowerUpKind.Instant,
                 Description = "Your free daily card pull is available again." },
             new PowerUpDefinition { Id = PowerUpIds.InterestPass, Name = "Interest Pass", Weight = Common, Kind = PowerUpKind.Instant,
@@ -262,6 +270,8 @@ namespace DiscordBot.Models
                 Description = "1st place pays off your debt (up to 20% of their net worth) and hands you 5% of their net worth on top. Can't be dodged; what they can't pay goes on their debt." },
             new PowerUpDefinition { Id = PowerUpIds.Squatters, Name = "Squatters", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = $"Move into every property 1st place owns except their {SquattersSpared} cheapest rentals (but always at least one): that rent comes to you for 12 hours, and those properties can't be sold meanwhile. Can't be dodged." },
+            new PowerUpDefinition { Id = PowerUpIds.PotShare, Name = "Pot Share", Weight = Rare, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
+                Description = "Take 40% of the jackpot and split it evenly between the poorest half of active players, you included. Not for the top of the leaderboard." },
             new PowerUpDefinition { Id = PowerUpIds.Leech, Name = "Leech", Weight = Uncommon, Kind = PowerUpKind.Instant, Category = PowerUpCategory.CatchUp,
                 Description = "Latch onto 1st place for 6 hours: 15% of every bet they win comes to you. Can't be dodged." },
         };

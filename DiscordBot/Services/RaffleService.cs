@@ -217,7 +217,10 @@ namespace DiscordBot.Services
             };
         }
 
-        /// <summary>Called every minute. Draws the raffle once per slot and announces the winner in one line in the last active channel.</summary>
+        /// <summary>Raffle results go to every channel money was used in within this long.</summary>
+        public static readonly TimeSpan AnnounceWindow = TimeSpan.FromDays(7);
+
+        /// <summary>Called every minute. Draws the raffle once per slot and announces the winner in one line in every channel money was used in this week.</summary>
         public async Task RunIfDue(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)
         {
             await FlushWaiting(client); //anything that couldn't be sent earlier goes first
@@ -225,8 +228,11 @@ namespace DiscordBot.Services
             long slotBefore = _coinService.GetAll().LastRaffleSlot;
             var result = Draw(DateTime.UtcNow, _random.NextDouble, betOpenUserIds);
             if (_coinService.GetAll().LastRaffleSlot == slotBefore) return; //nothing due
+            var dividend = PayJackpotDividend(SlotStartUtc(DateTime.UtcNow));
             await _coinService.Update(); //records the slot even if nobody entered, and what the prize did
 
+            if (dividend != null)
+                await Announce(client, DividendAnnouncement(dividend), null);
             if (result == null) return;
 
             //named, not pinged: there's a draw every hour
@@ -236,6 +242,39 @@ namespace DiscordBot.Services
             var mine = new ComponentBuilder().WithButton("My power-ups", ComponentId.Build(MoneyComponents.PowerUp, "mine"), ButtonStyle.Secondary).Build();
             await Announce(client, text, mine);
         }
+
+        public class DividendResult
+        {
+            public double Total { get; set; }
+            public double Each { get; set; }
+            public int Recipients { get; set; }
+            public double PoolLeft { get; set; }
+        }
+
+        /// <summary>
+        /// Each hourly draw pays <see cref="PowerUpCatalog.JackpotDividendPercent"/> of the jackpot out, split evenly between the poorer
+        /// half (rounded up, at least one) of the players entered in the draw due at <paramref name="drawTime"/>, so the pool drains
+        /// back into the game instead of only growing. Null when nobody is entered or the share is under $1 each. The caller saves.
+        /// </summary>
+        public DividendResult PayJackpotDividend(DateTime drawTime)
+        {
+            var data = _coinService.GetAll();
+            var entrants = data.Accounts.Where(a => IsEnteredIn(a, drawTime)).OrderBy(_totalWorth).ToList();
+            if (entrants.Count == 0) return null;
+
+            var poorer = entrants.Take((entrants.Count + 1) / 2).ToList();
+            double each = Math.Floor(Math.Floor(data.JackpotPool * PowerUpCatalog.JackpotDividendPercent) / poorer.Count);
+            if (each < 1) return null;
+
+            _coinService.RemoveFromJackpot(each * poorer.Count);
+            foreach (var account in poorer)
+                DiscordBot.Models.Money.Credit(data, account, each);
+            return new DividendResult { Total = each * poorer.Count, Each = each, Recipients = poorer.Count, PoolLeft = data.JackpotPool };
+        }
+
+        public static string DividendAnnouncement(DividendResult dividend) =>
+            $"💰 Jackpot dividend: {PowerUpCatalog.JackpotDividendPercent:0%} of the pot ({DiscordBot.Models.Money.Format(dividend.Total)}) went to the poorer half of this draw's players, " +
+            $"{dividend.Recipients} of them, {DiscordBot.Models.Money.Format(dividend.Each)} each. {DiscordBot.Models.Money.Format(dividend.PoolLeft)} is left in the pot.";
 
         /// <summary>Called every minute after the raffle: sets off kept power-ups that can go off now and announces each in the last active channel.</summary>
         public async Task ActivateKeptAndAnnounce(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)
@@ -249,8 +288,8 @@ namespace DiscordBot.Services
         }
 
         /// <summary>
-        /// Posts a message in the last channel money was used in, trying the other recent channels if that one can't be reached or
-        /// written to. If none works it waits in <see cref="AnnouncementQueue"/> and is tried again each minute, so a winner is
+        /// Posts a message in every channel money was used in during the last <see cref="AnnounceWindow"/> (one that can't be reached
+        /// or written to is skipped). If none takes it it waits in <see cref="AnnouncementQueue"/> and is tried again each minute, so a winner is
         /// never just lost. Never throws.
         /// </summary>
         private async Task Announce(DiscordSocketClient client, string text, MessageComponent components)
@@ -273,24 +312,25 @@ namespace DiscordBot.Services
         private Task FlushWaiting(DiscordSocketClient client) =>
             _waiting.Count == 0 ? Task.CompletedTask : _waiting.Flush(item => TrySend(client, item.Text, item.Components), DateTime.UtcNow);
 
-        /// <summary>Tries the recent channels newest first (looking a channel up from Discord when it isn't cached) and stops at the first that takes the message.</summary>
+        /// <summary>Sends to each active channel, newest first (looking a channel up from Discord when it isn't cached). True when at least one took it.</summary>
         private async Task<bool> TrySend(DiscordSocketClient client, string text, MessageComponent components)
         {
-            foreach (ulong id in _coinService.RecentChannels())
+            bool sent = false;
+            foreach (ulong id in _coinService.ActiveChannels(AnnounceWindow, DateTime.UtcNow))
             {
                 try
                 {
                     var channel = client.GetChannel(id) as IMessageChannel ?? await client.GetChannelAsync(id) as IMessageChannel;
                     if (channel == null) continue;
                     await channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None, components: components);
-                    return true;
+                    sent = true;
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "Couldn't send a raffle message to channel {Channel}: {Message}", id, ex.Message);
                 }
             }
-            return false;
+            return sent;
         }
 
         public static string KeptAnnouncement(CoinAccount owner, IEnumerable<string> effects)
@@ -751,6 +791,29 @@ namespace DiscordBot.Services
                         throw new BadInputException("The jackpot is empty. Keep it for later.");
                     DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, amount);
                     return $"💰 **Jackpot Dip!** You scooped {Money(amount)} out of the jackpot.";
+                }
+                case PowerUpIds.PotShot:
+                {
+                    double amount = _coinService.TakeFromJackpot(PowerUpCatalog.PotShotPercent);
+                    if (amount <= 0)
+                        throw new BadInputException("The jackpot is empty. Keep it for later.");
+                    DiscordBot.Models.Money.Credit(_coinService.GetAll(), user, amount);
+                    return $"🎯 **Pot Shot!** You took {Money(amount)} out of the jackpot.";
+                }
+                case PowerUpIds.PotShare:
+                {
+                    LeaderForCatchUp(user, "Pot Share");
+                    var active = Eligible(_coinService.GetAll().Accounts, now).OrderBy(_totalWorth).ToList();
+                    var poorest = active.Take(Math.Max(1, active.Count / 2)).ToList();
+                    if (!poorest.Contains(user)) poorest.Add(user);
+                    double amount = Math.Floor(_coinService.JackpotPool * PowerUpCatalog.PotSharePercent);
+                    double each = Math.Floor(amount / poorest.Count);
+                    if (each < 1)
+                        throw new BadInputException("There's not enough in the jackpot to share out. Keep it for later.");
+                    _coinService.RemoveFromJackpot(each * poorest.Count);
+                    foreach (var recipient in poorest)
+                        DiscordBot.Models.Money.Credit(_coinService.GetAll(), recipient, each);
+                    return $"🍕 **Pot Share!** You split {Money(each * poorest.Count)} of the jackpot between the poorest {poorest.Count} active players: {Money(each)} each, you included.";
                 }
                 case PowerUpIds.FreeCardPull:
                     user.LastFreePullDate = null;

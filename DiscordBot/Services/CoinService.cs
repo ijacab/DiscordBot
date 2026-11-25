@@ -62,6 +62,15 @@ namespace DiscordBot.Services
             account.LastActiveUtcTicks = DateTime.UtcNow.Ticks;
             _coinAccounts.LastActiveChannelId = channelId;
 
+            lock (_coinAccounts.ChannelLastActiveUtcTicks)
+            {
+                var seen = _coinAccounts.ChannelLastActiveUtcTicks;
+                seen[channelId] = account.LastActiveUtcTicks;
+                if (seen.Count > 100)
+                    foreach (ulong old in seen.Where(p => account.LastActiveUtcTicks - p.Value > CoinAccounts.ChannelMemory.Ticks).Select(p => p.Key).ToList())
+                        seen.Remove(old);
+            }
+
             var recent = _coinAccounts.RecentActiveChannelIds;
             recent.Remove(channelId);
             recent.Insert(0, channelId);
@@ -75,6 +84,22 @@ namespace DiscordBot.Services
             if (_coinAccounts.RecentActiveChannelIds.Count > 0)
                 return _coinAccounts.RecentActiveChannelIds.ToList();
             return _coinAccounts.LastActiveChannelId != 0 ? new List<ulong> { _coinAccounts.LastActiveChannelId } : new List<ulong>();
+        }
+
+        /// <summary>
+        /// Every channel money was used in within <paramref name="window"/> (newest first, at most <see cref="CoinAccounts.MaxAnnounceChannels"/>).
+        /// The recent few are always included, so a bot that was only just updated still has somewhere to post.
+        /// </summary>
+        public IReadOnlyList<ulong> ActiveChannels(TimeSpan window, DateTime nowUtc)
+        {
+            long since = nowUtc.Ticks - window.Ticks;
+            List<ulong> fresh;
+            lock (_coinAccounts.ChannelLastActiveUtcTicks)
+                fresh = _coinAccounts.ChannelLastActiveUtcTicks.Where(p => p.Value >= since).OrderByDescending(p => p.Value).Select(p => p.Key).ToList();
+            foreach (ulong id in RecentChannels())
+                if (!fresh.Contains(id))
+                    fresh.Add(id);
+            return fresh.Take(CoinAccounts.MaxAnnounceChannels).ToList();
         }
 
         /// <summary>What the player's houses would sell for right now, after selling costs.</summary>
@@ -153,12 +178,26 @@ namespace DiscordBot.Services
             foreach (var account in _coinAccounts.Accounts)
             {
                 account.NetWorthHistory.Add(totalWorthOf(account));
+                _coinAccounts.NoteWorth(account.UserId, account.Name, account.NetWorthHistory[^1], DateTime.UtcNow);
                 int excess = account.NetWorthHistory.Count - CoinAccount.MaxNetWorthHistoryPoints;
                 if (excess > 0)
                     account.NetWorthHistory.RemoveRange(0, excess);
             }
             _coinAccounts.LastNetWorthSampleHour = hourString;
             await Update();
+        }
+
+        /// <summary>Folds every account's current worth into the all-time records and returns them best first (names are kept up to date).</summary>
+        public List<(WorthRecord Record, ulong UserId)> AllTimeLeaders(Func<CoinAccount, double> totalWorthOf, DateTime nowUtc)
+        {
+            foreach (var account in _coinAccounts.Accounts.ToList())
+            {
+                _coinAccounts.NoteWorth(account.UserId, account.Name, totalWorthOf(account), nowUtc);
+                if (account.NetWorthHistory.Count > 0) //the last 30 days of hourly samples count too, so the board starts with real peaks
+                    _coinAccounts.NoteWorth(account.UserId, account.Name, account.NetWorthHistory.Max(), nowUtc);
+            }
+            lock (_coinAccounts.AllTimeBest)
+                return _coinAccounts.AllTimeBest.OrderByDescending(p => p.Value.Worth).Select(p => (p.Value, p.Key)).ToList();
         }
 
         public async Task Update()
@@ -202,7 +241,8 @@ namespace DiscordBot.Services
             }
             foreach (var pair in _coinAccounts.CarriedCards.Where(p => !carried.ContainsKey(p.Key)))
                 carried[pair.Key] = pair.Value; //kept from an earlier season and not picked up yet
-            _coinAccounts = new CoinAccounts { CarriedCards = carried };
+            var best = new Dictionary<ulong, WorthRecord>(_coinAccounts.AllTimeBest); //records survive a new season
+            _coinAccounts = new CoinAccounts { CarriedCards = carried, AllTimeBest = best };
             string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
         }

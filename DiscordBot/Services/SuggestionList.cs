@@ -89,6 +89,29 @@ namespace DiscordBot.Services
             }
         }
 
+        /// <summary>
+        /// Removes the suggestions at these 1-based places, but only if every one was written by <paramref name="authorId"/>:
+        /// someone deleting their own. Nothing is removed if one is off the list or is somebody else's.
+        /// </summary>
+        public List<Suggestion> RemoveOwnNumbers(IEnumerable<int> numbers, ulong authorId)
+        {
+            lock (_gate)
+            {
+                var items = Read();
+                var wanted = numbers.Distinct().OrderBy(n => n).ToList();
+                foreach (int n in wanted)
+                {
+                    if (n < 1 || n > items.Count)
+                        throw new BadInputException(items.Count == 0 ? "The list is empty." : $"There's no suggestion #{n}. The list has {items.Count}.");
+                    if (authorId == 0 || items[n - 1].AuthorId != authorId)
+                        throw new BadInputException($"Suggestion #{n} isn't yours, so you can't delete it. `.sug list` shows who wrote what.");
+                }
+                var removed = wanted.Select(n => items[n - 1]).ToList();
+                Write(items.Where(i => !removed.Contains(i)).ToList());
+                return removed;
+            }
+        }
+
         /// <summary>Removes everything one person wrote, found by their user id (when it is known) or else by name, ignoring case.</summary>
         public List<Suggestion> RemoveBy(ulong authorId, string name)
         {

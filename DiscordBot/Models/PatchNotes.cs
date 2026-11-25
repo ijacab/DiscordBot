@@ -65,6 +65,11 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-02", "`.roulette` is now one live table: spin again, halve, double or place new bets with buttons. It says \"Your cash is\" now, and `.jp` is short for `.jackpot`."),
+            new PatchNote("2026-12-02", "The jackpot pays out 5% an hour to the poorer half of each raffle draw, so it can't only grow. New power-ups: Pot Shot (10% of the pot) and Pot Share (40% split between the poorest)."),
+            new PatchNote("2026-12-02", "`.lb alltime` ranks the highest total worth anyone has ever reached, kept across seasons."),
+            new PatchNote("2026-12-02", "Raffle results are now posted in every channel money was used in during the last week."),
+            new PatchNote("2026-12-02", "`.sug delete 3` or `.sug delete mine` lets you remove your own suggestions."),
             new PatchNote("2026-12-01", "`.convo @someone` makes a short chat of only that person talking, in their own words. Add topic words after the tag as usual."),
             new PatchNote("2026-11-30", "Squatters now spare 1st place's 2 cheapest rentals, but always move into at least one property."),
             new PatchNote("2026-11-29", "Squatters now move into every property 1st place owns, not just the best one: all their rent comes to you for 12 hours and none of those houses can be sold meanwhile."),

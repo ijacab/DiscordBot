@@ -35,6 +35,7 @@ namespace DiscordBot.Managers
         private readonly DuckRaceManager _duckRaceManager;
         private readonly DungeonManager _dungeonManager;
         private readonly SlotMachineManager _slotMachineManager;
+        private readonly RouletteManager _rouletteManager;
         private readonly CrashManager _crashManager;
         private readonly GPTService _gptService;
         private readonly ConvoService _convoService;
@@ -60,7 +61,7 @@ namespace DiscordBot.Managers
         private bool _imageSearchStopped = true;
         public CommandManager(ILogger<CommandManager> logger, AppSettings appSettings,
             MappingService mappingService, ReminderService reminderService, CoinService coinService, StockService stockService, RaffleService raffleService, PropertyService propertyService, DebtService debtService, StockThreadService stockThreadService, DuckDuckGoService duckDuckGoService, FaceService faceService,
-            BlackjackManager blackjackManager, BetManager betManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
+            BlackjackManager blackjackManager, BetManager betManager, DuckRaceManager duckRaceManager, DungeonManager dungeonManager, SlotMachineManager slotMachineManager, RouletteManager rouletteManager, GPTService gptService, ConvoService convoService, ConvoCorpusService convoCorpus,
             TranslationService translationService, BanService banService, RaidService raidService, CrashManager crashManager)
         {
             _logger = logger;
@@ -82,6 +83,7 @@ namespace DiscordBot.Managers
             _duckRaceManager = duckRaceManager;
             _dungeonManager = dungeonManager;
             _slotMachineManager = slotMachineManager;
+            _rouletteManager = rouletteManager;
             _crashManager = crashManager;
             _gptService = gptService;
             _convoService = convoService;
@@ -96,7 +98,7 @@ namespace DiscordBot.Managers
             {
                 new Command("help", Help),
                 new Command("patchnotes", ShowPatchNotes) { Description = "Shows a short summary of recent changes. Add `all` to see every change.", Syntax = "`.patchnotes` or `.patchnotes all`" },
-                new Command("roulette", GameRoulette) { Description = "Plays a roulette game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
+                new Command("roulette", GameRoulette) { Description = "Roulette on one table message with buttons: spin again, halve or double your bets, or place new ones. Bet at least 10% of your cash. With no bets it opens an empty table.", Syntax = "`.roulette red 1000`, `.roulette 17 50 odd 25%` or `.roulette`" },
                 new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
                 new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
                 new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
@@ -107,8 +109,8 @@ namespace DiscordBot.Managers
                 new Command("slots", GameSlots) { Description = "A slot machine with buttons. Pull the lever with Spin, change the bet with Bet ½, Bet x2, Max or Bet…, and cash out when you're done. Match symbols on the middle line: three 7️⃣ pay x250, and three 💎 win the jackpot pool (at least x100 your bet). 75% of every lost bet goes into the jackpot. Shorthand: `.slot`", Syntax = "`.slots` (bets 1% of your cash), `.slots 1000`, `.slots 10%` or `.slots max`" },
                 new Command("crash", GameCrash) { Description = $"🚀 A rocket climbs from 1.00x and blows up at a random point. Hit Cash out before it does and you get your bet times the multiplier; too slow and it's gone. Add a target like `2x` to cash out by itself. Tops out at {Games.CrashGame.MaxMultiplier:0}x and pays back {1 - Games.CrashGame.HouseEdge:P0} on average whatever you do.", Syntax = "`.crash 1000`, `.crash 10% 2x`, `.crash max 1.5x`" },
                 new Command("slot", GameSlots) { Hidden = true, Syntax = "`.slots 1000`" },
-                new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`", Syntax = "`.leaderboard`" },
-                new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb`", Hidden = true },
+                new Command("leaderboard", LeaderboardWithHints) { Description = "Shows the money leaderboard. Shorthand: `.lb`. `.lb alltime` ranks the highest total worth anyone has ever reached, across seasons.", Syntax = "`.leaderboard` or `.leaderboard alltime`" },
+                new Command("lb", LeaderboardWithoutHints) { Description = "Shows the money leaderboard.", Syntax = "`.lb` or `.lb alltime`", Hidden = true },
                 new Command("stats", Stats) { Description = "Shows your stats (or someone else's) on one page with a menu to switch: overview, betting, per-game results, stocks, property and debt, jackpot and income, power-ups, dungeon, raids and your card, donations.", Syntax = "`.stats`, `.stats me`, `.stats @someone`, or add a page: `.stats me stocks`" },
                 new Command("prestige", Prestige) { Description = "Levels up your account and resets your money to the starting amount.", Syntax = "`.prestige`", Hidden = appSettings.PrestigeDisabled },
                 new Command("stocks", Stocks) { Description = "Shows the stock market, or a price graph for one stock over a time window. Prices change every 5 minutes. Higher risk tiers (3-6) swing more, 6 is crypto. Graphs are green above the launch price and red below.", Syntax = "`.stocks`, `.stocks SYMBOL` or `.stocks SYMBOL 48h`" },
@@ -133,7 +135,8 @@ namespace DiscordBot.Managers
                 new Command("powerup", PowerUp) { Description = "Shows your power-ups. One is drawn every hour among everyone who used money in the 6 hours before, and it goes off the moment it's won (lower on the leaderboard you draw more attacks and catch-up items). One that couldn't go off yet is kept: use it by its number. Shorthand: `.pu`", Syntax = "`.powerup`, `.pu use 2` or `.pu list`" },
                 new Command("autosell", AutoSell) { Description = "When on, your assets are sold automatically to pay off any debt (debt grows 10% every hour): stocks first, then shorts are covered, options cashed out, and then property.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
-                new Command("jackpot", Jackpot) { Description = "Shows the jackpot. 75% of every lost bet, sell tax, donation tax and debt repayments go in. A bet of all your cash (up to $10,000) or half your cash or more (above $10,000), with no stocks or property, can win the lot, with 3 rolls an hour each. Three 💎 on `.slots` win it too.",Syntax = "`.jackpot`" },
+                new Command("jp", Jackpot) { Hidden = true, Syntax = "`.jp`" },
+                new Command("jackpot", Jackpot) { Description = "Shows the jackpot (shorthand `.jp`). 75% of every lost bet, sell tax, donation tax and debt repayments go in. A bet of all your cash (up to $10,000) or half your cash or more (above $10,000), with no stocks or property, can win the lot, with 3 rolls an hour each. Three 💎 on `.slots` win it too. Every hour 5% of it is paid out to the poorer half of the players in the raffle draw, and some power-ups take a share.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },
@@ -157,7 +160,7 @@ namespace DiscordBot.Managers
                 new Command("stop", Stop, hidden: true, requiresAdmin: true),
                 new Command("freespace", GetFreeSpace, hidden: true, requiresAdmin: true),
                 new Command("convo", Convo) { Description = "Makes up a 3 to 10 line conversation between people from this server, learned from the server's chat history. Add some words to set the topic, and the chat keeps coming back to them. Tag one person and it is only them talking, in a shorter chat.", Syntax = "`.convo`, `.convo pizza time`, `.convo @someone` or `.convo @someone pizza`" },
-                new Command("suggest", Suggest) { Description = "Adds your idea to the master suggestions list. With nothing after it, shows the whole list (`list` numbers it with names). Bot admins can remove some with `clear 3`, `clear 2-4` or `clear @person`, or everything with `clear`.", Syntax = "`.sug make raids less boring`, `.sug`, `.sug list` or `.sug clear`" },
+                new Command("suggest", Suggest) { Description = "Adds your idea to the master suggestions list. With nothing after it, shows the whole list (`list` numbers it with names). Delete your own with `delete 3` or `delete mine`. Bot admins can remove any with `clear 3`, `clear 2-4` or `clear @person`, or everything with `clear`.", Syntax = "`.sug make raids less boring`, `.sug`, `.sug list`, `.sug delete 3`" },
                 new Command("sug", Suggest) { Hidden = true, Syntax = "`.sug make raids less boring`, `.sug`, `.sug list` or `.sug clear`" },
                 new Command("scrapeconvo", ScrapeConvo) { Description = "Bot admins only. Downloads the server's chat history (in the background, onto the Pi) for `.convo`; later runs only fetch new messages.", Syntax = "`.scrapeconvo`, `.scrapeconvo status` or `.scrapeconvo stop`", Hidden = true, RequiresAdmin = true },
                 new Command("convoset", ConvoSet) { Description = "Bot admins only. Shows or changes how wild `.convo` is (chaos, temperature, line count and more) without a deploy.", Syntax = "`.convoset`, `.convoset chaos 0.9` or `.convoset reset`", Hidden = true, RequiresAdmin = true },
