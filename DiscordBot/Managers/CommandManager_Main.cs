@@ -98,7 +98,7 @@ namespace DiscordBot.Managers
             {
                 new Command("help", Help),
                 new Command("patchnotes", ShowPatchNotes) { Description = "Shows a short summary of recent changes. Add `all` to see every change.", Syntax = "`.patchnotes` or `.patchnotes all`" },
-                new Command("roulette", GameRoulette) { Description = "Roulette on one table message with buttons: spin again, halve or double your bets, or place new ones. Bet at least 10% of your cash. With no bets it opens an empty table.", Syntax = "`.roulette red 1000`, `.roulette 17 50 odd 25%` or `.roulette`" },
+                new Command("roulette", GameRoulette) { Description = "Plays roulette with virtual money. Bet at least 10% of your cash. Buttons under each result (anyone can press them, for their own bets): spin again, halve or double your bets, or place new ones.", Syntax = "`.roulette red 1000` or `.roulette 17 50 odd 25%`, or the old `.roulette 00-100,Red-100,FirstDozen-10`" },
                 new Command("r", GameRoulette) { Hidden = true, Syntax = "`.roulette 00-100,0-300,1-10,36-100,Red-100,Black-200,FirstColumn-50,SecondColumn-300,ThirdColumn-20,Odd-100,Even-50,FirstDozen-10,SecondDozen-10,ThirdDozen-100`" },
                 new Command("blackjack", GameBlackjack) { Description = "Plays a multiplayer blackjack game using virtual money. Type '.leaderboard' to see how much money you have", Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
                 new Command("bj", GameBlackjack) { Hidden = true, Syntax = "`.bj betAmount` to start where betAmount is the amount you want to bet. For example `.bj 1000`" },
@@ -136,7 +136,7 @@ namespace DiscordBot.Managers
                 new Command("autosell", AutoSell) { Description = "When on, your assets are sold automatically to pay off any debt (debt grows 10% every hour): stocks first, then shorts are covered, options cashed out, and then property.", Syntax = "`.autosell`, `.autosell on` or `.autosell off`" },
                 new Command("pu", PowerUp) { Description = "Shorthand for `.powerup`.", Syntax = "`.pu`, `.pu use 2` or `.pu list`", Hidden = true },
                 new Command("jp", Jackpot) { Hidden = true, Syntax = "`.jp`" },
-                new Command("jackpot", Jackpot) { Description = "Shows the jackpot (shorthand `.jp`). 75% of every lost bet, sell tax, donation tax and debt repayments go in. A bet of all your cash (up to $10,000) or half your cash or more (above $10,000), with no stocks or property, can win the lot, with 3 rolls an hour each. Three 💎 on `.slots` win it too. Every hour 5% of it is paid out to the poorer half of the players in the raffle draw, and some power-ups take a share.",Syntax = "`.jackpot`" },
+                new Command("jackpot", Jackpot) { Description = "Shows the jackpot (shorthand `.jp`). 75% of every lost bet, sell tax, donation tax and debt repayments go in. A bet of all your cash (up to $10,000) or half your cash or more (above $10,000), with no stocks or property, can win the lot, with 3 rolls an hour each. Three 💎 on `.slots` win it too. The Jackpot Dip, Pot Shot, Pot Share and Scratchie power-ups take shares of it.",Syntax = "`.jackpot`" },
                 new Command("face", FaceGenerate) { Syntax = "`.face`", Description = "Gets an AI generated face from thispersondoesnotexist.com and displays it." },
                 new Command("time", Time) { Syntax = "`.time utc`" },
                 new Command("img", ImageSearch) { Description = "Searches DuckDuckGo for a random image related to a given search query", Hidden = true },
@@ -344,6 +344,12 @@ namespace DiscordBot.Managers
 
             //after interest and stock ticks, so the hourly sample reflects both
             await Safely("net worth history", () => _coinService.RecordNetWorthHistory(_worth.TotalWorth));
+            //all-time records are checked every minute, so a peak isn't lost between hourly samples
+            await Safely("all-time records", async () =>
+            {
+                if (_coinService.RecordPeaks(_worth.TotalWorth))
+                    await _coinService.Update();
+            });
             await Safely("raffle", () => _raffleService.RunIfDue(client, _betManager.InitiatedBetUserIds));
             //kept power-ups go off by themselves the moment they can
             await Safely("kept power-ups", () => _raffleService.ActivateKeptAndAnnounce(client, _betManager.InitiatedBetUserIds));

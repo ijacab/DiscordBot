@@ -187,6 +187,18 @@ namespace DiscordBot.Services
             await Update();
         }
 
+        /// <summary>
+        /// Checks every account's worth against its all-time record. Called every minute (and after each settled bet), so a peak is caught
+        /// within the minute rather than at the next hourly sample. Saved with the next update. Returns true if any record rose.
+        /// </summary>
+        public bool RecordPeaks(Func<CoinAccount, double> totalWorthOf)
+        {
+            bool raised = false;
+            foreach (var account in _coinAccounts.Accounts.ToList())
+                raised |= _coinAccounts.NoteWorth(account.UserId, account.Name, totalWorthOf(account), DateTime.UtcNow);
+            return raised;
+        }
+
         /// <summary>Folds every account's current worth into the all-time records and returns them best first (names are kept up to date).</summary>
         public List<(WorthRecord Record, ulong UserId)> AllTimeLeaders(Func<CoinAccount, double> totalWorthOf, DateTime nowUtc)
         {

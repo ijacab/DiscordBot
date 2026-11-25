@@ -13,159 +13,67 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Managers
 {
     /// <summary>
-    /// `.roulette` and the table's buttons. The table is one message edited in place (Games/RouletteView.cs); its buttons carry the
-    /// owner's id and only work for them. The money rules are in <see cref="RouletteManager"/>.
+    /// `.roulette` and its buttons. The result is the plain message roulette has always posted, with buttons under it that anyone can
+    /// press: each press plays for whoever pressed it, with their own last bets, and posts its own result. The money rules are in
+    /// <see cref="RouletteManager"/>.
     /// </summary>
     public partial class CommandManager
     {
-        private const string TableClosed = "That table has closed. Type `.roulette` to open a new one.";
-        private const string NotYourTable = "That's someone else's table. Type `.roulette` to get your own.";
-
         private async Task GameRoulette(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            RouletteSession session = _rouletteManager.Open(account.UserId, message.Author.Username);
 
             if (args.Count == 0)
             {
-                //an empty table: the buttons place the first bets
-                var posted = await message.Channel.SendMessageAsync(
-                    embed: RouletteView.Build(_rouletteManager.Idle(session, account.NetWorth)),
-                    components: RouletteView.Buttons(account.UserId, 0, account.NetWorth));
-                _rouletteManager.Attach(posted.Id, session);
-                await TryDeleteMessageAsync(message);
+                await message.Channel.SendMessageAsync(
+                    RouletteView.HowToBet + " Pressing **Spin again** plays your own last bets.",
+                    components: RouletteView.Buttons());
                 return;
             }
 
-            session.Bets = RouletteManager.ParseBets(args, account.NetWorth);
-
-            //the first spin happens at once, on the table message the buttons then keep editing
-            var table = await message.Channel.SendMessageAsync(
-                embed: RouletteView.Build(_rouletteManager.Idle(session, account.NetWorth, "🎡 No more bets... spinning!")),
-                components: new ComponentBuilder().Build());
-            try
-            {
-                await session.Gate.WaitAsync();
-                try
-                {
-                    var screen = await _rouletteManager.Spin(session);
-                    _rouletteManager.Attach(table.Id, session);
-                    await _rouletteManager.Show(table, session, screen);
-                }
-                finally
-                {
-                    session.Gate.Release();
-                }
-            }
-            catch (Exception)
-            {
-                try { await table.DeleteAsync(); } catch (Exception) { /* nothing to clean up if it is already gone */ }
-                throw;
-            }
-            await TryDeleteMessageAsync(message); //the table shows what happened, so the typed command is only clutter
+            var bets = RouletteManager.ParseBets(args, account.NetWorth);
+            var result = await _rouletteManager.Spin(account.UserId, message.Author.Username, bets);
+            await message.Channel.SendMessageAsync(
+                RouletteView.Text(result, message.Author.Mention, _rouletteManager.PrestigeDisabled),
+                components: RouletteView.Buttons());
         }
 
         private async Task RouletteComponent(SocketMessageComponent component, string action, string[] args)
         {
-            if (!ButtonOwner.TryRead(args, 0, out ulong ownerId))
-            {
-                await ReplyPrivately(component, TableClosed);
-                return;
-            }
-            if (!ButtonOwner.Allows(ownerId, component.User.Id))
-            {
-                await ReplyPrivately(component, NotYourTable);
-                return;
-            }
-            if (!_rouletteManager.TryGet(component.Message.Id, out RouletteSession session))
-            {
-                await ReplyPrivately(component, TableClosed);
-                return;
-            }
-
             if (action == "bet")
             {
-                await component.RespondWithModalAsync(new ModalBuilder()
-                    .WithTitle("Place your bets")
-                    .WithCustomId(ComponentId.Build(MoneyComponents.Roulette, "betsmodal", ownerId.ToString()))
-                    .AddTextInput("Spot then amount, as many as you like", "bets", TextInputStyle.Short,
-                        placeholder: "red 1000 17 50 odd 25%", minLength: 3, maxLength: 100, required: true)
-                    .Build());
+                await component.RespondWithModalAsync(BetsModal());
+                return;
+            }
+            if (action != "spin" && action != "half" && action != "double" && action != "max")
+            {
+                await ReplyPrivately(component, "That button doesn't do anything any more.");
+                return;
+            }
+            //nothing to repeat yet: ask for bets instead
+            if (!_rouletteManager.TryLastBets(component.User.Id, out var last))
+            {
+                await component.RespondWithModalAsync(BetsModal());
                 return;
             }
 
-            //the table message is the answer, so acknowledge without posting anything
+            //the result is a new message, so acknowledge without posting anything yet
             await component.DeferAsync();
-            IUserMessage message = component.Message;
-
-            if (action == "spin")
-            {
-                if (!await _rouletteManager.Play(message, session))
-                    await component.FollowupAsync("Hold on, it's still spinning.", ephemeral: true);
-                else
-                    MarkActiveFromInteraction(component);
-                return;
-            }
-
-            //the table can't be edited or closed in the middle of a spin
-            if (!await session.Gate.WaitAsync(0))
-            {
-                await component.FollowupAsync("Hold on, it's still spinning.", ephemeral: true);
-                return;
-            }
-            try
-            {
-                await EditTable(component, message, session, action);
-            }
-            finally
-            {
-                session.Gate.Release();
-            }
-        }
-
-        private async Task EditTable(SocketMessageComponent component, IUserMessage message, RouletteSession session, string action)
-        {
-            CoinAccount account = await _coinService.Get(session.UserId, session.Name);
-            if (action == "cash")
-            {
-                _rouletteManager.Close(message.Id);
-                string total = session.SessionNet >= 0 ? $"+${Common.Helpers.FormatHelper.GetCommaNumber(session.SessionNet)}" : $"-${Common.Helpers.FormatHelper.GetCommaNumber(-session.SessionNet)}";
-                var closing = _rouletteManager.Idle(session, account.NetWorth,
-                    $"💰 Left the table after {session.Spins} spin{(session.Spins == 1 ? "" : "s")}: **{total}**. Type `.roulette` to play again.");
-                await message.ModifyAsync(m =>
-                {
-                    m.Embed = RouletteView.Build(closing);
-                    m.Components = new ComponentBuilder().Build();
-                });
-                return;
-            }
-
-            if (action != "half" && action != "double" && action != "max")
-            {
-                await component.FollowupAsync("That button doesn't do anything any more.", ephemeral: true);
-                return;
-            }
-            session.Bets = RouletteView.Scale(session.Bets, action, account.NetWorth);
-            session.LastUsed = DateTime.UtcNow;
-            await _rouletteManager.Show(message, session, _rouletteManager.Idle(session, account.NetWorth));
+            CoinAccount account = await _coinService.Get(component.User.Id, component.User.Username);
+            var bets = action == "spin" ? last : RouletteView.Scale(last, action, account.NetWorth);
+            await PlayRoulette(component, account, bets);
         }
 
         private async Task RouletteModal(SocketModal modal, string action, string[] args)
         {
-            if (action != "betsmodal" || !ButtonOwner.TryRead(args, 0, out ulong ownerId) || modal.Message == null
-                || !_rouletteManager.TryGet(modal.Message.Id, out RouletteSession session))
+            if (action != "betsmodal")
             {
-                await ReplyPrivately(modal, TableClosed);
-                return;
-            }
-            if (!ButtonOwner.Allows(ownerId, modal.User.Id))
-            {
-                await ReplyPrivately(modal, NotYourTable);
+                await ReplyPrivately(modal, "That form doesn't do anything any more.");
                 return;
             }
 
             string text = modal.Data.Components.FirstOrDefault(c => c.CustomId == "bets")?.Value?.Trim().ToLowerInvariant() ?? "";
-            CoinAccount account = await _coinService.Get(session.UserId, session.Name);
+            CoinAccount account = await _coinService.Get(modal.User.Id, modal.User.Username);
             List<RouletteChoice> bets;
             try
             {
@@ -182,22 +90,26 @@ namespace DiscordBot.Managers
                 return;
             }
 
-            if (!await session.Gate.WaitAsync(0))
-            {
-                await ReplyPrivately(modal, "Hold on, it's still spinning.");
-                return;
-            }
-            try
-            {
-                await modal.DeferAsync();
-                session.Bets = bets;
-                session.LastUsed = DateTime.UtcNow;
-                await _rouletteManager.Show(modal.Message, session, _rouletteManager.Idle(session, account.NetWorth));
-            }
-            finally
-            {
-                session.Gate.Release();
-            }
+            await modal.DeferAsync();
+            await PlayRoulette(modal, account, bets);
         }
+
+        /// <summary>Plays the bets for whoever pressed the button and posts the result publicly, with the buttons.</summary>
+        private async Task PlayRoulette(SocketInteraction interaction, CoinAccount account, List<RouletteChoice> bets)
+        {
+            var result = await _rouletteManager.Spin(account.UserId, interaction.User.Username, bets);
+            MarkActiveFromInteraction(interaction);
+            await interaction.FollowupAsync(
+                RouletteView.Text(result, interaction.User.Mention, _rouletteManager.PrestigeDisabled),
+                components: RouletteView.Buttons(),
+                allowedMentions: AllowedMentions.None);
+        }
+
+        private static Modal BetsModal() => new ModalBuilder()
+            .WithTitle("Place your bets")
+            .WithCustomId(ComponentId.Build(MoneyComponents.Roulette, "betsmodal"))
+            .AddTextInput("Spot then amount, as many as you like", "bets", TextInputStyle.Short,
+                placeholder: "red 1000 17 50 odd 25%", minLength: 3, maxLength: 100, required: true)
+            .Build();
     }
 }

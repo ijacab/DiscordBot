@@ -309,11 +309,33 @@ namespace DiscordBot.Services
                 return null;
             if (message.Type != MessageType.Default && message.Type != MessageType.Reply)
                 return null;
-            string text = message is IUserMessage user
-                ? user.Resolve(TagHandling.Name, TagHandling.Name, TagHandling.Name, TagHandling.Remove, TagHandling.Ignore)
-                : message.Content;
+            string text = message.Content;
+            if (message is IUserMessage user)
+            {
+                //mentions as plain text: people by their display name (nickname, else global name) rather than their username
+                foreach (var tag in user.Tags.OrderByDescending(t => t.Index))
+                {
+                    string replacement = tag.Type switch
+                    {
+                        TagType.UserMention when tag.Value is IUser person => "@" + DisplayNameOf(person),
+                        TagType.RoleMention when tag.Value is IRole role => "@" + role.Name,
+                        TagType.ChannelMention when tag.Value is IChannel channel => "#" + channel.Name,
+                        TagType.EveryoneMention or TagType.HereMention => "",
+                        TagType.UserMention or TagType.RoleMention or TagType.ChannelMention => "",
+                        _ => null, //emoji stay as they are
+                    };
+                    if (replacement != null && tag.Index >= 0 && tag.Index + tag.Length <= text.Length)
+                        text = text.Remove(tag.Index, tag.Length).Insert(tag.Index, replacement);
+                }
+            }
             return Clean(text);
         }
+
+        /// <summary>What people see for this user in the server: their nickname there, else their display name, else their username.</summary>
+        public static string DisplayNameOf(IUser user) =>
+            FirstNonEmpty((user as IGuildUser)?.Nickname, user.GlobalName, user.Username);
+
+        private static string FirstNonEmpty(params string[] names) => names.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? "someone";
 
         public static string Clean(string text)
         {

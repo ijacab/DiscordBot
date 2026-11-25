@@ -65,9 +65,11 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-04", "Roulette is back to its old result message, with the buttons kept. Anyone can press them to play their own last bets. Convo names are now display names, and `.lb alltime` checks every minute."),
+            new PatchNote("2026-12-04", "The hourly jackpot payout is gone. Pot Shot, Pot Share, Jackpot Dip and Scratchie still take shares of it."),
             new PatchNote("2026-12-03", "Bot admins can let others use `.convoset`: `.convoset allow @user`, `deny @user` and `users`."),
             new PatchNote("2026-12-02", "`.roulette` is now one live table: spin again, halve, double or place new bets with buttons. It says \"Your cash is\" now, and `.jp` is short for `.jackpot`."),
-            new PatchNote("2026-12-02", "The jackpot pays out 5% an hour to the poorer half of each raffle draw, so it can't only grow. New power-ups: Pot Shot (10% of the pot) and Pot Share (40% split between the poorest)."),
+            new PatchNote("2026-12-02", "New power-ups that take shares of the jackpot: Pot Shot (10% of the pot) and Pot Share (40% split between the poorest)."),
             new PatchNote("2026-12-02", "`.lb alltime` ranks the highest total worth anyone has ever reached, kept across seasons."),
             new PatchNote("2026-12-02", "Raffle results are now posted in every channel money was used in during the last week."),
             new PatchNote("2026-12-02", "`.sug delete 3` or `.sug delete mine` lets you remove your own suggestions."),

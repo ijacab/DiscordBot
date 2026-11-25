@@ -3,6 +3,7 @@ using DiscordBot;
 using DiscordBot.Exceptions;
 using DiscordBot.Games;
 using DiscordBot.Games.Managers;
+using DiscordBot.Games.Models;
 using DiscordBot.Managers;
 using DiscordBot.Models;
 using DiscordBot.Services;
@@ -17,7 +18,7 @@ using static DiscordBot.Models.CoinAccounts;
 
 namespace Tests
 {
-    /// <summary>The jackpot dividend and pot power-ups, all-time records, week-long raffle channels, own-suggestion delete and the roulette table.</summary>
+    /// <summary>The pot power-ups, all-time records, week-long raffle channels, own-suggestion delete and the roulette table.</summary>
     public class TablesAndPotTests
     {
         private static readonly DateTime Now = new DateTime(2026, 11, 8, 12, 0, 0, DateTimeKind.Utc);
@@ -37,40 +38,6 @@ namespace Tests
         }
 
         //---- jackpot dividend and pot power-ups
-
-        [Fact]
-        public void Dividend_PaysAFifthOfTheHundredthOfThePoolToThePoorerHalfOfTheEntrants()
-        {
-            var accounts = new[] { Account(1, 100), Account(2, 1_000), Account(3, 5_000), Account(4, 9_000) };
-            var (service, coins) = Raffle(10_000, accounts);
-
-            var result = service.PayJackpotDividend(Now);
-
-            Assert.Equal(2, result.Recipients);
-            Assert.Equal(250, result.Each);   //5% of 10,000 = 500, split two ways
-            Assert.Equal(350, accounts[0].NetWorth);
-            Assert.Equal(1_250, accounts[1].NetWorth);
-            Assert.Equal(5_000, accounts[2].NetWorth);
-            Assert.Equal(9_500, coins.JackpotPool, 2);
-            Assert.Contains("Jackpot dividend", RaffleService.DividendAnnouncement(result));
-        }
-
-        [Fact]
-        public void Dividend_DrainsAPoolOverTime_AndSkipsWhenNobodyIsEnteredOrItIsTiny()
-        {
-            var lone = Account(1, 100);
-            var (service, coins) = Raffle(1_000_000, lone);
-            for (int hour = 0; hour < 24; hour++)
-                service.PayJackpotDividend(Now);
-            Assert.True(coins.JackpotPool < 1_000_000 * 0.31, "a day of dividends should take about 70% of an idle pool");
-
-            var (idle, _) = Raffle(1_000_000, new CoinAccount { UserId = 2, Name = "gone", NetWorth = 5 });
-            Assert.Null(idle.PayJackpotDividend(Now)); //nobody entered
-
-            var (small, tiny) = Raffle(10, Account(3));
-            Assert.Null(small.PayJackpotDividend(Now)); //under $1 each
-            Assert.Equal(10, tiny.JackpotPool);
-        }
 
         [Fact]
         public void PotShot_TakesATenthOfThePool_AndAnEmptyPoolIsRefused()
@@ -247,14 +214,44 @@ namespace Tests
         }
 
         [Fact]
-        public void Pockets_HaveTheirColours()
+        public void ParseBets_AcceptsAllYourCash_EvenWithCents()
         {
-            Assert.Equal("🔴", RouletteView.Dot("23"));
-            Assert.Equal("⚫", RouletteView.Dot("17"));
-            Assert.Equal("🟢", RouletteView.Dot("0"));
-            Assert.Equal("🟢", RouletteView.Dot("00"));
+            var bets = RouletteManager.ParseBets(new[] { "red", "max" }, 166_471_371.37);
+            Assert.Equal(166_471_371.37, bets[0].Amount, 2);
+            //half and half is the same money, so the float sum of two shares isn't a refusal either
+            Assert.Equal(2, RouletteManager.ParseBets(new[] { "red", "50%", "17", "50%" }, 166_471_371.37).Count);
+            Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "red", "max", "17", "max" }, 1_000));
+        }
+
+        [Fact]
+        public void Labels_ReadLikeTheOldMessage()
+        {
             Assert.Equal("00", RouletteView.PocketName("-1"));
             Assert.Equal("1st dozen", RouletteView.Pretty("FirstDozen"));
+            Assert.Equal("17", RouletteView.Label(new RouletteBet(1, "17", 5)));
+            Assert.Equal("00", RouletteView.Label(new RouletteBet(1, "00", 5)));
+            Assert.Equal("Red", RouletteView.Label(new RouletteBet(1, "red", 5)));
+        }
+
+        [Fact]
+        public void TheResultText_IsTheOldMessage()
+        {
+            var lost = new RouletteResult { Name = "uxh", Pocket = "23", Tags = new[] { "Red", "Odd" }, Cash = 9_000,
+                Lines = new[] { new RouletteLine { Label = "Black", Amount = 1_000 } } };
+            string loss = RouletteView.Text(lost, "<@1>", true);
+            Assert.Equal("Winning results were **23**, Red, Odd.\nuxh you did not make any successful bets. Your cash is now $9,000.", loss);
+
+            var won = new RouletteResult { Name = "uxh", Pocket = "00", Cash = 12_000, Bonus = 50, BonusGranted = true, Notes = new[] { "🎲 note" },
+                Lines = new[] { new RouletteLine { Label = "00", Amount = 100, Won = true, Back = 3_600 }, new RouletteLine { Label = "Red", Amount = 100 } } };
+            string win = RouletteView.Text(won, "<@1>", true);
+            Assert.StartsWith("Winning results were **00**.", win);
+            Assert.Contains("`Your winning bets were:`\n00: $100 -> $3,600\n", win);
+            Assert.DoesNotContain("Red:", win); //only winning bets are listed
+            Assert.Contains("(+ bonus of $50)", win);
+            Assert.Contains("<@1> `Your cash is now $12,000`", win);
+            Assert.Contains("You will get a bonus 2% net worth each hour", win);
+            Assert.EndsWith("🎲 note", win);
+            Assert.DoesNotContain("net worth is now", win);
         }
 
         private static (RouletteManager Roulette, CoinAccount Account, CoinService Coins) Table(double cash = 10_000)
@@ -266,42 +263,62 @@ namespace Tests
             var account = new CoinAccount { UserId = 5, Name = "spinner", NetWorth = cash };
             coins.GetAll().Accounts.Add(account);
             var bets = new BetManager(coins, new StockService(new LocalFileService(), coins), settings);
-            return (new RouletteManager(coins, bets, settings, NullLogger<RouletteManager>.Instance), account, coins);
+            return (new RouletteManager(coins, bets, settings), account, coins);
         }
 
         [Fact]
-        public async Task ASpin_SettlesTheMoney_AndTheScreenSaysYourCash()
+        public async Task ASpin_SettlesTheMoney_RemembersTheBets_AndSaysYourCash()
         {
             var (roulette, account, coins) = Table();
-            var session = roulette.Open(5, "spinner");
-            session.Bets = RouletteManager.ParseBets(new[] { "red", "1000" }, account.NetWorth);
+            var bets = RouletteManager.ParseBets(new[] { "red", "1000" }, account.NetWorth);
 
-            var screen = await roulette.Spin(session);
+            var result = await roulette.Spin(5, "spinner", bets);
 
-            Assert.Equal(1, session.Spins);
-            Assert.Equal(account.NetWorth, screen.Cash, 2);
-            Assert.Equal(10_000 + session.SessionNet, account.NetWorth, 2);
-            if (session.SessionNet < 0)
+            Assert.Equal(account.NetWorth, result.Cash, 2);
+            double net = result.TotalPaid - result.Staked;
+            Assert.Equal(10_000 + net, account.NetWorth, 2);
+            if (net < 0)
             {
-                Assert.Equal(-1_000, session.SessionNet, 2);
+                Assert.Equal(-1_000, net, 2);
                 Assert.Equal(750, coins.JackpotPool, 2); //a loss feeds the jackpot like any bet
             }
             else
-                Assert.True(session.SessionNet >= 1_000);
-            Assert.NotNull(screen.Pocket);
-            Assert.Contains("Your cash is", RouletteView.Build(screen).Footer.Value.Text);
-            Assert.DoesNotContain("net worth", RouletteView.Build(screen).Footer.Value.Text, StringComparison.OrdinalIgnoreCase);
+                Assert.True(net >= 1_000);
+            Assert.Contains("Your cash is now", RouletteView.Text(result, "<@5>", true));
+
+            Assert.True(roulette.TryLastBets(5, out var last)); //Spin again plays these
+            Assert.Equal(new[] { 1_000.0 }, last.Select(b => b.Amount));
+            Assert.False(roulette.TryLastBets(99, out _)); //somebody else has none of their own
+        }
+
+        [Fact]
+        public async Task EveryoneSpinsWithTheirOwnBets_NoSharedTable()
+        {
+            var settings = new AppSettings { PrestigeDisabled = true };
+            var coins = new CoinService(new LocalFileService(), settings);
+            coins.GetAll().Accounts.Clear();
+            coins.GetAll().JackpotPool = 0;
+            coins.GetAll().Accounts.Add(new CoinAccount { UserId = 1, Name = "a", NetWorth = 10_000 });
+            coins.GetAll().Accounts.Add(new CoinAccount { UserId = 2, Name = "b", NetWorth = 10_000 });
+            var roulette = new RouletteManager(coins, new BetManager(coins, new StockService(new LocalFileService(), coins), settings), settings);
+
+            await roulette.Spin(1, "a", RouletteManager.ParseBets(new[] { "red", "1000" }, 10_000));
+            await roulette.Spin(2, "b", RouletteManager.ParseBets(new[] { "17", "2000" }, 10_000));
+
+            roulette.TryLastBets(1, out var first);
+            roulette.TryLastBets(2, out var second);
+            Assert.Equal("red", first[0].Choice);
+            Assert.Equal("17", second[0].Choice);
         }
 
         [Fact]
         public async Task ASpinRefusesNoBets_AndBetsUnderTheMinimum()
         {
             var (roulette, account, _) = Table();
-            var session = roulette.Open(5, "spinner");
-            await Assert.ThrowsAsync<BadInputException>(() => roulette.Spin(session));
+            await Assert.ThrowsAsync<BadInputException>(() => roulette.Spin(5, "spinner", new System.Collections.Generic.List<RouletteChoice>()));
 
-            session.Bets = RouletteManager.ParseBets(new[] { "red", "10" }, account.NetWorth);
-            await Assert.ThrowsAsync<BadInputException>(() => roulette.Spin(session));
+            var small = RouletteManager.ParseBets(new[] { "red", "10" }, account.NetWorth);
+            await Assert.ThrowsAsync<BadInputException>(() => roulette.Spin(5, "spinner", small));
             Assert.Equal(10_000, account.NetWorth); //nothing was taken
         }
 
@@ -309,26 +326,65 @@ namespace Tests
         public async Task OldBetsAreHeldToWhatYouStillHave()
         {
             var (roulette, account, _) = Table(cash: 2_000);
-            var session = roulette.Open(5, "spinner");
-            session.Bets = RouletteManager.ParseBets(new[] { "red", "5000" }, 10_000);
+            var big = RouletteManager.ParseBets(new[] { "red", "5000" }, 10_000);
 
-            await roulette.Spin(session);
+            var result = await roulette.Spin(5, "spinner", big);
 
-            Assert.True(session.Bets.Sum(b => b.Amount) <= 2_000);
+            Assert.True(result.Staked <= 2_000);
         }
 
         [Fact]
-        public void TheTable_IsOneEmbedWithOwnerOnlyButtons()
+        public async Task AllInWithCents_StillSpins()
         {
-            var screen = new RouletteScreen { Name = "spinner", Cash = 500 };
-            var embed = RouletteView.Build(screen);
-            Assert.Contains("red 1000", embed.Description); //an empty table says how to bet
-            Assert.Equal("🎡 Roulette · spinner", embed.Author.Value.Name);
+            var (roulette, account, _) = Table(cash: 123_456.78);
+            var bets = RouletteManager.ParseBets(new[] { "red", "max" }, account.NetWorth);
+            var result = await roulette.Spin(5, "spinner", bets);
+            Assert.Equal(123_456.78, result.Staked, 2);
+        }
 
-            var buttons = RouletteView.Buttons(5, 0, 500);
-            var ids = buttons.Components.SelectMany(r => ((Discord.ActionRowComponent)r).Components).OfType<Discord.ButtonComponent>().Select(b => b.CustomId).ToList();
-            Assert.All(ids, id => Assert.StartsWith("rlt:", id));
-            Assert.All(ids, id => Assert.EndsWith(":5", id));
+        [Fact]
+        public void TheButtons_CarryNoOwner_SoAnyoneCanPressThem()
+        {
+            var ids = RouletteView.Buttons().Components.SelectMany(r => ((Discord.ActionRowComponent)r).Components)
+                .OfType<Discord.ButtonComponent>().Select(b => b.CustomId).ToList();
+            Assert.Equal(new[] { "rlt:spin", "rlt:half", "rlt:double", "rlt:max", "rlt:bet" }, ids);
+        }
+
+        [Fact]
+        public void RecordPeaks_CatchesARecordWithinTheMinute_AndOnlyReportsRealRises()
+        {
+            var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
+            coins.GetAll().Accounts.Clear();
+            coins.GetAll().AllTimeBest.Clear();
+            var a = Account(1, 1_000);
+            coins.GetAll().Accounts.Add(a);
+
+            Assert.True(coins.RecordPeaks(x => x.NetWorth));   //first record
+            Assert.False(coins.RecordPeaks(x => x.NetWorth));  //nothing higher
+            a.NetWorth = 5_000;
+            Assert.True(coins.RecordPeaks(x => x.NetWorth));
+            a.NetWorth = 200;
+            Assert.False(coins.RecordPeaks(x => x.NetWorth));  //a drop keeps the peak
+            Assert.Equal(5_000, coins.GetAll().AllTimeBest[1].Worth);
+        }
+
+        [Fact]
+        public void ConvoNames_ShowDisplayNamesButKeepTheUsernameAsTheKey()
+        {
+            var lines = new[] { new ConvoLine { Speaker = "kris.k", Text = "hello" } };
+            Assert.Equal("**kris\\.k**: hello", ConvoModel.Format(lines, boldSpeakers: true));
+            Assert.Equal("**Kris**: hello", ConvoModel.Format(lines, boldSpeakers: true, displayName: u => u == "kris.k" ? "Kris" : null));
+            Assert.Equal("**kris\\.k**: hello", ConvoModel.Format(lines, boldSpeakers: true, displayName: _ => null)); //no display name known
+
+            var member = new Moq.Mock<Discord.IGuildUser>();
+            member.Setup(m => m.Username).Returns("kris.k");
+            member.Setup(m => m.GlobalName).Returns("Kristoff");
+            member.Setup(m => m.Nickname).Returns("Kris");
+            Assert.Equal("Kris", ConvoCorpusService.DisplayNameOf(member.Object));
+            member.Setup(m => m.Nickname).Returns((string)null);
+            Assert.Equal("Kristoff", ConvoCorpusService.DisplayNameOf(member.Object));
+            member.Setup(m => m.GlobalName).Returns((string)null);
+            Assert.Equal("kris.k", ConvoCorpusService.DisplayNameOf(member.Object));
         }
     }
 }

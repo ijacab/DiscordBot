@@ -10,7 +10,7 @@ using System.Text;
 
 namespace DiscordBot.Games
 {
-    /// <summary>One bet on the table: what it's on ("red", "17", "00", "thirddozen") and how much.</summary>
+    /// <summary>One bet: what it's on ("red", "17", "00", "thirddozen") and how much.</summary>
     public sealed class RouletteChoice
     {
         public string Choice { get; init; }
@@ -26,111 +26,84 @@ namespace DiscordBot.Games
         public double Back { get; init; }
     }
 
-    /// <summary>What the table message shows at one moment.</summary>
-    public sealed class RouletteScreen
+    /// <summary>A settled spin. The money has already moved when this exists.</summary>
+    public sealed class RouletteResult
     {
         public string Name { get; init; }
-        /// <summary>The pocket that came up ("23", "0", "00"), or null before the first spin.</summary>
+        /// <summary>The pocket that came up ("23", "0", "00") and the bet types it satisfies ("Red", "Odd", "2nd dozen"...).</summary>
         public string Pocket { get; init; }
         public string[] Tags { get; init; } = Array.Empty<string>();
         public IReadOnlyList<RouletteLine> Lines { get; init; } = Array.Empty<RouletteLine>();
-        public string Status { get; init; }
-        public Color Colour { get; init; } = Color.DarkGrey;
+        public double Staked { get; init; }
+        public double TotalPaid { get; init; }
+        public double Bonus { get; init; }
         public double Cash { get; init; }
-        public int Spins { get; init; }
-        public double SessionNet { get; init; }
+        public bool BonusGranted { get; init; }
+        /// <summary>The daily roll and jackpot lines, shown under the result.</summary>
         public string[] Notes { get; init; } = Array.Empty<string>();
     }
 
-    /// <summary>The roulette table's embed and buttons. Pure text and ids, so it can be tested without Discord.</summary>
+    /// <summary>The roulette message and buttons. Pure text and ids, so it can be tested without Discord.</summary>
     public static class RouletteView
     {
-        public const string Title = "🎡 Roulette";
         public const string HowToBet = "Bet with `.roulette red 1000` or `.roulette 17 50 odd 25%`, or press **New bets…**: each bet is a spot then an amount. Spots: a number (`0`-`36`, `00`), `red`, `black`, `odd`, `even`, `firstdozen`, `seconddozen`, `thirddozen`, `firstcolumn`, `secondcolumn`, `thirdcolumn`.";
-
-        private static readonly int[] Reds = { 32, 19, 21, 25, 34, 27, 36, 30, 23, 5, 16, 1, 14, 9, 18, 7, 12, 3 };
 
         /// <summary>"-1" is the double zero.</summary>
         public static string PocketName(string value) => value == "-1" ? "00" : value;
 
-        /// <summary>🔴, ⚫ or 🟢 for a pocket.</summary>
-        public static string Dot(string pocket)
-        {
-            if (!int.TryParse(pocket == "00" ? "-1" : pocket, out int n) || n <= 0) return "🟢";
-            return Reds.Contains(n) ? "🔴" : "⚫";
-        }
-
-        /// <summary>"FirstDozen" as "1st dozen", "Red" as "Red", a number as "#17".</summary>
-        public static string Label(RouletteBet bet)
-        {
-            if (bet.RoulleteBetType == BetType.Number)
-                return bet.BetNumberChoice == -1 ? "#00" : $"#{bet.BetNumberChoice}";
-            return Pretty(bet.RoulleteBetType.ToString());
-        }
-
+        /// <summary>"FirstDozen" as "1st dozen", "Red" as "Red".</summary>
         public static string Pretty(string betType) => betType
             .Replace("First", "1st ").Replace("Second", "2nd ").Replace("Third", "3rd ")
             .Replace("Dozen", "dozen").Replace("Column", "column").Trim();
 
-        public static Embed Build(RouletteScreen screen)
+        /// <summary>What a bet is on: "17", "00", "Red", "1st dozen".</summary>
+        public static string Label(RouletteBet bet) =>
+            bet.RoulleteBetType == BetType.Number ? (bet.BetNumberChoice == -1 ? "00" : bet.BetNumberChoice.ToString()) : Pretty(bet.RoulleteBetType.ToString());
+
+        /// <summary>
+        /// The result as the plain message roulette has always posted: the pocket, then either "no successful bets" or each winning
+        /// bet with what it paid, and the cash. <paramref name="mention"/> is how the player is named on a win.
+        /// </summary>
+        public static string Text(RouletteResult result, string mention, bool prestigeDisabled)
         {
             var text = new StringBuilder();
-            if (screen.Pocket != null)
+            text.Append($"Winning results were **{result.Pocket}**" + (result.Tags.Length > 0 ? ", " + string.Join(", ", result.Tags) : "") + ".\n");
+            var winners = result.Lines.Where(l => l.Won).ToList();
+            if (winners.Count == 0)
             {
-                text.AppendLine($"{Dot(screen.Pocket)} **{screen.Pocket}**" + (screen.Tags.Length > 0 ? $"  ·  {string.Join(", ", screen.Tags)}" : ""));
-                text.AppendLine();
+                text.Append($"{result.Name} you did not make any successful bets. Your cash is now ${FormatHelper.GetCommaNumber(result.Cash)}.");
             }
-            foreach (var line in screen.Lines)
+            else
             {
-                string result = screen.Pocket == null ? "" : line.Won ? $"  ✅ → ${FormatHelper.GetCommaNumber(line.Back)}" : "  ❌";
-                text.AppendLine($"• {line.Label} · ${FormatHelper.GetCommaNumber(line.Amount)}{result}");
+                text.Append("`Your winning bets were:`\n");
+                foreach (var line in winners)
+                    text.Append($"{line.Label}: ${FormatHelper.GetCommaNumber(line.Amount)} -> ${FormatHelper.GetCommaNumber(line.Back)}\n");
+                text.Append($"(+ bonus of ${FormatHelper.GetCommaNumber(result.Bonus)})\n");
+                text.Append($"{mention} `Your cash is now ${FormatHelper.GetCommaNumber(result.Cash)}`");
             }
-            if (screen.Lines.Count == 0)
-                text.AppendLine(HowToBet);
-            if (!string.IsNullOrEmpty(screen.Status))
-                text.AppendLine().Append(screen.Status);
-            foreach (string note in screen.Notes.Where(n => !string.IsNullOrEmpty(n)))
-                text.Append("\n").Append(note);
 
-            string session = screen.SessionNet == 0 ? "$0" : $"{(screen.SessionNet > 0 ? "+" : "-")}${FormatHelper.GetCommaNumber(Math.Abs(screen.SessionNet))}";
-            return new EmbedBuilder()
-                .WithAuthor(screen.Name == null ? Title : $"{Title} · {screen.Name}")
-                .WithDescription(text.ToString())
-                .AddField("Pays (x your bet)", PayTable(), false)
-                .WithColor(screen.Colour)
-                .WithFooter($"Your cash is ${FormatHelper.GetCommaNumber(screen.Cash)} · Session {session} · {screen.Spins} spin{(screen.Spins == 1 ? "" : "s")}")
-                .Build();
+            if (result.BonusGranted)
+                text.Append(prestigeDisabled
+                    ? $"\n\n*You will get a bonus {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*"
+                    : $"\n\n*You will get a bonus $1000 + {Constants.InterestPercentage}% net worth each hour for the rest of the day (UTC).*");
+            foreach (string note in result.Notes.Where(n => !string.IsNullOrEmpty(n)))
+                text.Append("\n\n").Append(note);
+            return text.ToString();
         }
 
-        public static string PayTable() =>
-            $"Number x{new RouletteBet(0, "1", 1).PayoutMultiple + 1} · Red, Black, Odd, Even x{new RouletteBet(0, "red", 1).PayoutMultiple + 1} · Dozens and columns x{new RouletteBet(0, "firstdozen", 1).PayoutMultiple + 1}\n"
-            + $"0 and 00 only win a bet on that number. You must bet at least {RouletteManager.MinimumPercent}% of your cash.";
-
-        /// <summary>The result line and colour for a settled spin.</summary>
-        public static (string Status, Color Colour) Outcome(double staked, double totalPaid, double bonus)
+        /// <summary>
+        /// Spin again, scale your last bets, or place new ones. They carry no owner: anyone can press them, and each press plays
+        /// for whoever pressed it, with their own last bets, so a whole channel can share one result message.
+        /// </summary>
+        public static MessageComponent Buttons()
         {
-            double net = totalPaid - staked;
-            string bonusText = bonus > 0 ? $" (+${FormatHelper.GetCommaNumber(bonus)} bonus)" : "";
-            if (totalPaid <= 0)
-                return ($"💥 No winners. **-${FormatHelper.GetCommaNumber(staked)}**", Color.Red);
-            if (net <= 0)
-                return ($"↩️ Paid ${FormatHelper.GetCommaNumber(totalPaid)} on ${FormatHelper.GetCommaNumber(staked)} bet{bonusText}", Color.Orange);
-            return ($"🎉 **+${FormatHelper.GetCommaNumber(net)}**{bonusText}", Color.Gold);
-        }
-
-        /// <summary>Spin again, scale the bets, or change them. Every id carries the owner, so only they can press them.</summary>
-        public static MessageComponent Buttons(ulong ownerId, double total, double cash)
-        {
-            string owner = ownerId.ToString();
-            string Id(string action) => ComponentId.Build(MoneyComponents.Roulette, action, owner);
-            bool canSpin = total >= 1 && cash >= 1;
+            string Id(string action) => ComponentId.Build(MoneyComponents.Roulette, action);
             return new ComponentBuilder()
-                .WithButton(total >= 1 ? $"Spin ${FormatHelper.GetCommaNumber(Math.Min(total, Math.Floor(cash)))}" : "Spin", Id("spin"), ButtonStyle.Success, new Emoji("🎡"), disabled: !canSpin, row: 0)
-                .WithButton("Bets ½", Id("half"), ButtonStyle.Secondary, disabled: total < 1, row: 0)
-                .WithButton("Bets x2", Id("double"), ButtonStyle.Secondary, disabled: total < 1, row: 0)
-                .WithButton("All in", Id("max"), ButtonStyle.Danger, disabled: total < 1, row: 0)
-                .WithButton("New bets…", Id("bet"), ButtonStyle.Secondary, row: 1)
-                .WithButton("Cash out", Id("cash"), ButtonStyle.Primary, row: 1)
+                .WithButton("Spin again", Id("spin"), ButtonStyle.Success, new Emoji("🎡"), row: 0)
+                .WithButton("Bets ½", Id("half"), ButtonStyle.Secondary, row: 0)
+                .WithButton("Bets x2", Id("double"), ButtonStyle.Secondary, row: 0)
+                .WithButton("All in", Id("max"), ButtonStyle.Danger, row: 0)
+                .WithButton("New bets…", Id("bet"), ButtonStyle.Primary, row: 1)
                 .Build();
         }
 

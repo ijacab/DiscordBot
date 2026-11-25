@@ -201,11 +201,28 @@ namespace DiscordBot.Managers
 
             try
             {
-                return await ResolveBetCore(userId, userName, betAmount, baseWinnings, updateRemote, feedJackpot, game);
+                var result = await ResolveBetCore(userId, userName, betAmount, baseWinnings, updateRemote, feedJackpot, game);
+                NoteRecordWorth(userId); //a big win can be a record, and a loss right after it would hide it from the minute check
+                return result;
             }
             finally
             {
                 InitiatedBetUserIds.Remove(userId); //even if saving fails, they're never stuck with a bet "open"
+            }
+        }
+
+        /// <summary>Raises the player's all-time worth record if the bet just settled took them past it. Never throws.</summary>
+        private void NoteRecordWorth(ulong userId)
+        {
+            try
+            {
+                var account = _coinService.GetAll().Accounts.Find(a => a.UserId == userId);
+                if (account != null)
+                    _coinService.GetAll().NoteWorth(userId, account.Name, new WorthService(_coinService, _stockService, _appSettings).TotalWorth(account), DateTime.UtcNow);
+            }
+            catch (Exception)
+            {
+                //a record is only a nicety; the bet is already settled
             }
         }
 

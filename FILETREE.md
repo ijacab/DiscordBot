@@ -37,21 +37,21 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Components.cs  buttons / select menus / modals: gates, ComponentId routing, private replies
     CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
     CommandManager_Slots.cs    .slots and the slot machine's buttons / bet form
-    CommandManager_Roulette.cs .roulette and the table's buttons / bets form
+    CommandManager_Roulette.cs .roulette and its buttons / bets form (anyone can press them, each plays their own last bets)
     CommandManager_Raids.cs    .raid, .train, .stance, .guards, the `.card` control panel and their buttons
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
     BlackjackView.cs           the blackjack table embed (lobby, hands, results), edited in place
     SlotMachine.cs  SlotView.cs   slot machine rules (reels, paytable, jackpot payout) and its embed/buttons
-    RouletteView.cs               the roulette table embed and buttons (pure text and ids), bet scaling
+    RouletteView.cs               the roulette result message and buttons (pure text and ids), bet scaling
     Blackjack.cs  Roulette.cs     game rules
     DuckRace.cs                  duck race rules (5 ducks, winner-takes-all)
     CrashGame.cs                 crash rules: crash point (97% payback for any target), multiplier over time
     Managers/
       BaseMultiplayerManager.cs   lobby/session base (largest game file); takes a GameContext, one lock for every change
       SlotMachineManager.cs        slot sessions, spin settlement and result display
-      RouletteManager.cs           roulette tables: bet parsing, sessions, spin settlement and result display
+      RouletteManager.cs           roulette: bet parsing, remembered last bets, spin settlement
       CrashManager.cs              crash rounds: launch, live multiplier edits, cash out, settle through BetManager
       BlackjackManager.cs  DuckRaceManager.cs
       DungeonManager.cs            the one open session (global): money, 1.5 s tick loop, dashboard with buttons (LiveMessage)
@@ -125,7 +125,7 @@ Common/                        shared net10.0 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: TablesAndPotTests (roulette table, jackpot dividend, all-time records), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
+Tests/                         xunit: TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look

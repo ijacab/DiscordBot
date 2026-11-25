@@ -230,11 +230,8 @@ namespace DiscordBot.Services
             long slotBefore = _coinService.GetAll().LastRaffleSlot;
             var result = Draw(DateTime.UtcNow, _random.NextDouble, betOpenUserIds);
             if (_coinService.GetAll().LastRaffleSlot == slotBefore) return; //nothing due
-            var dividend = PayJackpotDividend(SlotStartUtc(DateTime.UtcNow));
             await _coinService.Update(); //records the slot even if nobody entered, and what the prize did
 
-            if (dividend != null)
-                await Announce(client, DividendAnnouncement(dividend), null);
             if (result == null) return;
 
             //named, not pinged: there's a draw every hour
@@ -244,39 +241,6 @@ namespace DiscordBot.Services
             var mine = new ComponentBuilder().WithButton("My power-ups", ComponentId.Build(MoneyComponents.PowerUp, "mine"), ButtonStyle.Secondary).Build();
             await Announce(client, text, mine);
         }
-
-        public class DividendResult
-        {
-            public double Total { get; set; }
-            public double Each { get; set; }
-            public int Recipients { get; set; }
-            public double PoolLeft { get; set; }
-        }
-
-        /// <summary>
-        /// Each hourly draw pays <see cref="PowerUpCatalog.JackpotDividendPercent"/> of the jackpot out, split evenly between the poorer
-        /// half (rounded up, at least one) of the players entered in the draw due at <paramref name="drawTime"/>, so the pool drains
-        /// back into the game instead of only growing. Null when nobody is entered or the share is under $1 each. The caller saves.
-        /// </summary>
-        public DividendResult PayJackpotDividend(DateTime drawTime)
-        {
-            var data = _coinService.GetAll();
-            var entrants = data.Accounts.Where(a => IsEnteredIn(a, drawTime)).OrderBy(_totalWorth).ToList();
-            if (entrants.Count == 0) return null;
-
-            var poorer = entrants.Take((entrants.Count + 1) / 2).ToList();
-            double each = Math.Floor(Math.Floor(data.JackpotPool * PowerUpCatalog.JackpotDividendPercent) / poorer.Count);
-            if (each < 1) return null;
-
-            _coinService.RemoveFromJackpot(each * poorer.Count);
-            foreach (var account in poorer)
-                DiscordBot.Models.Money.Credit(data, account, each);
-            return new DividendResult { Total = each * poorer.Count, Each = each, Recipients = poorer.Count, PoolLeft = data.JackpotPool };
-        }
-
-        public static string DividendAnnouncement(DividendResult dividend) =>
-            $"💰 Jackpot dividend: {PowerUpCatalog.JackpotDividendPercent:0%} of the pot ({DiscordBot.Models.Money.Format(dividend.Total)}) went to the poorer half of this draw's players, " +
-            $"{dividend.Recipients} of them, {DiscordBot.Models.Money.Format(dividend.Each)} each. {DiscordBot.Models.Money.Format(dividend.PoolLeft)} is left in the pot.";
 
         /// <summary>Called every minute after the raffle: sets off kept power-ups that can go off now and announces each in the last active channel.</summary>
         public async Task ActivateKeptAndAnnounce(DiscordSocketClient client, IEnumerable<ulong> betOpenUserIds)

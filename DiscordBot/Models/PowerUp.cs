@@ -143,8 +143,6 @@ namespace DiscordBot.Models
         public const double JackpotDipPercent = 0.30;
         public const double PotShotPercent = 0.10;
         public const double PotSharePercent = 0.40;
-        /// <summary>The share of the jackpot paid out every hourly draw to the poorer half of the players entered in it, so the pool can't only grow.</summary>
-        public const double JackpotDividendPercent = 0.05;
         public const double RedShellPercent = 0.10;
         public const double LightningBoltPercent = 0.04;
         public const int LightningBoltVictims = 5;

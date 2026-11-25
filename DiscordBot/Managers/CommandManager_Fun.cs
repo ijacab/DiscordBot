@@ -195,16 +195,21 @@ namespace DiscordBot.Managers
                 throw new BadInputException("Tag one person at a time: `.convo @someone`.");
             if (tagged.Count == 1)
             {
-                only = tagged[0].Username;
+                only = tagged[0].Username; //the model keys people by username
                 if (model != null && !model.HasSpeaker(only))
-                    throw new BadInputException($"I haven't read anything from {only} yet, so I can't do their voice.");
+                    throw new BadInputException($"I haven't read anything from {ConvoCorpusService.DisplayNameOf(tagged[0])} yet, so I can't do their voice.");
                 args = args.Where(a => !Regex.IsMatch(a, @"^<@!?\d+>$")).ToList();
             }
 
             var lines = model?.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args), only);
             if (lines != null && lines.Count > 0)
             {
-                await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true), allowedMentions: AllowedMentions.None);
+                //shown by display name: look each username up among the server's members, and fall back to the username
+                var members = (message.Channel as SocketGuildChannel)?.Guild.Users
+                    .GroupBy(u => u.Username, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => ConvoCorpusService.DisplayNameOf(g.First()), StringComparer.OrdinalIgnoreCase);
+                string NameOf(string username) => members != null && members.TryGetValue(username, out string shown) ? shown : username;
+                await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true, displayName: NameOf), allowedMentions: AllowedMentions.None);
                 return;
             }
 

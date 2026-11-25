@@ -13,7 +13,7 @@
         public const string Debt = "debt";
         /// <summary>The slot machine (Games/SlotView.cs): spin, bet and cash-out buttons for the player whose machine it is.</summary>
         public const string Slots = "slot";
-        /// <summary>The roulette table (Games/RouletteView.cs): spin again, scale the bets or place new ones, for the player whose table it is.</summary>
+        /// <summary>The roulette result buttons (Games/RouletteView.cs): spin again, scale the bets or place new ones. Anyone can press them; each press plays for whoever pressed it.</summary>
         public const string Roulette = "rlt";
         /// <summary>The page picker under `.stats`.</summary>
         public const string Stats = "stats";
