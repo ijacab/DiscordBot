@@ -65,34 +65,40 @@ namespace DiscordBot.Games.Managers
         }
 
         /// <summary>
-        /// Reads bets from typed words: "red 1000 17 50" (pairs), "red-1000,17-50" or "red-1000". Amounts are 1000, 2.5k, 25%, max...
+        /// Reads bets from typed words: "red 1000 17 50" (spot then amount), "red-1000,17-50", or just "red" for the minimum bet (10% of your cash). Amounts are 1000, 2.5k, 25%, max...
         /// (see <see cref="Money.TryParse"/>, percentages of <paramref name="cash"/>). Throws <see cref="BadSyntaxException"/> or
         /// <see cref="BadInputException"/> for something that isn't a bet, an invalid mix, or more than the cash.
         /// </summary>
         public static List<RouletteChoice> ParseBets(IList<string> words, double cash)
         {
-            var args = words.SelectMany(w => w.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToList();
-            var pairs = new List<string>();
-            if (args.Count > 0 && args.All(a => !a.Contains('-')))
-            {
-                if (args.Count % 2 != 0) throw new BadSyntaxException();
-                for (int i = 0; i < args.Count; i += 2) pairs.Add($"{args[i]}-{args[i + 1]}");
-            }
-            else
-                pairs = args;
-            if (pairs.Count == 0) throw new BadSyntaxException();
+            var tokens = words.SelectMany(w => w.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToList();
+            if (tokens.Count == 0) throw new BadSyntaxException();
 
+            //each bet is a spot then an amount ("red 1000", "17-50"), and with no amount it is the minimum bet, 10% of your cash
             var bets = new List<RouletteChoice>();
-            foreach (string pair in pairs)
+            for (int i = 0; i < tokens.Count; i++)
             {
-                string[] parts = pair.Split('-');
-                if (parts.Length != 2 || !Money.TryParse(parts[1], cash, out double amount))
+                string spotText, amountText;
+                if (tokens[i].Contains('-'))
+                {
+                    string[] parts = tokens[i].Split('-');
+                    if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0) throw new BadSyntaxException();
+                    (spotText, amountText) = (parts[0], parts[1]);
+                }
+                else
+                {
+                    spotText = tokens[i];
+                    bool amountFollows = i + 1 < tokens.Count && !tokens[i + 1].Contains('-') && !IsNamedSpot(tokens[i + 1]);
+                    amountText = amountFollows ? tokens[++i] : "min";
+                }
+
+                if (!Money.TryParse(amountText, cash, out double amount))
                     throw new BadSyntaxException();
-                var spot = new RouletteBet(0, parts[0], 1);
+                var spot = new RouletteBet(0, spotText, 1);
                 bool badNumber = spot.RoulleteBetType == BetType.Number && (spot.BetNumberChoice == null || spot.BetNumberChoice < -1 || spot.BetNumberChoice > 36);
                 if (spot.RoulleteBetType == BetType.NotValid || badNumber)
-                    throw new BadInputException($"`{parts[0]}` isn't something you can bet on. {RouletteView.HowToBet}");
-                bets.Add(new RouletteChoice { Choice = parts[0], Amount = amount });
+                    throw new BadInputException($"`{spotText}` isn't something you can bet on. {RouletteView.HowToBet}");
+                bets.Add(new RouletteChoice { Choice = spotText, Amount = amount });
             }
 
             //refused here, before any stake is taken, so a bad bet never counts as a game played
@@ -102,6 +108,10 @@ namespace DiscordBot.Games.Managers
                 throw new BadInputException($"Those bets add up to ${total.ToString("N2", CultureInfo.InvariantCulture)} and you only have ${cash.ToString("N2", CultureInfo.InvariantCulture)}.");
             return bets;
         }
+
+        /// <summary>A named spot (red, odd, firstdozen...) as opposed to a number, which could also be an amount.</summary>
+        private static bool IsNamedSpot(string word) =>
+            !int.TryParse(word, out _) && Enum.TryParse<BetType>(word, true, out var type) && type != BetType.NotValid && type != BetType.Number;
 
         /// <summary>The bets held to the cash: a cent over is taken off the biggest bet, more than that scales them all down together.</summary>
         private static List<RouletteChoice> HeldToCash(List<RouletteChoice> bets, double cash)

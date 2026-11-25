@@ -46,7 +46,7 @@ namespace DiscordBot.Games
     /// <summary>The roulette message and buttons. Pure text and ids, so it can be tested without Discord.</summary>
     public static class RouletteView
     {
-        public const string HowToBet = "Bet with `.roulette red 1000` or `.roulette 17 50 odd 25%`, or press **New bets…**: each bet is a spot then an amount. Spots: a number (`0`-`36`, `00`), `red`, `black`, `odd`, `even`, `firstdozen`, `seconddozen`, `thirddozen`, `firstcolumn`, `secondcolumn`, `thirdcolumn`.";
+        public const string HowToBet = "Bet with `.roulette red 1000` or `.roulette 17 50 odd 25%`, or press **New bets…**: each bet is a spot then an amount (leave the amount off to bet 10% of your cash). Spots: a number (`0`-`36`, `00`), `red`, `black`, `odd`, `even`, `firstdozen`, `seconddozen`, `thirddozen`, `firstcolumn`, `secondcolumn`, `thirdcolumn`.";
 
         /// <summary>"-1" is the double zero.</summary>
         public static string PocketName(string value) => value == "-1" ? "00" : value;

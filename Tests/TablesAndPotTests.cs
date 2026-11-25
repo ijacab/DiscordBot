@@ -185,7 +185,11 @@ namespace Tests
             Assert.Equal(new[] { "00", "36", "odd" }, dashed.Select(b => b.Choice));
             Assert.Equal(2_500, dashed[2].Amount);
 
-            Assert.Throws<BadSyntaxException>(() => RouletteManager.ParseBets(new[] { "red" }, 10_000));
+            //no amount means the minimum bet, 10% of your cash, as it always did
+            Assert.Equal(1_000, RouletteManager.ParseBets(new[] { "red" }, 10_000).Single().Amount);
+            var mixed = RouletteManager.ParseBets(new[] { "17", "odd", "500", "00-250", "black" }, 10_000);
+            Assert.Equal(new[] { "17", "odd", "00", "black" }, mixed.Select(b => b.Choice)); //17 has no amount (odd is a spot), odd gets 500
+            Assert.Equal(new[] { 1_000.0, 500.0, 250.0, 1_000.0 }, mixed.Select(b => b.Amount));
             Assert.Throws<BadSyntaxException>(() => RouletteManager.ParseBets(new[] { "red", "lots" }, 10_000));
             Assert.Throws<BadInputException>(() => RouletteManager.ParseBets(new[] { "purple", "100" }, 10_000));
         }
