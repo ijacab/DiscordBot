@@ -27,6 +27,39 @@ namespace DiscordBot.Models
         public int SoloMaxLines { get; set; } = ConvoModel.SoloMaxLines;
         public int MaxCopiedWords { get; set; } = ConvoModel.MaxCopiedWords;
 
+        /// <summary>
+        /// Users (besides the bot admins) who may run `.convoset`, saved with the settings. Admins add and remove them with
+        /// `.convoset allow @user` and `.convoset deny @user`. `reset` leaves it alone.
+        /// </summary>
+        public List<ulong> AllowedUsers { get; set; } = new List<ulong>();
+
+        public bool IsAllowed(ulong userId)
+        {
+            lock (AllowedUsers) return AllowedUsers.Contains(userId);
+        }
+
+        /// <summary>Lets this user run `.convoset`. False if they already could.</summary>
+        public bool Allow(ulong userId)
+        {
+            lock (AllowedUsers)
+            {
+                if (AllowedUsers.Contains(userId)) return false;
+                AllowedUsers.Add(userId);
+                return true;
+            }
+        }
+
+        /// <summary>Takes `.convoset` away from this user. False if they weren't on the list.</summary>
+        public bool Deny(ulong userId)
+        {
+            lock (AllowedUsers) return AllowedUsers.Remove(userId);
+        }
+
+        public List<ulong> AllowedList()
+        {
+            lock (AllowedUsers) return AllowedUsers.ToList();
+        }
+
         public const string FileName = "convo_settings.json";
         public static string DefaultPath => Path.Join(Directory.GetCurrentDirectory(), FileName);
 

@@ -174,5 +174,32 @@ namespace Tests
             model.Settings.MaxLines = 3;
             Assert.Equal(3, model.Generate(new Random(1)).Count);
         }
+
+        [Fact]
+        public void AllowedUsers_CanBeAddedAndRemoved_SurviveASaveAndAReset()
+        {
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "convoset_users_" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                var s = new ConvoSettings();
+                Assert.False(s.IsAllowed(42));
+                Assert.True(s.Allow(42));
+                Assert.False(s.Allow(42)); //already on the list
+                Assert.True(s.IsAllowed(42));
+
+                s.TrySet("chaos", "0.5", out _);
+                s.Reset(null);
+                Assert.True(s.IsAllowed(42)); //a reset puts the knobs back, not the people
+
+                s.Save(path);
+                var loaded = ConvoSettings.Load(path);
+                Assert.True(loaded.IsAllowed(42));
+
+                Assert.True(loaded.Deny(42));
+                Assert.False(loaded.Deny(42));
+                Assert.Empty(loaded.AllowedList());
+            }
+            finally { System.IO.File.Delete(path); }
+        }
     }
 }
