@@ -320,6 +320,44 @@ namespace Tests
         }
 
         [Fact]
+        public void ASoloConvo_IsOnlyThatPersonAndShorter()
+        {
+            var model = Model();
+            Assert.True(model.HasSpeaker("kris"));
+            Assert.True(model.HasSpeaker("KRIS")); //ignoring case
+            Assert.False(model.HasSpeaker("nobody"));
+            Assert.Equal(Chat.Count(c => c[0] == "kris") * 3, model.MessagesFrom("kris")); //Model() repeats the chat 3 times
+            Assert.Equal(0, model.MessagesFrom("nobody"));
+
+            for (int seed = 0; seed < 300; seed++)
+            {
+                var lines = model.Generate(new Random(seed), seed % 2 == 0 ? "pizza" : null, "KRIS");
+                Assert.InRange(lines.Count, 1, ConvoModel.SoloMaxLines); //a line can be dropped, never more than the solo maximum
+                Assert.All(lines, l => Assert.Equal("kris", l.Speaker));
+                Assert.All(ConvoModel.Format(lines).Split('\n'), line => Assert.Matches(LineFormat, line));
+            }
+            var counts = Enumerable.Range(0, 300).Select(seed => model.Generate(new Random(seed), null, "kris").Count).ToList();
+            Assert.True(counts.Max() <= ConvoModel.SoloMaxLines);
+            Assert.True(counts.Average() < ConvoModel.MaxLines / 2.0, "a solo convo is shorter than a normal one");
+        }
+
+        [Fact]
+        public void ASoloConvo_ForSomeoneTheModelHasNeverSeen_IsNull()
+        {
+            Assert.Null(Model().Generate(new Random(1), null, "nobody"));
+        }
+
+        [Fact]
+        public void TheSoloLineCount_FollowsTheSettings()
+        {
+            var model = Model();
+            model.Settings.SoloMinLines = model.Settings.SoloMaxLines = 3;
+            for (int seed = 0; seed < 50; seed++)
+                Assert.InRange(model.Generate(new Random(seed), null, "bruce77").Count, 1, 3);
+            Assert.Equal(3, model.Generate(new Random(1), null, "bruce77").Count);
+        }
+
+        [Fact]
         public void SpeakersCanBeBold_WithoutChangingTheLineFormat()
         {
             var lines = new[] { new ConvoLine { Speaker = "john123", Text = "yo im eating" }, new ConvoLine { Speaker = "bruce_77*", Text = "eating what" } };

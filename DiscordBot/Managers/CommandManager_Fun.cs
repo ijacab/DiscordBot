@@ -187,7 +187,21 @@ namespace DiscordBot.Managers
             }
 
             var model = _convoCorpus.Model;
-            var lines = model?.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args));
+
+            //`.convo @someone [words]`: a short convo that is only that person talking. The tag isn't part of the topic words.
+            var tagged = message.MentionedUsers.Where(u => !u.IsBot).ToList();
+            string only = null;
+            if (tagged.Count > 1)
+                throw new BadInputException("Tag one person at a time: `.convo @someone`.");
+            if (tagged.Count == 1)
+            {
+                only = tagged[0].Username;
+                if (model != null && !model.HasSpeaker(only))
+                    throw new BadInputException($"I haven't read anything from {only} yet, so I can't do their voice.");
+                args = args.Where(a => !Regex.IsMatch(a, @"^<@!?\d+>$")).ToList();
+            }
+
+            var lines = model?.Generate(RandomHelper.ThisThreadsRandom, string.Join(" ", args), only);
             if (lines != null && lines.Count > 0)
             {
                 await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true), allowedMentions: AllowedMentions.None);

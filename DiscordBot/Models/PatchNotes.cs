@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-01", "`.convo @someone` makes a short chat of only that person talking, in their own words. Add topic words after the tag as usual."),
             new PatchNote("2026-11-30", "Squatters now spare 1st place's 2 cheapest rentals, but always move into at least one property."),
             new PatchNote("2026-11-29", "Squatters now move into every property 1st place owns, not just the best one: all their rent comes to you for 12 hours and none of those houses can be sold meanwhile."),
             new PatchNote("2026-11-28", "`.sell property all` sells every house at once. Blackjack Play again now bets the same percentage of your cash as your last bet, not the same dollar amount."),

@@ -23,6 +23,8 @@ namespace DiscordBot.Models
         public double FavouredShare { get; set; } = ConvoModel.DefaultFavouredShare;
         public int MinLines { get; set; } = ConvoModel.MinLines;
         public int MaxLines { get; set; } = ConvoModel.MaxLines;
+        public int SoloMinLines { get; set; } = ConvoModel.SoloMinLines;
+        public int SoloMaxLines { get; set; } = ConvoModel.SoloMaxLines;
         public int MaxCopiedWords { get; set; } = ConvoModel.MaxCopiedWords;
 
         public const string FileName = "convo_settings.json";
@@ -52,6 +54,8 @@ namespace DiscordBot.Models
             new Spec { Name = "favoured", Property = nameof(FavouredShare), Min = 0, Max = 1, Share = true, About = "how often the favoured channels are used when they have something" },
             new Spec { Name = "minlines", Property = nameof(MinLines), Min = 1, Max = 20, Whole = true, About = "fewest lines in a convo" },
             new Spec { Name = "maxlines", Property = nameof(MaxLines), Min = 1, Max = 20, Whole = true, About = "most lines in a convo" },
+            new Spec { Name = "solomin", Property = nameof(SoloMinLines), Min = 1, Max = 20, Whole = true, About = "fewest lines in a convo of one person (`.convo @someone`)" },
+            new Spec { Name = "solomax", Property = nameof(SoloMaxLines), Min = 1, Max = 20, Whole = true, About = "most lines in a convo of one person" },
             new Spec { Name = "maxcopy", Property = nameof(MaxCopiedWords), Min = 0, Max = 40, Whole = true, About = "a line longer than this that repeats a real message is made again" },
         };
 
@@ -100,6 +104,8 @@ namespace DiscordBot.Models
             }
             if (spec.Name == "minlines" && value > MaxLines) { message = $"minlines can't be above maxlines ({MaxLines})."; return false; }
             if (spec.Name == "maxlines" && value < MinLines) { message = $"maxlines can't be below minlines ({MinLines})."; return false; }
+            if (spec.Name == "solomin" && value > SoloMaxLines) { message = $"solomin can't be above solomax ({SoloMaxLines})."; return false; }
+            if (spec.Name == "solomax" && value < SoloMinLines) { message = $"solomax can't be below solomin ({SoloMinLines})."; return false; }
 
             double before = Get(spec);
             Put(spec, value);
@@ -162,6 +168,11 @@ namespace DiscordBot.Models
             {
                 MinLines = ConvoModel.MinLines;
                 MaxLines = ConvoModel.MaxLines;
+            }
+            if (SoloMinLines > SoloMaxLines)
+            {
+                SoloMinLines = ConvoModel.SoloMinLines;
+                SoloMaxLines = ConvoModel.SoloMaxLines;
             }
             return this;
         }

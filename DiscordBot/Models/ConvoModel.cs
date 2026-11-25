@@ -52,6 +52,9 @@ namespace DiscordBot.Models
         /// <summary>How many places everyone's chat leads into a topic word are kept, for speakers who never used it.</summary>
         private const int SharedLeadIns = 64;
         public const int MinLines = 3;
+        /// <summary>A convo of one person (`.convo @someone`) is shorter: this many lines at least.</summary>
+        public const int SoloMinLines = 2;
+        public const int SoloMaxLines = 4;
         public const int MaxLines = 10;
         public const int MaxWords = 40;
         public const int MaxLineChars = 160;
@@ -228,13 +231,26 @@ namespace DiscordBot.Models
         /// the way the speaker (or, failing that, anyone) really led into it, and every line leans towards the topic words
         /// (<see cref="TopicPull"/>). Words nobody ever used are ignored. Null when the model has no messages.
         /// </summary>
-        public List<ConvoLine> Generate(Random random, string seed = null)
+        /// <param name="onlySpeaker">When given, every line is by this person (a short monologue of <see cref="ConvoSettings.SoloMinLines"/> to
+        /// <see cref="ConvoSettings.SoloMaxLines"/> lines, from their own messages). Null when the model has nothing from them.</param>
+        public List<ConvoLine> Generate(Random random, string seed = null, string onlySpeaker = null)
         {
             if (MessageCount == 0)
                 return null;
 
-            int count = random.Next(Settings.MinLines, Settings.MaxLines + 1);
-            var speakers = PickSpeakers(random, count);
+            List<int> speakers;
+            if (onlySpeaker != null)
+            {
+                int? only = FindSpeaker(onlySpeaker);
+                if (only == null)
+                    return null;
+                int soloCount = random.Next(Settings.SoloMinLines, Settings.SoloMaxLines + 1);
+                speakers = Enumerable.Repeat(only.Value, soloCount).ToList();
+            }
+            else
+            {
+                speakers = PickSpeakers(random, random.Next(Settings.MinLines, Settings.MaxLines + 1));
+            }
             var lines = new List<ConvoLine>();
             int total = 0;
             var topic = TopicOf(Tokenize(seed));
@@ -275,6 +291,20 @@ namespace DiscordBot.Models
             }
             return lines;
         }
+
+        /// <summary>The model's id for a person's name (ignoring case), or null when nothing from them was read.</summary>
+        private int? FindSpeaker(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || _speakers == null) return null;
+            int index = Array.FindIndex(_speakers, s => s.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+            return index < 0 ? null : index;
+        }
+
+        /// <summary>Whether the model has read messages from this person.</summary>
+        public bool HasSpeaker(string name) => FindSpeaker(name) != null;
+
+        /// <summary>How many messages the model has from this person (0 when none).</summary>
+        public int MessagesFrom(string name) => FindSpeaker(name) is int id ? MessagesBy(id) : 0;
 
         /// <summary>The ids of the seed words the server has used, leaving out filler when there's anything else; null when none.</summary>
         private int[] TopicOf(string[] seedWords)

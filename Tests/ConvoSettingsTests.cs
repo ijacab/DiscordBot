@@ -75,6 +75,17 @@ namespace Tests
         }
 
         [Fact]
+        public void SoloMaxLines_CannotGoBelowSoloMinLines()
+        {
+            var s = new ConvoSettings();
+            Assert.Equal((ConvoModel.SoloMinLines, ConvoModel.SoloMaxLines), (s.SoloMinLines, s.SoloMaxLines));
+            Assert.False(s.TrySet("solomin", "5", out _)); //above solomax (4)
+            Assert.True(s.TrySet("solomax", "6", out _));
+            Assert.True(s.TrySet("solomin", "5", out _));
+            Assert.False(s.TrySet("solomax", "4", out _));
+        }
+
+        [Fact]
         public void Reset_PutsOneOrAllBack()
         {
             var s = new ConvoSettings();
