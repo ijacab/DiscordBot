@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-05", "New `.convolang`: a `.convo` where every line has been bounced through `.lang` first. Topic words and a tag work the same."),
             new PatchNote("2026-12-04", "Roulette is back to its old result message, with the buttons kept. Anyone can press them to play their own last bets. Convo names are now display names, and `.lb alltime` checks every minute."),
             new PatchNote("2026-12-04", "The hourly jackpot payout is gone. Pot Shot, Pot Share, Jackpot Dip and Scratchie still take shares of it."),
             new PatchNote("2026-12-03", "Bot admins can let others use `.convoset`: `.convoset allow @user`, `deny @user` and `users`."),

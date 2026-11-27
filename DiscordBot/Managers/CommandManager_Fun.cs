@@ -186,6 +186,17 @@ namespace DiscordBot.Managers
                 return;
             }
 
+            var lines = MakeConvo(client, message, args, out var nameOf);
+            await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true, displayName: nameOf), allowedMentions: AllowedMentions.None);
+        }
+
+        /// <summary>
+        /// The lines for `.convo` and `.convolang` in the scraped server, and how to show each speaker (display name, else username).
+        /// Throws <see cref="BadInputException"/> with the reason when there is nothing to show yet (loading, scraping, or no history,
+        /// which starts a scrape).
+        /// </summary>
+        private List<ConvoLine> MakeConvo(DiscordSocketClient client, SocketMessage message, List<string> args, out Func<string, string> nameOf)
+        {
             var model = _convoCorpus.Model;
 
             //`.convo @someone [words]`: a short convo that is only that person talking. The tag isn't part of the topic words.
@@ -208,9 +219,8 @@ namespace DiscordBot.Managers
                 var members = (message.Channel as SocketGuildChannel)?.Guild.Users
                     .GroupBy(u => u.Username, StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(g => g.Key, g => ConvoCorpusService.DisplayNameOf(g.First()), StringComparer.OrdinalIgnoreCase);
-                string NameOf(string username) => members != null && members.TryGetValue(username, out string shown) ? shown : username;
-                await message.Channel.SendMessageAsync(ConvoModel.Format(lines, boldSpeakers: true, displayName: NameOf), allowedMentions: AllowedMentions.None);
-                return;
+                nameOf = username => members != null && members.TryGetValue(username, out string shown) ? shown : username;
+                return lines;
             }
 
             if (_convoCorpus.IsLoading)
@@ -219,6 +229,74 @@ namespace DiscordBot.Managers
                 throw new BadInputException($"Still reading the server's history ({_convoCorpus.SavedThisRun:N0} messages so far). Try again in a few minutes.");
             _convoCorpus.StartScrape(client, message.Channel);
             throw new BadInputException("I haven't read the server's history yet, so I've started now. Try `.convo` again in a few minutes.");
+        }
+
+        /// <summary>
+        /// `.convolang`: a `.convo` whose lines are each bounced through `.lang`'s chain of languages. The texts go through in one
+        /// request, joined by new lines (speaker names are never translated); if the number of lines changes on the way, each line
+        /// is translated on its own, a few at a time. Runs off the gateway task, since the chain takes seconds.
+        /// </summary>
+        private Task ConvoLang(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if ((message.Channel as SocketGuildChannel)?.Guild.Id != ConvoCorpusService.GuildId)
+                throw new BadInputException("`.convolang` only works in the server the convo brain learned from.");
+            var lines = MakeConvo(client, message, args, out var nameOf);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using (message.Channel.EnterTypingState())
+                    {
+                        var texts = await TranslateLines(lines.Select(l => l.Text).ToList());
+                        var mangled = lines.Select((l, i) => new ConvoLine { Speaker = l.Speaker, Text = texts[i] }).ToList();
+                        string text = ConvoModel.Format(mangled, boldSpeakers: true, displayName: nameOf);
+                        if (text.Length > _messageCharLimit) text = text.Substring(0, _messageCharLimit);
+                        await message.Channel.SendMessageAsync(text, allowedMentions: AllowedMentions.None);
+                    }
+                }
+                catch (TranslationUnavailableException)
+                {
+                    try { await message.Channel.SendMessageAsync("Google Translate isn't answering right now. Try again in a minute."); }
+                    catch (Exception) { }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "convolang failed");
+                    try { await message.Channel.SendMessageAsync("That convo got lost in translation. Try again."); }
+                    catch (Exception) { }
+                }
+            });
+            return Task.CompletedTask;
+        }
+
+        /// <summary>How many lines are translated at once when they have to go one by one.</summary>
+        private const int ConvoLangParallel = 3;
+
+        private async Task<List<string>> TranslateLines(List<string> texts)
+        {
+            var together = await _translationService.TranslateThroughLanguages(string.Join("\n", texts));
+            var split = SplitTranslatedLines(together.Text, texts.Count);
+            if (split != null) return split;
+
+            //the lines merged or split on the way: do them one at a time, a few in parallel
+            var results = new string[texts.Count];
+            using var gate = new System.Threading.SemaphoreSlim(ConvoLangParallel);
+            await Task.WhenAll(texts.Select(async (t, i) =>
+            {
+                await gate.WaitAsync();
+                try { results[i] = (await _translationService.TranslateThroughLanguages(t)).Text.Replace("\n", " ").Trim(); }
+                catch (TranslationUnavailableException) { results[i] = t; }
+                finally { gate.Release(); }
+            }));
+            if (Enumerable.Range(0, texts.Count).All(i => results[i] == texts[i])) throw new TranslationUnavailableException();
+            return results.ToList();
+        }
+
+        /// <summary>The translated block cut back into <paramref name="count"/> lines (blank lines dropped), or null when the count doesn't match.</summary>
+        public static List<string> SplitTranslatedLines(string translated, int count)
+        {
+            var parts = (translated ?? "").Split('\n').Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
+            return parts.Count == count ? parts : null;
         }
 
         private async Task ScrapeConvo(DiscordSocketClient client, SocketMessage message, List<string> args)

@@ -30,7 +30,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Suggest.cs  .sug/.suggest: master suggestions list
     CommandManager_ConvoSettings.cs  .convoset: change `.convo` randomness live (ConvoSettings, convo_settings.json)
     CommandManager_Crash.cs    .crash and its Cash out / Again buttons
-    CommandManager_Fun.cs      .roll .time .img .dbz (searches DuckDuckGo, downloads a working picture, posts it as a file) .face .lang .convo .scrapeconvo
+    CommandManager_Fun.cs      .roll .time .img .dbz (searches DuckDuckGo, downloads a working picture, posts it as a file) .face .lang .convo .convolang .scrapeconvo
     CommandManager_Admin.cs    .clear .start .stop .ban .unban, disk space
     CommandManager_Utility.cs  custom commands, reminders, .help, patch notes, paged embeds
     CommandManager_Bot.cs      bot-only cmds: initiatebet, resolvebet, lbjson
@@ -125,7 +125,7 @@ Common/                        shared net10.0 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
+Tests/                         xunit: ConvoLangTests, TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look
