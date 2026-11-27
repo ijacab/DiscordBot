@@ -258,7 +258,8 @@ namespace DiscordBot.Services
             foreach (var pair in _coinAccounts.CarriedGangs.Where(p => !carried.ContainsKey(p.Key)))
                 carried[pair.Key] = pair.Value; //kept from an earlier season and not picked up yet
             var best = new Dictionary<ulong, WorthRecord>(_coinAccounts.AllTimeBest); //records survive a new season
-            _coinAccounts = new CoinAccounts { CarriedGangs = carried, AllTimeBest = best };
+            bool faces = _coinAccounts.CardFaceRepairDone; //a one-off fix, not part of a season
+            _coinAccounts = new CoinAccounts { CarriedGangs = carried, AllTimeBest = best, CardFaceRepairDone = faces };
             string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
         }

@@ -46,10 +46,15 @@ namespace DiscordBot.Managers
         public Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args) => OpenPackCommand(client, message, new List<string>());
 
         /// <summary>Opens and posts a pack. A refusal goes back privately when it came from a button (<paramref name="click"/>), else to the channel.</summary>
+        /// <summary>Players with a pack opening now: one at a time each, so two packs can't fetch the same faces side by side.</summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, bool> _openingPacks = new System.Collections.Concurrent.ConcurrentDictionary<ulong, bool>();
+
         private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack, SocketMessageComponent click)
         {
+            bool mine = _openingPacks.TryAdd(user.Id, true);
             try
             {
+                if (!mine) throw new BadInputException("You're already opening a pack. Wait for it.");
                 using (channel.EnterTypingState())
                     await OpenPack(user, channel, pack);
             }
@@ -68,6 +73,10 @@ namespace DiscordBot.Managers
                 try { await channel.SendMessageAsync($"{user.Mention} the card printer shat itself. Nothing was charged. Try again in a bit.", allowedMentions: AllowedMentions.None); }
                 catch (Exception) { }
             }
+            finally
+            {
+                if (mine) _openingPacks.TryRemove(user.Id, out _);
+            }
         }
 
         private async Task OpenPack(IUser user, IMessageChannel channel, PackType pack)
@@ -78,7 +87,7 @@ namespace DiscordBot.Managers
 
             //get the faces before charging, so nobody pays when the image service is down; a card whose face failed gets a stand-in.
             //one at a time and each different, since the site hands the same face to requests made together
-            var faces = await _faceService.FetchDistinct(pack.Cards, FaceHashes(account.Cards));
+            var faces = await _faceService.FetchDistinct(pack.Cards, FaceHashes(account));
             if (faces.All(f => f == null))
                 throw new BadInputException("The face printer is down, so nothing was opened or charged. Try again in a bit.");
 
@@ -152,36 +161,41 @@ namespace DiscordBot.Managers
                     (pack.Kind == PackKind.Street ? " Your first street pack each day is free, come back tomorrow." : ""));
         }
 
-        /// <summary>The hash of every face in a gang. Foils are hashed as saved (holographic), which never matches a plain face, so they're never mistaken for one.</summary>
-        private static HashSet<string> FaceHashes(IEnumerable<BattlePerson> cards)
-        {
-            var hashes = new HashSet<string>();
-            foreach (var card in GangRules.Ordered(cards))
-            {
-                string hash = TryHashFile(card.FilePath);
-                if (hash != null) hashes.Add(hash);
-            }
-            return hashes;
-        }
-
-        private static string TryHashFile(string path)
+        /// <summary>
+        /// The keys a card's face is known by: a plain card's picture and what it would look like as a foil, or a foil's picture as saved.
+        /// Two cards with a key in common have the same face, foil or not (the foil effect always gives the same picture for a face).
+        /// </summary>
+        private static List<string> FaceKeys(BattlePerson card, bool withFoil = true)
         {
             try
             {
-                return !string.IsNullOrEmpty(path) && File.Exists(path) ? FaceService.HashOf(File.ReadAllBytes(path)) : null;
+                if (string.IsNullOrEmpty(card.FilePath) || !File.Exists(card.FilePath)) return new List<string>();
+                byte[] bytes = File.ReadAllBytes(card.FilePath);
+                var keys = new List<string> { FaceService.HashOf(bytes) };
+                if (withFoil && !card.Foil) keys.Add(FaceService.HashOf(FoilEffect.Apply(bytes)));
+                return keys;
             }
             catch (Exception)
             {
-                return null;
+                return new List<string>();
             }
+        }
+
+        /// <summary>The hash of every face in a gang as saved, so a new face can be checked against them (a pack compares plain faces; the foil keys are only worth working out for the repair).</summary>
+        private static HashSet<string> FaceHashes(CoinAccount account)
+        {
+            List<BattlePerson> cards;
+            lock (_packLock) cards = account.Cards.ToList();
+            return new HashSet<string>(cards.SelectMany(c => FaceKeys(c, withFoil: false)));
         }
 
         private bool _faceRepairStarted;
 
         /// <summary>
-        /// Once after the deploy that fixed packs handing out the same face: every card whose picture matches another card's in the same
-        /// gang gets a new face (the first keeps its own). Runs in the background; the flag is saved when it ends, even if the face site
-        /// was down for some, so it never loops.
+        /// Once after the deploy that fixed packs handing out the same face: in every gang (and every gang waiting from last season), each
+        /// card whose face matches another's, foil or not, gets a new face; the first keeps its own. Runs in the background. A new face is
+        /// written to a temp file first and only moved into place, under the card lock, if the card is still in the gang. The flag is only
+        /// saved once every gang was checked and every new face arrived, so a failure is tried again after the next restart.
         /// </summary>
         private void RepairDuplicateFacesOnce()
         {
@@ -190,19 +204,26 @@ namespace DiscordBot.Managers
             _ = Task.Run(async () =>
             {
                 int changed = 0;
-                try
+                bool complete = true;
+                var data = _coinService.GetAll();
+                List<(ulong Owner, List<BattlePerson> Cards)> gangs;
+                lock (_packLock)
+                    gangs = data.Accounts.Select(a => (a.UserId, a.Cards)).Concat(data.CarriedGangs.Select(p => (p.Key, p.Value))).ToList();
+
+                foreach (var (owner, gang) in gangs)
                 {
-                    foreach (var account in _coinService.GetAll().Accounts.ToList())
+                    try
                     {
                         List<BattlePerson> cards;
-                        lock (_packLock) cards = GangRules.Ordered(account.Cards);
+                        lock (_packLock) cards = GangRules.Ordered(gang);
                         var seen = new HashSet<string>();
                         var dupes = new List<BattlePerson>();
                         foreach (var card in cards)
                         {
-                            string hash = TryHashFile(card.FilePath);
-                            if (hash == null) continue;
-                            if (!seen.Add(hash)) dupes.Add(card);
+                            var keys = FaceKeys(card);
+                            if (keys.Count == 0) continue;
+                            if (keys.Any(seen.Contains)) dupes.Add(card);
+                            else seen.UnionWith(keys);
                         }
                         if (dupes.Count == 0) continue;
 
@@ -210,24 +231,51 @@ namespace DiscordBot.Managers
                         Directory.CreateDirectory(CardDirectory);
                         for (int i = 0; i < dupes.Count; i++)
                         {
-                            if (faces[i] == null) continue;
+                            if (faces[i] == null)
+                            {
+                                complete = false;
+                                continue;
+                            }
                             var card = dupes[i];
-                            string path = Path.Combine(CardDirectory, $"{account.UserId}_{card.Id}.jpg");
-                            await File.WriteAllBytesAsync(path, card.Foil ? FoilEffect.Apply(faces[i]) : faces[i]);
-                            RaidRenderer.ForgetArt(card.FilePath);
-                            RaidRenderer.ForgetArt(path);
-                            card.FilePath = path;
+                            string path = Path.Combine(CardDirectory, $"{owner}_{card.Id}.jpg");
+                            string temp = path + ".new";
+                            await File.WriteAllBytesAsync(temp, card.Foil ? FoilEffect.Apply(faces[i]) : faces[i]);
+                            lock (_packLock)
+                            {
+                                if (!gang.Contains(card))
+                                {
+                                    File.Delete(temp); //scrapped or fused while the face downloaded
+                                    continue;
+                                }
+                                File.Move(temp, path, overwrite: true);
+                                RaidRenderer.ForgetArt(card.FilePath);
+                                RaidRenderer.ForgetArt(path);
+                                card.FilePath = path;
+                            }
                             changed++;
                         }
+                        await _coinService.Update();
                     }
+                    catch (Exception ex)
+                    {
+                        complete = false;
+                        _logger.LogError(ex, "Repairing duplicate card faces failed for {Owner}", owner);
+                    }
+                }
+
+                try
+                {
+                    if (complete)
+                    {
+                        data.CardFaceRepairDone = true;
+                        await _coinService.Update();
+                    }
+                    _logger.LogInformation("Gave {Changed} cards that shared a face a new one ({State})", changed, complete ? "done" : "will try again after a restart");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Repairing duplicate card faces failed");
+                    _logger.LogError(ex, "Saving the card face repair failed");
                 }
-                _coinService.GetAll().CardFaceRepairDone = true;
-                await _coinService.Update();
-                _logger.LogInformation("Gave {Changed} cards that shared a face a new one", changed);
             });
         }
 
@@ -266,28 +314,41 @@ namespace DiscordBot.Managers
             bool own = shown.UserId == account.UserId;
             var embed = DiscordHelper.GetEmbedBuilder(own ? "🕶️ Your gang" : $"🕶️ {shown.Name}'s gang", GangText(shown, now, own));
             var components = own ? GangButtons(account, now) : CardPicker(shown);
-            //the whole gang as one picture, numbered as the list is; the text alone if it can't be drawn
-            MemoryStream picture = null;
-            var ordered = GangRules.Ordered(shown.Cards);
-            if (ordered.Count > 0)
+            List<BattlePerson> ordered;
+            lock (_packLock) ordered = GangRules.Ordered(shown.Cards);
+            //the whole gang as one picture, numbered as the list is, drawn off the gateway (decoding up to 15 faces takes a moment on the Pi);
+            //the text alone if it can't be drawn
+            _ = Task.Run(async () =>
             {
+                MemoryStream picture = null;
                 try
                 {
-                    picture = RaidRenderer.RenderGrid(ordered, GangColumns, numbered: true);
-                    embed.WithImageUrl("attachment://gang.png");
+                    if (ordered.Count > 0)
+                    {
+                        try
+                        {
+                            picture = RaidRenderer.RenderGrid(ordered, GangColumns, numbered: true);
+                            embed.WithImageUrl("attachment://gang.png");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Couldn't draw the gang picture");
+                        }
+                    }
+                    if (picture != null)
+                        await message.Channel.SendFileAsync(picture, "gang.png", embed: embed.Build(), components: components);
+                    else
+                        await message.Channel.SendMessageAsync(embed: embed.Build(), components: components);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Couldn't draw the gang picture");
+                    _logger.LogError(ex, "Posting the gang failed");
                 }
-            }
-            if (picture != null)
-            {
-                using (picture)
-                    await message.Channel.SendFileAsync(picture, "gang.png", embed: embed.Build(), components: components);
-            }
-            else
-                await message.Channel.SendMessageAsync(embed: embed.Build(), components: components);
+                finally
+                {
+                    picture?.Dispose();
+                }
+            });
         }
 
         /// <summary>Cards per row in the `.gang` picture: 15 cards make 5 by 3.</summary>
@@ -435,7 +496,7 @@ namespace DiscordBot.Managers
                     Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
             builder.WithButton("My gang", Id(MoneyComponents.Card, "gang", owner), ButtonStyle.Secondary, row: 0);
             for (int i = 0; opened != null && i < opened.Count && i < 5; i++)
-                builder.WithButton($"🌀 #{i + 1} glitched?", Id(MoneyComponents.Card, "glitch", owner, opened[i].Id), ButtonStyle.Secondary, row: 1);
+                builder.WithButton(Trim($"🌀 {opened[i].Name.Split(' ')[0]} glitched?", 80), Id(MoneyComponents.Card, "glitch", owner, opened[i].Id), ButtonStyle.Secondary, row: 1);
             return builder.Build();
         }
 
@@ -444,9 +505,11 @@ namespace DiscordBot.Managers
         /// <summary>A glitch vote from a button: privately says where the vote stands, and publicly when it turned the card Glitched.</summary>
         private async Task GlitchVote(SocketMessageComponent component, string[] args)
         {
+            await component.DeferAsync(ephemeral: true); //answer first: the save below can take longer than Discord waits
             var owner = args.Length > 0 && ulong.TryParse(args[0], out ulong ownerId) ? _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == ownerId) : null;
             string cardId = args.Length > 1 ? args[1] : null;
-            CoinAccount voter = await _coinService.Get(component.User.Id, component.User.Username);
+            //looked up, never made: a passer-by who clicks shouldn't get an account (they can't vote without one anyway)
+            CoinAccount voter = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == component.User.Id);
             bool glitched;
             BattlePerson card;
             string count;
@@ -465,7 +528,7 @@ namespace DiscordBot.Managers
                 return;
             }
             await _coinService.Update();
-            await component.RespondAsync(glitched ? $"🌀 Your vote made {card.Name} Glitched!" : $"🌀 Vote counted for {card.Name}: {count}.", ephemeral: true);
+            await component.FollowupAsync(glitched ? $"🌀 Your vote made {card.Name} Glitched!" : $"🌀 Vote counted for {card.Name}: {count}.", ephemeral: true);
             if (glitched && component.Channel != null)
                 await component.Channel.SendMessageAsync($"🌀 **{card.Name}** is **GLITCHED**! The crowd has spoken: {owner.Name}'s card is now the top rarity, power {card.Power:0}.", allowedMentions: AllowedMentions.None);
         }

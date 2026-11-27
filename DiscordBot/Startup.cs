@@ -120,6 +120,7 @@ namespace DiscordBot
             services.AddHttpClient<FaceService>(h =>
             {
                 h.BaseAddress = new Uri(@"https://thispersondoesnotexist.com");
+                h.Timeout = TimeSpan.FromSeconds(15); //faces are fetched one after another, so a hung site mustn't hold a pack for minutes
                 h.DefaultRequestHeaders.Add("User-Agent", "Pepsi-Dog-Bot-2");
             });
 

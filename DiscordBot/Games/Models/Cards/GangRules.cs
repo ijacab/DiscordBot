@@ -43,7 +43,7 @@ namespace DiscordBot.Games.Models.Cards
         /// <summary>Scrapping a card gives this much XP per level it had, on top of its rarity's (<see cref="ScrapXp"/>).</summary>
         public const int ScrapXpPerLevel = 25;
         /// <summary>
-        /// XP a scrapped card gives by rarity (Common, Rare, Epic, Legendary). Kept low on purpose: a street pack scrapped must never buy
+        /// XP a scrapped card gives by rarity (Common, Rare, Epic, Legendary, Glitched). Kept low on purpose: a street pack scrapped must never buy
         /// XP cheaper than `.train` does at level 0 (<c>GangTests.Scrapping_NeverBeatsTraining</c>), or nobody would train.
         /// </summary>
         public static readonly int[] ScrapXpByRarity = { 10, 25, 60, 150, 300 };
@@ -139,7 +139,8 @@ namespace DiscordBot.Games.Models.Cards
         {
             if (card == null || owner == null || !owner.Cards.Contains(card)) throw new BadInputException("That card isn't in the gang any more.");
             if (card.Rarity == CardRarity.Glitched) throw new BadInputException($"{card.Name} is already Glitched.");
-            if (voter == null || voter.UserId == owner.UserId) throw new BadInputException("You can't vote your own card glitched. Get someone else to look at it.");
+            if (voter == null) throw new BadInputException("Only players can vote. Use money once (any bet) and come back.");
+            if (voter.UserId == owner.UserId) throw new BadInputException("You can't vote your own card glitched. Get someone else to look at it.");
             if (card.GlitchVoterIds.Contains(voter.UserId)) throw new BadInputException($"You already voted {card.Name} glitched ({VoteCount(card, isAdmin)}).");
             if (now.Ticks - voter.LastActiveUtcTicks > GlitchVoterActive.Ticks)
                 throw new BadInputException("Only players who've used money in the last day can vote. Go gamble something first.");
@@ -162,12 +163,14 @@ namespace DiscordBot.Games.Models.Cards
         {
             int votes = card.GlitchVoterIds.Count;
             if (card.Rarity == CardRarity.Glitched) return "Glitched";
-            return votes >= GlitchVotesNeeded && !card.GlitchVoterIds.Any(isAdmin)
-                ? $"{votes}/{GlitchVotesNeeded}, waiting for a bot admin to confirm"
-                : $"{Math.Min(votes, GlitchVotesNeeded)}/{GlitchVotesNeeded} votes{(card.GlitchVoterIds.Any(isAdmin) ? "" : ", one from a bot admin")}";
+            int shown = Math.Min(votes, GlitchVotesNeeded);
+            if (card.GlitchVoterIds.Any(isAdmin)) return $"{shown}/{GlitchVotesNeeded} votes, a bot admin's among them";
+            return votes >= GlitchVotesNeeded
+                ? $"{shown}/{GlitchVotesNeeded}, waiting for a bot admin to confirm"
+                : $"{shown}/{GlitchVotesNeeded} votes, and it needs one from a bot admin";
         }
 
-        /// <summary>Reads "common", "rare", "epic" (or "c", "r", "e").</summary>
+        /// <summary>Reads a rarity's name or its start ("common", "r", "epic", "glitched"); fusing refuses the ones it can't fuse.</summary>
         public static bool TryParseRarity(string word, out CardRarity rarity)
         {
             string w = (word ?? "").Trim().ToLowerInvariant().TrimEnd('s');
