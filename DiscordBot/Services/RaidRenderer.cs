@@ -14,7 +14,7 @@ namespace DiscordBot.Services
     public class RaidSide
     {
         public string Name { get; set; }
-        /// <summary>The archetype's name, like BRUTE.</summary>
+        /// <summary>A short line under the name, like CREW OF 3 or MANSION.</summary>
         public string Kind { get; set; }
         public int Level { get; set; }
         public CardRarity Rarity { get; set; }
@@ -172,6 +172,48 @@ namespace DiscordBot.Services
             PixelFont.FillRect(image, x, y + height - thickness, width, thickness, color);
             PixelFont.FillRect(image, x, y, thickness, height, color);
             PixelFont.FillRect(image, x + width - thickness, y, thickness, height, color);
+        }
+
+        private const int StripCard = 150;
+        private const int StripGap = 10;
+
+        /// <summary>
+        /// A row of cards, as opened from a pack: each face framed in its rarity's colour (a foil gets a gold star), with its name, rarity and
+        /// power under it.
+        /// </summary>
+        public static MemoryStream RenderStrip(IList<BattlePerson> cards)
+        {
+            int count = Math.Max(1, cards.Count);
+            int width = Margin * 2 + count * StripCard + (count - 1) * StripGap;
+            int height = Margin * 2 + StripCard + 70;
+            using var image = new Image<Rgba32>(width, height);
+            PixelFont.FillRect(image, 0, 0, width, height, Background);
+            for (int i = 0; i < cards.Count; i++)
+            {
+                var card = cards[i];
+                int x = Margin + i * (StripCard + StripGap), y = Margin;
+                PixelFont.FillRect(image, x, y, StripCard, StripCard + 66, PanelColor);
+                Border(image, x, y, StripCard, StripCard + 66, RarityColor(card.Rarity), 3);
+                int artX = x + (StripCard - ArtSize) / 2, artY = y + 8;
+                DrawArt(image, new RaidSide { ArtPath = card.FilePath }, artX, artY);
+                if (card.Foil)
+                    PixelFont.DrawText(image, "*", artX + ArtSize - 16, artY + 2, GoldColor, 3);
+                string name = (card.Name ?? "").ToUpperInvariant().Replace("\"", "");
+                int textY = artY + ArtSize + 6;
+                foreach (string line in Wrap(name, (StripCard - 8) / 6, 2))
+                {
+                    PixelFont.DrawText(image, line, x + (StripCard - PixelFont.TextWidth(line, 1)) / 2, textY, BrightColor, 1);
+                    textY += 10;
+                }
+                string rarity = (card.Foil ? "FOIL " : "") + card.Rarity.ToString().ToUpperInvariant();
+                PixelFont.DrawText(image, rarity, x + (StripCard - PixelFont.TextWidth(rarity, 1)) / 2, y + StripCard + 40, RarityColor(card.Rarity), 1);
+                string power = $"POWER {card.Power:0}";
+                PixelFont.DrawText(image, power, x + (StripCard - PixelFont.TextWidth(power, 2)) / 2, y + StripCard + 50, GoldColor, 2);
+            }
+            var stream = new MemoryStream();
+            image.SaveAsPng(stream);
+            stream.Position = 0;
+            return stream;
         }
 
         public static Rgba32 RarityColor(CardRarity rarity)

@@ -23,175 +23,412 @@ using DiscordBot.Games.Models.Cards;
 
 namespace DiscordBot.Managers
 {
-    /// <summary>Battle Person card pulls: `.cardpull` and keeping a card.</summary>
+    /// <summary>Gangs: `.pack` (and the old `.cardpull`), `.gang` (`.card`), `.train`, `.fuse` and `.scrap`, and their buttons.</summary>
     public partial class CommandManager
     {
-
         private const string CardDirectory = "card_images";
 
-        /// <summary>How long a pulled card waits to be kept before it's binned.</summary>
-        public static readonly TimeSpan KeepWindow = TimeSpan.FromMinutes(5);
+        /// <summary>One pack at a time is added to an account, so two packs opened together can't pass the card limit or spend the same cash.</summary>
+        private static readonly object _packLock = new object();
 
-        /// <summary>Short keys for Keep buttons (a card's file prefix is too long for a button id), by key.</summary>
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _pendingCards = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+        // ---- typed commands
 
-        /// <summary>`.cardpull`: fetching the face is a slow web call, so the pull runs off the gateway and reports its own errors.</summary>
-        public Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args)
+        /// <summary>`.pack [street|crew|kingpin]`: the faces are slow web calls, so the opening runs off the gateway and reports its own errors.</summary>
+        public Task OpenPackCommand(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
-            if (args.Count > 1 && args[0].StartsWith("keep"))
-                return KeepTyped(message, args[1]); //old `.cardpull keep <id>` lines still work
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await PullCard(message);
-                }
-                catch (BadInputException ex)
-                {
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Card pull failed");
-                    await message.Channel.SendMessageAsync($"{message.Author.Mention} the card printer shat itself. Nothing was charged. Try again in a bit.");
-                }
-            });
+            var pack = args.Count == 0 ? GangRules.Pack(PackKind.Street) : GangRules.FindPack(args[0])
+                ?? throw new BadInputException("Which pack? " + string.Join(", ", GangRules.Packs.Select(p => $"`.pack {p.Kind.ToString().ToLower()}`")) + ".");
+            _ = Task.Run(() => OpenPackAndPost(message.Author, message.Channel, pack));
             return Task.CompletedTask;
         }
 
-        private async Task KeepTyped(SocketMessage message, string prefix)
+        /// <summary>The old `.cardpull`: a street pack.</summary>
+        public Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args) => OpenPackCommand(client, message, new List<string>());
+
+        private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack)
         {
-            if (!ulong.TryParse(prefix.Split('_')[0], out ulong userId) || userId != message.Author.Id)
+            try
             {
-                await message.SendRichEmbedMessage("You are not the owner of this card. FUCK OFF");
+                using (channel.EnterTypingState())
+                    await OpenPack(user, channel, pack);
+            }
+            catch (BadInputException ex)
+            {
+                try { await channel.SendMessageAsync($"{user.Mention} {ex.Message}", allowedMentions: AllowedMentions.None); }
+                catch (Exception) { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Opening a pack failed");
+                try { await channel.SendMessageAsync($"{user.Mention} the card printer shat itself. Nothing was charged. Try again in a bit.", allowedMentions: AllowedMentions.None); }
+                catch (Exception) { }
+            }
+        }
+
+        private async Task OpenPack(IUser user, IMessageChannel channel, PackType pack)
+        {
+            CoinAccount account = await _coinService.Get(user.Id, user.Username);
+            string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
+            PackRefusal(account, pack, today);
+
+            //get the faces before charging, so nobody pays when the image service is down; a card whose face failed gets a stand-in
+            var faces = await Task.WhenAll(Enumerable.Range(0, pack.Cards).Select(_ => TryFetchFace()));
+            if (faces.All(f => f == null))
+                throw new BadInputException("The face printer is down, so nothing was opened or charged. Try again in a bit.");
+
+            var cards = GangRules.Open(pack, RandomHelper.ThisThreadsRandom);
+            Directory.CreateDirectory(CardDirectory);
+            for (int i = 0; i < cards.Count; i++)
+            {
+                if (faces[i] == null) continue;
+                byte[] bytes = cards[i].Foil ? FoilEffect.Apply(faces[i]) : faces[i]; //foils get the holographic picture
+                string path = Path.Combine(CardDirectory, $"{user.Id}_{cards[i].Id}.jpg");
+                await File.WriteAllBytesAsync(path, bytes);
+                cards[i].FilePath = path;
+            }
+
+            bool free;
+            string xpLine = "";
+            try
+            {
+                lock (_packLock)
+                {
+                    PackRefusal(account, pack, today); //again: something may have changed while the faces downloaded
+                    free = IsFreePack(account, pack, today);
+                    if (free) account.LastFreePullDate = today;
+                    else Money.Debit(account, pack.Price);
+                    var strongest = GangRules.Ordered(account.Cards).FirstOrDefault();
+                    if (strongest != null)
+                        xpLine = $" {strongest.Name}: {CardLevels.AddXp(strongest, CardLevels.PullXp)}.";
+                    account.Cards.AddRange(cards);
+                }
+            }
+            catch (Exception)
+            {
+                DeleteCardImages(cards);
+                throw;
+            }
+            await _coinService.Update();
+
+            string paid = free ? "Free daily street pack." : $"{Money.Format(pack.Price)} spent.";
+            string text = $"{paid}{xpLine} Your gang has {account.Cards.Count}/{GangRules.MaxCards} cards. `.gang` to see them.";
+            var embed = DiscordHelper.GetEmbedBuilder($"{pack.Emoji} {user.Username} opened a {pack.Name}", string.Join("\n", cards.Select(c => c.Line())));
+            MemoryStream picture = null;
+            try
+            {
+                picture = RaidRenderer.RenderStrip(cards);
+                embed.WithImageUrl("attachment://pack.png");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Couldn't draw the pack picture");
+            }
+            var components = PackButtons(account, today);
+            if (picture != null)
+            {
+                using (picture)
+                    await channel.SendFileAsync(picture, "pack.png", text, embed: embed.Build(), components: components, allowedMentions: AllowedMentions.None);
+            }
+            else
+                await channel.SendMessageAsync(text, embed: embed.Build(), components: components, allowedMentions: AllowedMentions.None);
+        }
+
+        private static bool IsFreePack(CoinAccount account, PackType pack, string today) => pack.Kind == PackKind.Street && account.LastFreePullDate != today;
+
+        /// <summary>Throws when the pack can't be opened: no room in the gang, or not enough cash.</summary>
+        private static void PackRefusal(CoinAccount account, PackType pack, string today)
+        {
+            if (account.Cards.Count + pack.Cards > GangRules.MaxCards)
+                throw new BadInputException($"Your gang has {account.Cards.Count}/{GangRules.MaxCards} cards, so a {pack.Cards}-card {pack.Name.ToLower()} won't fit. " +
+                    $"`.fuse common` turns {GangRules.FuseCount} into one better card, and `.scrap N` turns one into XP.");
+            if (!IsFreePack(account, pack, today) && account.NetWorth < pack.Price)
+                throw new BadInputException($"A {pack.Name.ToLower()} costs {Money.Format(pack.Price)} and you have {Money.Format(Math.Max(0, account.NetWorth))}." +
+                    (pack.Kind == PackKind.Street ? " Your first street pack each day is free, come back tomorrow." : ""));
+        }
+
+        private async Task<byte[]> TryFetchFace()
+        {
+            try
+            {
+                using var faceStream = await _faceService.Run();
+                using var buffer = new MemoryStream();
+                await faceStream.CopyToAsync(buffer);
+                return buffer.Length > 0 ? buffer.ToArray() : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Couldn't fetch a card face");
+                return null;
+            }
+        }
+
+        private static void DeleteCardImages(IEnumerable<BattlePerson> cards)
+        {
+            foreach (var card in cards)
+            {
+                RaidRenderer.ForgetArt(card.FilePath);
+                try
+                {
+                    if (!string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath)) File.Delete(card.FilePath);
+                }
+                catch (Exception) { }
+            }
+        }
+
+        /// <summary>`.gang [@someone]`: the roster, strongest first, numbered for `.train`, `.scrap` and `.gang N`. `.gang N` shows one card.</summary>
+        private async Task GangView(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var now = DateTime.UtcNow;
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            if (args.Count >= 1 && args[0].Equals("stance", StringComparison.OrdinalIgnoreCase))
+            {
+                await StanceGone(client, message, args);
                 return;
             }
-            CoinAccount owner = await _coinService.Get(message.Author.Id, message.Author.Username);
-            await message.Channel.SendMessageAsync(await SaveCard(prefix, owner));
-        }
-
-        private async Task PullCard(SocketMessage message)
-        {
-            CoinAccount coinAccount = await _coinService.Get(message.Author.Id, message.Author.Username);
-            string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            bool isFreePull = coinAccount.LastFreePullDate != today;
-            if (!isFreePull && coinAccount.NetWorth < BattlePerson.PullCost)
-                throw new BadInputException($"A pull costs {Money.Format(BattlePerson.PullCost)} and you're too broke. Your first pull each day is free, come back tomorrow.");
-
-            //get the face before charging, so nobody pays when the image service is down
-            byte[] faceBytes;
-            using (var faceStream = await _faceService.Run())
-            using (var buffer = new MemoryStream())
+            if (args.Count == 1 && int.TryParse(args[0].TrimStart('#'), out int number))
             {
-                await faceStream.CopyToAsync(buffer);
-                faceBytes = buffer.ToArray();
+                await ShowCard(message.Channel, account, GangRules.At(account.Cards, number), number);
+                return;
             }
+            CoinAccount shown = account;
+            if (args.Count >= 1)
+                shown = FindRaidTarget(message, args[0]);
 
-            var battlePerson = BattlePerson.Pull();
-            CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //shown at the player's own level, which it keeps
-            if (battlePerson.Foil)
-                faceBytes = FoilEffect.Apply(faceBytes); //foil cards get the holographic image, saved with the card
-            //a plain file name: letters and digits only, since the nickname has quotes in it
-            string prefix = $"{message.Author.Id}_{System.Text.RegularExpressions.Regex.Replace(battlePerson.Name, "[^A-Za-z0-9]", "")}_{DateTimeOffset.Now.Ticks}";
+            bool own = shown.UserId == account.UserId;
+            var embed = DiscordHelper.GetEmbedBuilder(own ? "🕶️ Your gang" : $"🕶️ {shown.Name}'s gang", GangText(shown, now, own)).Build();
+            await message.Channel.SendMessageAsync(embed: embed, components: own ? GangButtons(account, now) : CardPicker(shown, null));
+        }
 
-            //the card is saved next to the image so Keep saves the card the player actually saw
-            Directory.CreateDirectory(CardDirectory);
-            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
-            await File.WriteAllBytesAsync($"{unsavedBase}.jpg", faceBytes);
-            await File.WriteAllTextAsync($"{unsavedBase}.json", JsonConvert.SerializeObject(battlePerson));
+        private string GangText(CoinAccount account, DateTime now, bool own)
+        {
+            var lines = new List<string>();
+            var ordered = GangRules.Ordered(account.Cards);
+            if (ordered.Count == 0)
+                return own ? "No gang yet. `.pack` opens a street pack, and the first one each day is free." : $"{account.Name} has no gang.";
 
-            if (isFreePull)
-                coinAccount.LastFreePullDate = today;
-            else
-                Money.Debit(coinAccount, BattlePerson.PullCost);
-            await _coinService.Update();
-
-            string key = Guid.NewGuid().ToString("N").Substring(0, 8);
-            _pendingCards[key] = prefix;
-            _ = Task.Delay(KeepWindow).ContinueWith(t =>
+            var crew = GangRules.Crew(account.Cards, now);
+            lines.Add($"**{ordered.Count}/{GangRules.MaxCards} cards** · raiding crew power **{RaidRules.TotalPower(crew):0}** ({crew.Count} ready) · defence **{RaidRules.TotalPower(GangRules.Defenders(account.Cards)):0}** plus your property's security");
+            if (own)
             {
-                _pendingCards.TryRemove(key, out _);
-                DeleteUnsavedCard(prefix);
-            });
-
-            string paidLine = isFreePull ? "Free daily pull." : $"{Money.Format(BattlePerson.PullCost)} down the drain.";
-            //every pull trains your current card a little, kept or not
-            string xpLine = coinAccount.BattlePerson == null ? "" : " " + CardLevels.AddXp(coinAccount.BattlePerson, CardLevels.PullXp) + " for " + coinAccount.BattlePerson.Name + ".";
-            await _coinService.Update();
-            var embed = DiscordHelper.GetEmbedBuilder(battlePerson.Name, battlePerson.GetSummary()).Build();
-            MessageComponent keep = coinAccount.BattlePerson == null ? null : new ComponentBuilder()
-                .WithButton($"Keep {Trim(battlePerson.Name, 60)}", Id(MoneyComponents.Card, "keep", message.Author.Id.ToString(), key), ButtonStyle.Success)
-                .Build();
-            string text = coinAccount.BattlePerson == null
-                ? $"{paidLine} Your first card, so it's yours."
-                : $"{paidLine}{xpLine}\n{Compare(coinAccount.BattlePerson, battlePerson)}\nPress **Keep** within {KeepWindow.TotalMinutes:0} minutes to swap it in (you keep your level and XP). Otherwise it's binned.";
-            using (var image = new MemoryStream(faceBytes))
-            {
-                await message.Channel.SendFileAsync(stream: image, $"{prefix}_unsaved.jpg", text, embed: embed, components: keep);
+                _raidService.Check(account, account, null, now); //drops expired revenge and cooldowns
+                lines.Add($"Raids left this hour: {Math.Max(0, RaidRules.RaidsPerHour - account.RecentRaidUtcTicks.Count)} of {RaidRules.RaidsPerHour}" +
+                    (account.GuardsUntilUtcTicks > now.Ticks ? $" · 💂 guards for {RaidService.Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}" : "") +
+                    (account.Bounty > 0 ? $" · 💰 bounty on you {RaidService.Money(account.Bounty)}" : "") +
+                    (account.RevengeTokens.Count > 0 ? " · 🔥 revenge on " + string.Join(", ", account.RevengeTokens.Select(r => r.Name)) : ""));
             }
-
-            if (coinAccount.BattlePerson == null)
-                await message.Channel.SendMessageAsync(await SaveCard(prefix, coinAccount)); //auto save the card if they don't have any card
-        }
-
-        /// <summary>How a new pull stacks up against the card you have, at your level: power, and what changes about how it raids.</summary>
-        private static string Compare(BattlePerson current, BattlePerson pulled)
-        {
-            double diff = pulled.Power - current.Power;
-            string power = Math.Abs(diff) < 0.05 ? "the same power" : diff > 0 ? $"**+{diff:0} power** 📈" : $"**{diff:0} power** 📉";
-            string kind = Archetypes.Normalise(current.Archetype) == Archetypes.Normalise(pulled.Archetype)
-                ? "the same archetype"
-                : $"{Archetypes.Label(current.Archetype)} → {Archetypes.Label(pulled.Archetype)}";
-            return $"Versus your {Archetypes.Emoji(current.Archetype)} {current.Name}: {power}, {kind}.";
-        }
-
-        /// <summary>The Keep button under a pull.</summary>
-        private async Task<string> KeepFromButton(CoinAccount owner, string key)
-        {
-            if (!_pendingCards.TryRemove(key, out string prefix))
-                return "Too slow, that card's already in the bin. Pull another.";
-            return await SaveCard(prefix, owner);
-        }
-
-        /// <summary>Makes the pulled card the player's card. Returns what to say.</summary>
-        private async Task<string> SaveCard(string prefix, CoinAccount coinAccount)
-        {
-            //the prefix can come from the player's message, so it must be a plain file name
-            if (string.IsNullOrWhiteSpace(prefix) || prefix != Path.GetFileName(prefix))
-                return "That card doesn't exist. It may have been binned already.";
-
-            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
-            string unsavedJsonPath = $"{unsavedBase}.json";
-            string unsavedImagePath = $"{unsavedBase}.jpg";
-            if (!File.Exists(unsavedJsonPath) || !File.Exists(unsavedImagePath))
-                return "That card doesn't exist. It may have been binned already.";
-
-            BattlePerson battlePerson = JsonConvert.DeserializeObject<BattlePerson>(await File.ReadAllTextAsync(unsavedJsonPath));
-
-            if (coinAccount.BattlePerson?.FilePath != null && File.Exists(coinAccount.BattlePerson.FilePath))
-                File.Delete(coinAccount.BattlePerson.FilePath); //replacing the old card removes its image
-            RaidRenderer.ForgetArt(coinAccount.BattlePerson?.FilePath);
-
-            string savedImagePath = Path.Combine(CardDirectory, $"{prefix}.jpg");
-            RaidRenderer.ForgetArt(savedImagePath);
-            File.Move(unsavedImagePath, savedImagePath, overwrite: true);
-            File.Delete(unsavedJsonPath);
-
-            battlePerson.FilePath = savedImagePath;
-            CardLevels.CarryOver(coinAccount.BattlePerson, battlePerson); //the level belongs to the player, not the card
-            coinAccount.BattlePerson = battlePerson;
-            await _coinService.Update();
-            return $"🃏 **{battlePerson.Name}** is your Battle Person now: {Archetypes.Label(battlePerson.Archetype)}, {battlePerson.Rarity}, power {battlePerson.Power:0}. `.card` for the control panel, `.raid @someone` to put it to work.";
-        }
-
-        private static void DeleteUnsavedCard(string prefix)
-        {
-            string unsavedBase = Path.Combine(CardDirectory, $"{prefix}_unsaved");
-            foreach (string path in new[] { $"{unsavedBase}.jpg", $"{unsavedBase}.json" })
+            lines.Add("");
+            for (int i = 0; i < ordered.Count; i++)
             {
-                if (File.Exists(path))
-                    File.Delete(path);
+                var card = ordered[i];
+                string rest = card.IsResting(now) ? $" · 😴 {RaidService.Wait(new DateTime(card.RestedUntilUtcTicks) - now)}" : "";
+                lines.Add($"`{i + 1,2}` {card.Line()}{rest}");
             }
+            if (own)
+                lines.Add($"\n`.gang N` shows a card · `.train N` / `.train N max` · `.fuse common` ({GangRules.FuseCount} into one better) · `.scrap N into M` (XP) · `.raid @someone`");
+            var s = account.Stats;
+            lines.Add($"Raids won {s.RaidsWon} / lost {s.RaidsLost} · defences won {s.DefencesWon} / lost {s.DefencesLost}" + (account.RaidStreak >= 2 ? $" · 🔥 {account.RaidStreak} jobs in a row" : ""));
+            return string.Join("\n", lines);
+        }
+
+        private async Task ShowCard(IMessageChannel channel, CoinAccount owner, BattlePerson card, int number, SocketMessageComponent component = null)
+        {
+            string text = card.GetSummary() + (card.Level < CardLevels.MaxLevel ? $"\nTraining to level {card.Level + 1}: {RaidService.Money(CardLevels.TrainCost(card))} (`.train {number}`)" : "") +
+                $"\nScraps for {GangRules.ScrapXp(card)} XP.";
+            var embed = DiscordHelper.GetEmbedBuilder($"#{number} {card.Name} ({owner.Name})", text);
+            bool art = !string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath);
+            if (art) embed.WithImageUrl("attachment://" + Path.GetFileName(card.FilePath));
+            if (component != null)
+            {
+                if (art)
+                {
+                    using var image = File.OpenRead(card.FilePath);
+                    await component.FollowupWithFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build(), ephemeral: true);
+                }
+                else await component.FollowupAsync(embed: embed.Build(), ephemeral: true);
+                return;
+            }
+            if (art)
+            {
+                using var image = File.OpenRead(card.FilePath);
+                await channel.SendFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build());
+            }
+            else await channel.SendMessageAsync(embed: embed.Build());
+        }
+
+        /// <summary>`.train [N] [max]`: trains card N (your strongest when there's no number) a level, or as many as your cash pays for.</summary>
+        private async Task Train(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            bool max = args.Any(a => a.Equals("max", StringComparison.OrdinalIgnoreCase) || a.Equals("all", StringComparison.OrdinalIgnoreCase));
+            var numbers = args.Where(a => int.TryParse(a.TrimStart('#'), out _)).ToList();
+            if (args.Count > numbers.Count + (max ? 1 : 0)) throw new BadSyntaxException();
+            var card = numbers.Count == 0 ? GangRules.Ordered(account.Cards).FirstOrDefault() : GangRules.At(account.Cards, int.Parse(numbers[0].TrimStart('#')));
+            await message.Channel.SendMessageAsync(await TrainText(account, card, max), components: GangButtons(account, DateTime.UtcNow));
+        }
+
+        private async Task<string> TrainText(CoinAccount account, BattlePerson card, bool max)
+        {
+            if (card == null) throw new BadInputException("You don't have a gang to train. `.pack` opens a street pack (the first each day is free).");
+            int before = card.Level;
+            var (levels, cost) = _raidService.Train(account, card, max ? CardLevels.MaxLevel : 1);
+            await _coinService.Update();
+            string next = card.Level >= CardLevels.MaxLevel ? "Max level!" : $"Next level costs {RaidService.Money(CardLevels.TrainCost(card))}.";
+            return $"🏋️ {account.Name} trained **{card.Name}** {before} → **{card.Level}** ({levels} level{(levels == 1 ? "" : "s")}) for {RaidService.Money(cost)}, into the jackpot. {next}";
+        }
+
+        /// <summary>`.fuse common|rare|epic`: three of your weakest of that rarity become one card of the next.</summary>
+        private async Task Fuse(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            if (args.Count != 1 || !GangRules.TryParseRarity(args[0], out CardRarity rarity)) throw new BadSyntaxException();
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            List<BattlePerson> used;
+            BattlePerson made;
+            lock (_packLock)
+                (used, made) = GangRules.Fuse(account.Cards, rarity, RandomHelper.ThisThreadsRandom);
+            //the new card takes the best face of the three, so it keeps a picture without another download
+            var face = used.OrderByDescending(c => c.Level).FirstOrDefault(c => !string.IsNullOrEmpty(c.FilePath) && File.Exists(c.FilePath));
+            if (face != null)
+            {
+                string path = Path.Combine(CardDirectory, $"{message.Author.Id}_{made.Id}.jpg");
+                File.Copy(face.FilePath, path, true);
+                made.FilePath = path;
+            }
+            DeleteCardImages(used);
+            await _coinService.Update();
+            await message.Channel.SendMessageAsync($"🔥 {account.Name} fused {string.Join(", ", used.Select(c => c.Name))} into {made.Line()}.", allowedMentions: AllowedMentions.None);
+        }
+
+        /// <summary>`.scrap N [into M]`: card N is gone and card M (your strongest other card) gets its XP.</summary>
+        private async Task Scrap(DiscordSocketClient client, SocketMessage message, List<string> args)
+        {
+            var words = args.Where(a => !a.Equals("into", StringComparison.OrdinalIgnoreCase) && !a.Equals("to", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (words.Count < 1 || words.Count > 2 || !words.All(w => int.TryParse(w.TrimStart('#'), out _))) throw new BadSyntaxException();
+            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
+            string line;
+            BattlePerson scrapped;
+            lock (_packLock)
+            {
+                scrapped = GangRules.At(account.Cards, int.Parse(words[0].TrimStart('#')));
+                var into = words.Count == 2 ? GangRules.At(account.Cards, int.Parse(words[1].TrimStart('#')))
+                    : GangRules.Ordered(account.Cards).FirstOrDefault(c => c != scrapped);
+                if (into == null) throw new BadInputException("That's your only card, so there's nothing to give its XP to.");
+                if (into == scrapped) throw new BadInputException("A card can't be scrapped into itself.");
+                int xp = GangRules.ScrapXp(scrapped);
+                account.Cards.Remove(scrapped);
+                line = $"♻️ {account.Name} scrapped {scrapped.Name}. **{into.Name}**: {CardLevels.AddXp(into, xp)}.";
+            }
+            DeleteCardImages(new[] { scrapped });
+            await _coinService.Update();
+            await message.Channel.SendMessageAsync(line, allowedMentions: AllowedMentions.None);
+        }
+
+        /// <summary>The old `.stance`: stances are gone.</summary>
+        private Task StanceGone(DiscordSocketClient client, SocketMessage message, List<string> args) =>
+            message.Channel.SendMessageAsync("Stances are gone. Raids hit property now: your property's security and your best cards defend it, and `.guards` makes them 50% tougher.");
+
+        // ---- buttons
+
+        private MessageComponent PackButtons(CoinAccount account, string today)
+        {
+            string owner = account.UserId.ToString();
+            var builder = new ComponentBuilder();
+            foreach (var pack in GangRules.Packs)
+                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(pack.Price))}", 80),
+                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
+            builder.WithButton("My gang", Id(MoneyComponents.Card, "gang", owner), ButtonStyle.Secondary, row: 0);
+            return builder.Build();
+        }
+
+        private MessageComponent GangButtons(CoinAccount account, DateTime now)
+        {
+            string owner = account.UserId.ToString();
+            string today = now.ToString("yyyyMMdd");
+            var builder = new ComponentBuilder();
+            foreach (var pack in GangRules.Packs)
+                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(pack.Price))}", 80),
+                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
+            var strongest = GangRules.Ordered(account.Cards).FirstOrDefault();
+            if (strongest != null)
+            {
+                bool max = strongest.Level >= CardLevels.MaxLevel;
+                builder.WithButton(Trim(max ? "#1 is max level" : $"Train #1 · {RaidService.Money(CardLevels.TrainCost(strongest))}", 80), Id(MoneyComponents.Card, "train", owner), ButtonStyle.Success, disabled: max, row: 1);
+                builder.WithButton("Train #1 max", Id(MoneyComponents.Card, "trainmax", owner), ButtonStyle.Success, disabled: max, row: 1);
+            }
+            builder.WithButton(Trim($"Hire guards · {RaidService.Money(_raidService.GuardsCost(account))}", 80), Id(MoneyComponents.Card, "guards", owner), ButtonStyle.Primary, row: 1);
+            var picker = CardPickerMenu(account);
+            if (picker != null) builder.WithSelectMenu(picker, 2);
+            return builder.Build();
+        }
+
+        /// <summary>A menu to look at one of a player's cards (privately, for whoever picks).</summary>
+        private static MessageComponent CardPicker(CoinAccount account, string _)
+        {
+            var menu = CardPickerMenu(account);
+            return menu == null ? null : new ComponentBuilder().WithSelectMenu(menu).Build();
+        }
+
+        private static SelectMenuBuilder CardPickerMenu(CoinAccount account)
+        {
+            var ordered = GangRules.Ordered(account.Cards);
+            if (ordered.Count == 0) return null;
+            var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Card, "view", account.UserId.ToString())).WithPlaceholder("Look at a card…");
+            for (int i = 0; i < ordered.Count && i < 25; i++)
+                menu.AddOption(Trim($"{i + 1}. {ordered[i].Name}", 100), ordered[i].Id, Trim($"{(ordered[i].Foil ? "Foil " : "")}{ordered[i].Rarity} · Lv {ordered[i].Level} · power {ordered[i].Power:0}", 100));
+            return menu;
+        }
+
+        private async Task CardComponent(SocketMessageComponent component, string action, string[] args)
+        {
+            if (action == "view")
+            {
+                //anyone can look at anyone's cards
+                var owner = args.Length > 0 && ulong.TryParse(args[0], out ulong ownerId) ? _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == ownerId) : null;
+                string cardId = component.Data.Values?.FirstOrDefault();
+                var ordered = GangRules.Ordered(owner?.Cards);
+                int index = ordered.FindIndex(c => c.Id == cardId);
+                if (index < 0)
+                {
+                    await ReplyPrivately(component, "That card isn't in the gang any more.");
+                    return;
+                }
+                await component.DeferAsync(ephemeral: true);
+                await ShowCard(component.Channel, owner, ordered[index], index + 1, component);
+                return;
+            }
+            if (action == "keep" || action == "stance")
+            {
+                await ReplyPrivately(component, action == "keep" ? "Cards go straight into your gang now. `.gang` to see them." : "Stances are gone. Your property's security and best cards defend it now.");
+                return;
+            }
+            if (!await IsOwner(component, args)) return;
+            CoinAccount account = await _coinService.Get(component.User.Id, component.User.Username);
+            switch (action)
+            {
+                case "pack":
+                {
+                    if (args.Length < 2 || !Enum.TryParse(args[1], out PackKind kind) || component.Channel == null) break;
+                    await component.DeferAsync();
+                    _ = Task.Run(() => OpenPackAndPost(component.User, component.Channel, GangRules.Pack(kind)));
+                    MarkActiveFromInteraction(component);
+                    return;
+                }
+                case "gang":
+                    await component.DeferAsync(ephemeral: true);
+                    await component.FollowupAsync(embed: DiscordHelper.GetEmbedBuilder("🕶️ Your gang", GangText(account, DateTime.UtcNow, true)).Build(), ephemeral: true);
+                    return;
+                case "train":
+                case "trainmax":
+                    await component.DeferAsync();
+                    await component.FollowupAsync(await TrainText(account, GangRules.Ordered(account.Cards).FirstOrDefault(), action == "trainmax"), allowedMentions: AllowedMentions.None);
+                    MarkActiveFromInteraction(component);
+                    return;
+                case "guards":
+                    await component.DeferAsync();
+                    await component.FollowupAsync(await GuardsText(account, DateTime.UtcNow), allowedMentions: AllowedMentions.None);
+                    MarkActiveFromInteraction(component);
+                    return;
+            }
+            await ReplyPrivately(component, "That button doesn't do anything any more.");
         }
     }
 }

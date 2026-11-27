@@ -112,8 +112,20 @@ namespace DiscordBot.Models
         public long NextCrisisAllowedDay { get; set; }
         /// <summary>Set when a crash ends, so stocks take their new level as their base on the next tick.</summary>
         public bool CrisisResetPending { get; set; }
-        /// <summary>Battle Person cards kept from last season, given back (at level 0) when each player's account is made again.</summary>
+        /// <summary>Every player's gang kept from last season, given back (at level 0) when their account is made again.</summary>
+        public Dictionary<ulong, List<BattlePerson>> CarriedGangs { get; set; } = new Dictionary<ulong, List<BattlePerson>>();
+        /// <summary>Old saves: the single card each player kept from last season. Read and moved into <see cref="CarriedGangs"/>, never written.</summary>
         public Dictionary<ulong, BattlePerson> CarriedCards { get; set; } = new Dictionary<ulong, BattlePerson>();
+        public bool ShouldSerializeCarriedCards() => CarriedCards.Count > 0;
+
+        [System.Runtime.Serialization.OnDeserialized]
+        private void MoveOldCarriedCards(System.Runtime.Serialization.StreamingContext context)
+        {
+            foreach (var pair in CarriedCards)
+                if (pair.Value != null && !CarriedGangs.ContainsKey(pair.Key))
+                    CarriedGangs[pair.Key] = new List<BattlePerson> { pair.Value };
+            CarriedCards.Clear();
+        }
 
         public class CoinAccount
         {
@@ -124,9 +136,23 @@ namespace DiscordBot.Models
             public string MostRecentDateBonusMet { get; set; }
             public int PrestigeLevel { get; set; } = 0;
             public CoinAccountStats Stats { get; set; } = new CoinAccountStats();
-            public BattlePerson BattlePerson { get; set; }
+            /// <summary>The player's gang: up to <see cref="GangRules.MaxCards"/> cards, each with its own level (<see cref="GangRules"/>).</summary>
+            public List<BattlePerson> Cards { get; set; } = new List<BattlePerson>();
+            /// <summary>Old saves: the one card a player had. Moved into <see cref="Cards"/> when loaded, never written.</summary>
+            [Newtonsoft.Json.JsonProperty("BattlePerson")]
+            public BattlePerson LegacyCard { get; set; }
+            public bool ShouldSerializeLegacyCard() => false;
+
+            [System.Runtime.Serialization.OnDeserialized]
+            private void MoveOldCard(System.Runtime.Serialization.StreamingContext context)
+            {
+                if (LegacyCard != null && !Cards.Exists(c => c.Id == LegacyCard.Id))
+                    Cards.Add(LegacyCard);
+                LegacyCard = null;
+            }
+
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
-            public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily card pull was used
+            public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily street pack was opened
             /// <summary>The UTC hour (hours since 1970) of the player's last jackpot roll, and how many they've used in it. See <see cref="Managers.BetManager.TryUseJackpotRoll"/>.</summary>
             public long JackpotRollHour { get; set; }
             public int JackpotRollsThisHour { get; set; }
@@ -151,14 +177,10 @@ namespace DiscordBot.Models
             public List<AttackRecord> RecentAttacks { get; set; } = new List<AttackRecord>();
 
             //raids (`.raid`, Services/RaidService.cs)
-            /// <summary>How the card defends against raids while the player is away.</summary>
-            public RaidStance RaidStance { get; set; } = RaidStance.Guard;
             /// <summary>Raids won in a row. A lost raid resets it.</summary>
             public int RaidStreak { get; set; }
             /// <summary>Hired guards (`.guards`) defend until then (UTC ticks).</summary>
             public long GuardsUntilUtcTicks { get; set; }
-            /// <summary>Safe from raids until then (UTC ticks), after being raided successfully. Revenge raids ignore it.</summary>
-            public long RaidProtectedUntilUtcTicks { get; set; }
             /// <summary>When the player's own raids happened (UTC ticks), for the hourly limit.</summary>
             public List<long> RecentRaidUtcTicks { get; set; } = new List<long>();
             /// <summary>The last time this player raided each target (UTC ticks), for the once-per-6-hours rule.</summary>
@@ -167,8 +189,6 @@ namespace DiscordBot.Models
             public List<RevengeToken> RevengeTokens { get; set; } = new List<RevengeToken>();
             /// <summary>Money set aside from this player's raid loot, paid to whoever beats them next.</summary>
             public double Bounty { get; set; }
-            /// <summary>yyyyMMdd (UTC) the Reroll ability last re-rolled a failed raid.</summary>
-            public string LastRaidRerollDate { get; set; }
 
             /// <summary>Interest on debt every hour (it nearly doubles every 7 hours). High on purpose: pay it off.</summary>
             public const double HourlyDebtInterest = 0.10;

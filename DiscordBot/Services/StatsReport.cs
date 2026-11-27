@@ -291,7 +291,8 @@ namespace DiscordBot.Services
                 .Row("Dungeon buy-ins", N(s.DungeonRuns))
                 .Row("Paid out (cash-outs and refunds)", M(s.DungeonPayouts))
                 .Row("Buy-ins lost", M(s.DungeonBuyInsLost));
-            page.Row("Battle card", a.BattlePerson == null ? "none (`.cardpull`)" : $"{a.BattlePerson.Name} ({DiscordBot.Games.Models.Cards.Archetypes.Name(a.BattlePerson.Archetype)}, level {a.BattlePerson.Level})");
+            var best = DiscordBot.Games.Models.Cards.GangRules.Ordered(a.Cards).FirstOrDefault();
+            page.Row("Gang", best == null ? "none (`.pack`)" : $"{a.Cards.Count} cards, best {best.Name} (level {best.Level}, power {best.Power:0})");
             page.Heading("Raids");
             if (s.RaidsWon + s.RaidsLost + s.DefencesWon + s.DefencesLost == 0 && s.CardTrainingSpent == 0)
                 page.Line("No raids yet (`.raid`).");

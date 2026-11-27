@@ -36,49 +36,58 @@ namespace DiscordBot.Managers
             string output = $"The market is {(data.PropertyTrendDirection > 0 ? "rising" : "falling")}. Prices drift about 2% a day in booms and busts of 4 to 8 days, " +
                 "with a random move on top each day that can be 10% to 30% or more on a shock day.\n" +
                 MarketCycle.RiskLine(data, _stockService.RiskyAssetShare(), PropertyMarket.DayNumber(DateTime.UtcNow)) + "\n\n";
-            var house = PropertyKind.House;
-            output += $"🏠 **House**: ${FormatHelper.GetCommaNumber(PropertyCatalog.Price(house, index))} " +
-                $"(${FormatHelper.GetCommaNumber(PropertyCatalog.BuyCost(house, index))} to buy with stamp duty), " +
-                $"worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(house, index))} to sell, rent {PropertyCatalog.RentPerHour(house, index):N2} an hour\n";
+            output += "**For sale** (price · rent or takings an hour after costs · security)\n";
+            foreach (var type in PropertyCatalog.Buyable)
+                output += $"{type.Emoji} **{type.Name}** `{type.Words[0]}`: ${FormatHelper.GetCommaNumber(Math.Round(PropertyCatalog.Price(type.Kind, index)))} · " +
+                    $"${FormatHelper.GetCommaNumber(Math.Round(PropertyCatalog.ProfitPerHour(type.Kind, index)))}/h{(type.IsBusiness ? " (swings)" : "")} · 🔒{type.Security:0}\n";
 
             output += "\n**Your property**\n";
             if (account.Properties.Count == 0)
-                output += "None yet. Buy a house with `.buy property`.\n";
-            for (int i = 0; i < account.Properties.Count; i++)
+                output += "None yet. Buy with `.buy property house` or `.buy business cafe`, or pick from the menu.\n";
+            for (int i = 0; i < account.Properties.Count && i < MaxPropertyLines; i++)
             {
                 var property = account.Properties[i];
-                double netRentPerHour = PropertyCatalog.NetRentPerHour(property.Kind, index);
-                output += $"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
-                    $"rented out, about {netRentPerHour:N2} an hour after the agency\n";
+                output += $"{i + 1}. {PropertyCatalog.Label(property.Kind)} · worth ${FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))} · " +
+                    $"about ${FormatHelper.GetCommaNumber(PropertyCatalog.ProfitPerHour(property.Kind, index))} an hour after costs\n";
             }
+            if (account.Properties.Count > MaxPropertyLines)
+                output += $"…and {account.Properties.Count - MaxPropertyLines} more.\n";
 
-            output += "\nRent goes to your cash each hour after the agency's 8% and a 4% vacancy allowance. Rates and maintenance (1% of value an hour) come out hourly with the rent. " +
-                "Buying costs 4.5% stamp duty and conveyancing, and selling costs 3%.\n" +
-                "Every property is rented out automatically. `.sell property N` sells.";
-            await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Property", output).Build(), components: PropertyBuyButton());
+            output += $"\nRent and takings go to your cash each hour after the agency's {PropertyCatalog.AgencyFeeRate:0%} and a {PropertyCatalog.VacancyRate:0%} vacancy allowance; " +
+                $"rates and upkeep ({PropertyCatalog.HoldingCostPerHour:0.##%} of value an hour for houses, {PropertyCatalog.BusinessHoldingCostPerHour:0.##%} for businesses) come out with it. " +
+                $"Businesses earn more, their takings swing {PropertyCatalog.BusinessIncomeSwing:0%} either way each hour, and their prices boom and crash harder. " +
+                $"Buying costs {PropertyCatalog.StampDutyRate:0.#%} stamp duty and conveyancing, and selling costs {PropertyCatalog.SellingCostRate:0.#%}. `.sell property N` sells.";
+            await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder("Property", output).Build(), components: PropertyBuyButton(index));
         }
 
-        private async Task BuyProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
+        /// <summary>How many of a player's properties `.property` lists before "and N more".</summary>
+        private const int MaxPropertyLines = 15;
+
+        /// <summary>`.buy property [kind]` / `.buy business kind` / `.buy house`: no kind buys a house, as it always did.</summary>
+        private async Task BuyProperty(DiscordSocketClient client, SocketMessage message, List<string> args, bool business = false)
         {
-            //houses are the only kind now; "house" is still accepted
-            if (args.Count > 1) throw new BadSyntaxException();
-            if (args.Count == 1 && args[0].StartsWith("ap", StringComparison.OrdinalIgnoreCase))
-                throw new BadInputException("Apartments are gone: there are only houses now. Buy one with `.buy property`.");
-            if (args.Count == 1 && !args[0].Equals("house", StringComparison.OrdinalIgnoreCase)) throw new BadSyntaxException();
-            await message.Channel.SendMessageAsync(await BuyPropertyText(message.Author.Id, message.Author.Username, message.Author.Mention), components: PropertyBuyButton());
+            if (args.Count >= 1 && args[0].StartsWith("ap", StringComparison.OrdinalIgnoreCase))
+                throw new BadInputException("Apartments are gone. `.property` lists what's for sale.");
+            //"food truck" and "luxury home" are two words; Find ignores spaces
+            var type = args.Count == 0 ? (business ? null : PropertyCatalog.TypeOf(PropertyKind.House)) : PropertyCatalog.Find(string.Join("", args));
+            if (type != null && business && !type.IsBusiness)
+                throw new BadInputException($"A {type.Name.ToLower()} isn't a business. `.buy property {type.Words[0]}` buys one.");
+            if (type == null)
+                throw new BadInputException("Buy what? " + string.Join(", ", PropertyCatalog.Buyable.Select(t => $"`{t.Words[0]}`")) + ", like `.buy property mansion` or `.buy business cafe`.");
+            await message.Channel.SendMessageAsync(await BuyPropertyText(message.Author.Id, message.Author.Username, message.Author.Mention, type.Kind),
+                components: PropertyBuyButton(_coinService.GetAll().PropertyIndex));
         }
 
-        /// <summary>Buys a house for a player and returns the public line, for `.buy property` and the Buy a house button.</summary>
-        private async Task<string> BuyPropertyText(ulong userId, string username, string mention)
+        /// <summary>Buys a property for a player and returns the public line, for `.buy property` and the buy menu.</summary>
+        private async Task<string> BuyPropertyText(ulong userId, string username, string mention, PropertyKind kind = PropertyKind.House)
         {
-            var kind = PropertyKind.House;
             EnsureNotBetting(userId, "buying or selling property");
             CoinAccount account = await _coinService.Get(userId, username);
             double price = PropertyCatalog.Price(kind, _coinService.GetAll().PropertyIndex);
             var (_, cost) = await _propertyService.Buy(account, kind);
-            return $"{mention} bought a {PropertyCatalog.DisplayName(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
+            return $"{mention} bought a {PropertyCatalog.Label(kind).ToLower()} for ${FormatHelper.GetCommaNumber(price)}, " +
                 $"${FormatHelper.GetCommaNumber(cost - price)} stamp duty and conveyancing included in ${FormatHelper.GetCommaNumber(cost)} total. " +
-                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. It's rented out straight away, and rent comes in every hour.";
+                $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}. {(PropertyCatalog.TypeOf(kind).IsBusiness ? "It's open for business" : "It's rented out")} straight away, and money comes in every hour.";
         }
 
         private async Task SellProperty(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -92,19 +101,19 @@ namespace DiscordBot.Managers
                 await message.Channel.SendMessageAsync(await SellAllPropertyText(message.Author.Mention, account));
                 return;
             }
-            //with one house there's no need to say which
+            //with one property there's no need to say which
             int number = args.Count == 1 ? int.Parse(args[0]) : account.Properties.Count == 1 ? 1
                 : throw new BadInputException("Which one? `.sell property 1` (the numbers are on `.property`), or `.sell property all`.");
             var (holding, proceeds) = await _propertyService.Sell(account, number);
             await message.Channel.SendMessageAsync(SoldPropertyText(message.Author.Mention, account, holding, proceeds));
         }
 
-        /// <summary>`.sell property all`: sells every house that can be sold (one with squatters in it can't be) and says what it all came to.</summary>
+        /// <summary>`.sell property all`: sells every property that can be sold (one with squatters in it can't be) and says what it all came to.</summary>
         private async Task<string> SellAllPropertyText(string mention, CoinAccount account)
         {
             var (sold, stuck, total) = await _propertyService.SellAll(account);
-            string left = stuck == 0 ? "" : $" {stuck} {(stuck == 1 ? "house has" : "houses have")} squatters in, so you still own {(stuck == 1 ? "it" : "them")}.";
-            return $"{mention} sold {sold} {(sold == 1 ? "house" : "houses")} for ${FormatHelper.GetCommaNumber(total)} in all, after agent commission and marketing. " +
+            string left = stuck == 0 ? "" : $" {stuck} {(stuck == 1 ? "property has" : "properties have")} squatters in, so you still own {(stuck == 1 ? "it" : "them")}.";
+            return $"{mention} sold {sold} {(sold == 1 ? "property" : "properties")} for ${FormatHelper.GetCommaNumber(total)} in all, after agent commission and marketing. " +
                 $"Cash is now ${FormatHelper.GetCommaNumber(account.NetWorth)}.{left}";
         }
 

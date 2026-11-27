@@ -10,9 +10,10 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Raids (`.raid`): one player's Battle Person attacks another's for money, resolved at once (the defender's card fights
-    /// with the stance they set). Rules and numbers are in <see cref="RaidRules"/>; card levels in <see cref="CardLevels"/>.
-    /// Also hires guards and trains cards. Changes accounts in memory; the caller saves with <see cref="CoinService.Update()"/>.
+    /// Raids (`.raid`): a player sends a crew from their gang to rob one of another player's properties, resolved at once against the
+    /// property's security and the owner's best cards. Rules and numbers are in <see cref="RaidRules"/>, gangs in <see cref="GangRules"/>,
+    /// levels in <see cref="CardLevels"/>. Also hires guards and trains cards. Changes accounts in memory; the caller saves with
+    /// <see cref="CoinService.Update()"/>.
     /// </summary>
     public class RaidService
     {
@@ -35,23 +36,25 @@ namespace DiscordBot.Services
 
         public double TotalWorth(CoinAccount account) => _totalWorth(account);
 
-        /// <summary>Whether a raid can happen and on what terms, before a stake is chosen.</summary>
+        /// <summary>What a raid on one property would be: the crews, the odds, the loot and stake, or why it can't happen.</summary>
         public sealed class RaidCheck
         {
-            /// <summary>Why it can't happen, or null when it can.</summary>
+            /// <summary>Why the raid can't happen, or null when it can.</summary>
             public string Refusal { get; set; }
             public bool IsRevenge { get; set; }
+            public PropertyHolding Property { get; set; }
+            public List<BattlePerson> Crew { get; set; } = new List<BattlePerson>();
+            public List<BattlePerson> Defenders { get; set; } = new List<BattlePerson>();
+            public double Security { get; set; }
             public double AttackPower { get; set; }
             public double DefencePower { get; set; }
-            public double Underdog { get; set; }
+            public double PunchDown { get; set; } = 1;
             public bool Guarded { get; set; }
             public double Chance { get; set; }
-            public double MinStake { get; set; }
-            public double MaxStake { get; set; }
+            public double Loot { get; set; }
+            public double Stake { get; set; }
             public double AttackerWorth { get; set; }
             public double TargetWorth { get; set; }
-            /// <summary>Who has the edge from the archetypes: "" when nobody, else a line like "🥊 Brute beats 🦝 Thief: +20% power for the Brute".</summary>
-            public string Matchup { get; set; } = "";
         }
 
         public sealed class RaidResult
@@ -61,37 +64,29 @@ namespace DiscordBot.Services
             public RaidCheck Check { get; set; }
             public double Stake { get; set; }
             public bool Won { get; set; }
-            /// <summary>The d100 roll, 1 to 100, higher is better. The raid wins when it is at least <see cref="Needed"/>.</summary>
+            /// <summary>The d100 roll (1-100) and what it needed: the raid works on <see cref="Needed"/> or more.</summary>
             public int Roll { get; set; }
             public int Needed { get; set; }
-            public bool Rerolled { get; set; }
-            /// <summary>A Gambler's coin flip: 1.25 or 0.75 times their power this raid, or 0 for anyone else.</summary>
-            public double Swing { get; set; }
-            /// <summary>How many times the stake a win took (a Thief's is bigger, a Gambler's natural 100 doubles it).</summary>
-            public double LootMultiple { get; set; }
-            /// <summary>Extra the raider lost on a failed raid on top of the stake (a Thief's, or a Gambler's natural 1).</summary>
-            public double ExtraLoss { get; set; }
-            public double ExtraLossToDebt { get; set; }
-            /// <summary>Raids the raider has now won in a row.</summary>
             public int Streak { get; set; }
-            /// <summary>What the target lost (a win), part of which may have gone on their debt.</summary>
+            /// <summary>What a winning raid took, and how much of that went on the owner's debt.</summary>
             public double Loot { get; set; }
             public double LootToDebt { get; set; }
             public bool Parachuted { get; set; }
-            /// <summary>The share of the loot set aside as a bounty on the raider.</summary>
+            /// <summary>Kept back from the loot as a bounty on the raider.</summary>
             public double BountySet { get; set; }
-            /// <summary>A bounty collected by whoever won.</summary>
+            /// <summary>A bounty on the loser that the winner collected.</summary>
             public double BountyCollected { get; set; }
-            /// <summary>A Counter defender's hit back on a failed raider, part of which may have gone on their debt.</summary>
-            public double CounterHit { get; set; }
-            public double CounterToDebt { get; set; }
-            public string AttackerXp { get; set; }
-            public string DefenderXp { get; set; }
-            public TimeSpan ProtectedFor { get; set; }
+            public int AttackerXpEach { get; set; }
+            public int DefenderXpEach { get; set; }
+            /// <summary>"⭐ Gary 4 → 5" for every card that levelled up.</summary>
+            public List<string> LevelUps { get; set; } = new List<string>();
         }
 
-        /// <summary>Works out the odds and stake limits, and why the raid can't happen if it can't. Changes nothing but expired entries.</summary>
-        public RaidCheck Check(CoinAccount attacker, CoinAccount target, DateTime now)
+        /// <summary>
+        /// The check for raiding <paramref name="property"/> (one of the target's). With no property it only checks who can raid whom
+        /// (the gang, shield, limits and that the target owns anything).
+        /// </summary>
+        public RaidCheck Check(CoinAccount attacker, CoinAccount target, PropertyHolding property, DateTime now)
         {
             Prune(attacker, now);
             Prune(target, now);
@@ -101,109 +96,86 @@ namespace DiscordBot.Services
                 TargetWorth = _totalWorth(target),
                 IsRevenge = attacker.RevengeTokens.Any(t => t.UserId == target.UserId),
                 Guarded = target.GuardsUntilUtcTicks > now.Ticks,
+                Property = property,
+                Crew = GangRules.Crew(attacker.Cards, now),
+                Defenders = GangRules.Defenders(target.Cards),
             };
-            check.Underdog = check.IsRevenge ? 1 : RaidRules.UnderdogMultiplier(check.AttackerWorth, check.TargetWorth);
-            check.AttackPower = RaidRules.AttackPower(attacker.BattlePerson, target.BattlePerson, check.IsRevenge);
-            check.DefencePower = RaidRules.DefencePower(target.BattlePerson, attacker.BattlePerson, target.RaidStance, check.Guarded, check.Underdog);
-            check.Matchup = MatchupLine(attacker.BattlePerson, target.BattlePerson);
+            check.PunchDown = check.IsRevenge ? 1 : RaidRules.PunchDownMultiplier(check.AttackerWorth, check.TargetWorth);
+            check.AttackPower = RaidRules.AttackPower(check.Crew, check.IsRevenge);
+            if (property != null)
+            {
+                double index = _coinService.GetAll().PropertyIndex;
+                check.Security = PropertyCatalog.TypeOf(property.Kind).Security;
+                check.Loot = RaidRules.Loot(property.Kind, index, check.TargetWorth);
+                check.Stake = RaidRules.Stake(check.Loot);
+            }
+            check.DefencePower = RaidRules.DefencePower(check.Defenders, check.Security, check.Guarded, check.PunchDown);
             check.Chance = RaidRules.WinChance(check.AttackPower, check.DefencePower);
-            var revenge = check.IsRevenge ? attacker.RevengeTokens.First(t => t.UserId == target.UserId) : null;
-            (check.MinStake, check.MaxStake) = revenge != null
-                ? RaidRules.RevengeStakeLimits(check.AttackerWorth, check.TargetWorth, revenge.Stake)
-                : RaidRules.StakeLimits(check.AttackerWorth, check.TargetWorth);
             check.Refusal = Refusal(attacker, target, check, now);
             return check;
         }
 
-        /// <summary>Who the archetypes favour in this raid, as a line, or "" when it is even.</summary>
-        public static string MatchupLine(BattlePerson attacker, BattlePerson defender)
-        {
-            if (attacker == null || defender == null) return "";
-            if (Archetypes.Counters(attacker.Archetype, defender.Archetype))
-                return $"{Archetypes.Label(attacker.Archetype)} beats {Archetypes.Label(defender.Archetype)}: +{Archetypes.CounterBonus * 100:0}% power for the raider";
-            if (Archetypes.Counters(defender.Archetype, attacker.Archetype))
-                return $"{Archetypes.Label(defender.Archetype)} beats {Archetypes.Label(attacker.Archetype)}: +{Archetypes.CounterBonus * 100:0}% power for the defender";
-            return "";
-        }
-
         private static string Refusal(CoinAccount attacker, CoinAccount target, RaidCheck check, DateTime now)
         {
-            if (attacker.UserId == target.UserId) return "You can't raid yourself.";
-            if (attacker.BattlePerson == null) return "You need a Battle Person to raid with. Type `.cardpull` (your first pull each day is free).";
+            if (attacker.UserId == target.UserId) return "You can't rob yourself, genius.";
+            if (attacker.Cards.Count == 0) return "You need a gang to raid with. `.pack` opens a street pack (the first one each day is free).";
+            if (check.Crew.Count == 0)
+            {
+                long ready = attacker.Cards.Min(c => c.RestedUntilUtcTicks);
+                return $"Your whole gang is lying low after the last job. The first one is back in {Wait(new DateTime(ready) - now)}.";
+            }
             if (target.IsShielded(now)) return $"{target.Name} has a 🛡️ Shield running, so the raid would bounce off. Try again later.";
 
             var recent = attacker.RecentRaidUtcTicks.Where(t => now.Ticks - t < TimeSpan.TicksPerHour).OrderBy(t => t).ToList();
             if (recent.Count >= RaidRules.RaidsPerHour)
                 return $"You've raided {RaidRules.RaidsPerHour} times in the last hour. Your next raid is ready in {Wait(new DateTime(recent[0]).AddHours(1) - now)}.";
 
-            if (!check.IsRevenge)
-            {
-                if (attacker.LastRaidOnUtcTicks.TryGetValue(target.UserId, out long last) && now.Ticks - last < RaidRules.PairCooldown.Ticks)
-                    return $"You raided {target.Name} recently. You can raid them again in {Wait(new DateTime(last) + RaidRules.PairCooldown - now)}.";
-                if (target.RaidProtectedUntilUtcTicks > now.Ticks)
-                    return $"{target.Name} was just raided and is protected for {Wait(new DateTime(target.RaidProtectedUntilUtcTicks) - now)}.";
-            }
+            if (!check.IsRevenge && attacker.LastRaidOnUtcTicks.TryGetValue(target.UserId, out long last) && now.Ticks - last < RaidRules.PairCooldown.Ticks)
+                return $"You raided {target.Name} recently. You can hit them again in {Wait(new DateTime(last) + RaidRules.PairCooldown - now)}.";
+            if (target.Properties.Count == 0)
+                return $"{target.Name} owns no property, so there's nothing to rob. Stocks and cash can't be raided.";
+            if (check.Property == null) return null;
 
-            if (check.TargetWorth < 1) return $"{target.Name} has nothing to take.";
-            if (check.MinStake > check.MaxStake)
-                return $"{target.Name} is too small for you to raid: your smallest stake ({Money(check.MinStake)}, 1% of your worth) is more than the most anyone can stake against them ({Money(check.MaxStake)}, 10% of theirs).";
-            if (attacker.NetWorth < check.MinStake)
-                return $"You need at least {Money(check.MinStake)} in cash to stake on a raid.";
+            string place = PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
+            if (!check.IsRevenge && check.Property.RaidProtectedUntilUtcTicks > now.Ticks)
+                return $"{target.Name}'s {place} was just robbed and the cops are watching it for {Wait(new DateTime(check.Property.RaidProtectedUntilUtcTicks) - now)}.";
+            if (check.Loot < 1) return $"{target.Name}'s {place} has nothing worth taking.";
+            if (attacker.NetWorth < check.Stake)
+                return $"Robbing {target.Name}'s {place} means putting up a {Money(check.Stake)} stake (half the loot) in cash, and you have {Money(Math.Max(0, attacker.NetWorth))}.";
             return null;
         }
 
-        /// <summary>Raids <paramref name="target"/> with <paramref name="stake"/> of the attacker's cash. Throws <see cref="BadInputException"/> when it can't.</summary>
-        public RaidResult Raid(CoinAccount attacker, CoinAccount target, double stake, DateTime now)
+        /// <summary>Robs the target's property <paramref name="propertyId"/>. Throws <see cref="BadInputException"/> when it can't.</summary>
+        public RaidResult Raid(CoinAccount attacker, CoinAccount target, string propertyId, DateTime now)
         {
             lock (_lock)
             {
-                var check = Check(attacker, target, now);
+                var property = target.Properties.FirstOrDefault(p => p.Id == propertyId)
+                    ?? throw new BadInputException($"{target.Name} doesn't own that any more. `.raid {target.Name}` shows what they've got.");
+                var check = Check(attacker, target, property, now);
                 if (check.Refusal != null) throw new BadInputException(check.Refusal);
-                stake = Math.Floor(stake);
-                if (stake < check.MinStake)
-                    throw new BadInputException($"The smallest stake you can put up is {Money(check.MinStake)} (1% of your worth).");
-                if (stake > check.MaxStake)
-                    throw new BadInputException(check.IsRevenge
-                        ? $"The most you can stake on a revenge raid is {Money(check.MaxStake)}: what {target.Name} raided you with."
-                        : $"The most you can stake against {target.Name} is {Money(check.MaxStake)} (10% of their worth).");
-                if (stake > attacker.NetWorth)
-                    throw new BadInputException($"You only have {Money(Math.Max(0, attacker.NetWorth))} in cash to stake.");
 
                 attacker.RecentRaidUtcTicks.Add(now.Ticks);
                 attacker.LastRaidOnUtcTicks[target.UserId] = now.Ticks;
                 if (check.IsRevenge)
                     attacker.RevengeTokens.RemoveAll(t => t.UserId == target.UserId);
-                DiscordBot.Models.Money.Debit(attacker, stake);
+                DiscordBot.Models.Money.Debit(attacker, check.Stake);
+                foreach (var card in check.Crew)
+                    card.RestedUntilUtcTicks = (now + GangRules.RestTime).Ticks;
 
-                var result = new RaidResult { Attacker = attacker, Target = target, Check = check, Stake = stake };
-                var kind = Archetypes.Normalise(attacker.BattlePerson?.Archetype ?? Archetype.None);
-                if (kind == Archetype.Gambler)
-                {
-                    //hot or cold: a coin flip swings their power for this raid
-                    result.Swing = _random.NextDouble() < 0.5 ? 1 + Archetypes.GamblerSwing : 1 - Archetypes.GamblerSwing;
-                    check.AttackPower *= result.Swing;
-                    check.Chance = RaidRules.WinChance(check.AttackPower, check.DefencePower);
-                }
+                var result = new RaidResult { Attacker = attacker, Target = target, Check = check, Stake = check.Stake };
                 result.Needed = NeededRoll(check.Chance);
                 result.Roll = RollD100();
                 result.Won = result.Roll >= result.Needed;
-                string today = now.ToString("yyyyMMdd");
-                if (!result.Won && kind == Archetype.Trickster && attacker.LastRaidRerollDate != today)
-                {
-                    attacker.LastRaidRerollDate = today;
-                    result.Rerolled = true;
-                    result.Roll = RollD100();
-                    result.Won = result.Roll >= result.Needed;
-                }
 
                 if (result.Won) Win(result, now);
                 else Lose(result, now);
 
-                //the raided player can hit back once, unless this was itself the hit back
+                //the robbed player can hit back once, unless this was itself the hit back
                 if (!check.IsRevenge)
                 {
                     target.RevengeTokens.RemoveAll(t => t.UserId == attacker.UserId);
-                    target.RevengeTokens.Add(new RevengeToken { UserId = attacker.UserId, Name = attacker.Name, ExpiresUtcTicks = (now + RaidRules.RevengeWindow).Ticks, Stake = stake });
+                    target.RevengeTokens.Add(new RevengeToken { UserId = attacker.UserId, Name = attacker.Name, ExpiresUtcTicks = (now + RaidRules.RevengeWindow).Ticks, Stake = check.Stake });
                 }
                 return result;
             }
@@ -221,9 +193,7 @@ namespace DiscordBot.Services
         private void Win(RaidResult result, DateTime now)
         {
             var (attacker, target, check) = (result.Attacker, result.Target, result.Check);
-            var kind = Archetypes.Normalise(attacker.BattlePerson?.Archetype ?? Archetype.None);
-            result.LootMultiple = Archetypes.LootMultiple(kind, RaidRules.LootMultiple) * (kind == Archetype.Gambler && result.Roll == 100 ? 2 : 1);
-            double loot = RaidRules.Loot(result.Stake, target.RaidStance, check.TargetWorth, result.LootMultiple);
+            double loot = check.Loot;
             double cash = Math.Max(0, target.NetWorth);
             if (loot > cash && target.TryConsumeCharge(PowerUpIds.GoldenParachute, now))
             {
@@ -242,10 +212,10 @@ namespace DiscordBot.Services
             target.Bounty = 0;
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), attacker, result.BountyCollected);
 
+            string place = PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
             AttackHistory.Record(target, attacker.UserId, attacker.Name, check.IsRevenge ? "Revenge raid" : "Raid", loot,
-                lootToDebt > 0 ? $"{Money(lootToDebt)} of it went on your debt" : "it worked", now);
-            result.ProtectedFor = Archetypes.Normalise(target.BattlePerson?.Archetype ?? Archetype.None) == Archetype.Guardian ? Archetypes.GuardianProtection : RaidRules.Protection;
-            target.RaidProtectedUntilUtcTicks = (now + result.ProtectedFor).Ticks;
+                lootToDebt > 0 ? $"robbed your {place}, {Money(lootToDebt)} of it went on your debt" : $"robbed your {place}", now);
+            check.Property.RaidProtectedUntilUtcTicks = (now + RaidRules.PropertyProtection).Ticks;
 
             attacker.Stats.RaidsWon++;
             result.Streak = ++attacker.RaidStreak;
@@ -255,47 +225,45 @@ namespace DiscordBot.Services
             target.Stats.DefencesLost++;
             target.Stats.RaidMoneyLost += loot;
             bool raidedUp = check.TargetWorth > check.AttackerWorth;
-            result.AttackerXp = CardLevels.AddXp(attacker.BattlePerson, CardLevels.RaidWinXp + (raidedUp ? CardLevels.RaidUpBonusXp : 0));
-            result.DefenderXp = CardLevels.AddXp(target.BattlePerson, CardLevels.DefenceLossXp);
-            if (attacker.BattlePerson != null) attacker.BattlePerson.Wins++;
-            if (target.BattlePerson != null) target.BattlePerson.Losses++;
+            result.AttackerXpEach = CardLevels.RaidWinXp + (raidedUp ? CardLevels.RaidUpBonusXp : 0);
+            result.DefenderXpEach = CardLevels.DefenceLossXp;
+            GiveXp(check.Crew, result.AttackerXpEach, won: true, result.LevelUps);
+            GiveXp(check.Defenders, result.DefenderXpEach, won: false, result.LevelUps);
         }
 
         private void Lose(RaidResult result, DateTime now)
         {
-            var (attacker, target) = (result.Attacker, result.Target);
+            var (attacker, target, check) = (result.Attacker, result.Target, result.Check);
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.Stake);
-            var kind = Archetypes.Normalise(attacker.BattlePerson?.Archetype ?? Archetype.None);
-            //a Thief pays extra for getting caught, and a Gambler's snake eyes doubles the loss
-            double extra = kind == Archetype.Thief ? Math.Floor(result.Stake * Archetypes.ThiefFailedRaidExtra)
-                : kind == Archetype.Gambler && result.Roll == 1 ? result.Stake : 0;
-            if (extra > 0)
-            {
-                (result.ExtraLoss, result.ExtraLossToDebt) = Take(attacker, extra);
-                DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.ExtraLoss);
-            }
-            if (target.RaidStance == RaidStance.Counter)
-            {
-                (result.CounterHit, result.CounterToDebt) = Take(attacker, Math.Floor(result.Stake * RaidRules.CounterHitMultiple));
-                DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.CounterHit);
-            }
 
             result.BountyCollected = attacker.Bounty;
             attacker.Bounty = 0;
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.BountyCollected);
 
-            AttackHistory.Record(target, attacker.UserId, attacker.Name, result.Check.IsRevenge ? "Revenge raid" : "Raid",
-                -(result.Stake + result.ExtraLoss + result.CounterHit + result.BountyCollected), "it failed, you kept their stake", now);
+            AttackHistory.Record(target, attacker.UserId, attacker.Name, check.IsRevenge ? "Revenge raid" : "Raid",
+                -(result.Stake + result.BountyCollected), $"they tried your {PropertyCatalog.DisplayName(check.Property.Kind).ToLower()} and failed, you kept their stake", now);
             attacker.Stats.RaidsLost++;
             attacker.RaidStreak = 0;
-            attacker.Stats.RaidMoneyLost += result.Stake + result.ExtraLoss + result.CounterHit;
+            attacker.Stats.RaidMoneyLost += result.Stake;
             target.Stats.DefencesWon++;
-            target.Stats.RaidMoneyWon += result.Stake + result.ExtraLoss + result.CounterHit;
+            target.Stats.RaidMoneyWon += result.Stake;
             target.Stats.BountiesCollected += result.BountyCollected;
-            result.AttackerXp = CardLevels.AddXp(attacker.BattlePerson, CardLevels.RaidLossXp);
-            result.DefenderXp = CardLevels.AddXp(target.BattlePerson, CardLevels.DefenceWinXp);
-            if (attacker.BattlePerson != null) attacker.BattlePerson.Losses++;
-            if (target.BattlePerson != null) target.BattlePerson.Wins++;
+            result.AttackerXpEach = CardLevels.RaidLossXp;
+            result.DefenderXpEach = CardLevels.DefenceWinXp;
+            GiveXp(check.Crew, result.AttackerXpEach, won: false, result.LevelUps);
+            GiveXp(check.Defenders, result.DefenderXpEach, won: true, result.LevelUps);
+        }
+
+        private static void GiveXp(List<BattlePerson> cards, int xp, bool won, List<string> levelUps)
+        {
+            foreach (var card in cards)
+            {
+                int before = card.Level;
+                CardLevels.AddXp(card, xp);
+                if (won) card.Wins++;
+                else card.Losses++;
+                if (card.Level > before) levelUps.Add($"⭐ {card.Name} {before} → {card.Level}");
+            }
         }
 
         /// <summary>Takes up to <paramref name="amount"/> from the account: cash first, the rest on their debt, but only as much debt as their other assets back. Returns (taken, debt part).</summary>
@@ -311,10 +279,10 @@ namespace DiscordBot.Services
                 if (worth < 1) throw new BadInputException("You have nothing worth guarding.");
                 long from = Math.Max(now.Ticks, account.GuardsUntilUtcTicks);
                 if (from + RaidRules.GuardsDuration.Ticks - now.Ticks > RaidRules.MaxGuardsAhead.Ticks)
-                    throw new BadInputException($"Your guards are already booked for {Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}. You can book them up to 24 hours ahead.");
+                    throw new BadInputException($"Your guards are already booked for {Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}. You can book them up to {RaidRules.MaxGuardsAhead.TotalHours:0} hours ahead.");
                 double cost = GuardsCost(account);
                 if (account.NetWorth < cost)
-                    throw new BadInputException($"Guards cost {Money(cost)} (2% of your worth) and you have {Money(Math.Max(0, account.NetWorth))} in cash.");
+                    throw new BadInputException($"Guards cost {Money(cost)} ({RaidRules.GuardsCostShare:0%} of your worth) and you have {Money(Math.Max(0, account.NetWorth))} in cash.");
                 DiscordBot.Models.Money.Debit(account, cost);
                 account.GuardsUntilUtcTicks = from + RaidRules.GuardsDuration.Ticks;
                 account.Stats.GuardsSpent += cost;
@@ -325,12 +293,12 @@ namespace DiscordBot.Services
 
         public double GuardsCost(CoinAccount account) => Math.Max(1, Math.Ceiling(_totalWorth(account) * RaidRules.GuardsCostShare));
 
-        /// <summary>Trains the player's card up to <paramref name="maxLevels"/> levels with their cash, into the jackpot.</summary>
-        public (int Levels, double Cost) Train(CoinAccount account, int maxLevels)
+        /// <summary>Trains one of the player's cards up to <paramref name="maxLevels"/> levels with their cash, into the jackpot.</summary>
+        public (int Levels, double Cost) Train(CoinAccount account, BattlePerson card, int maxLevels)
         {
             lock (_lock)
             {
-                var card = account.BattlePerson ?? throw new BadInputException("You don't have a Battle Person to train. Type `.cardpull` to get one.");
+                if (card == null || !account.Cards.Contains(card)) throw new BadInputException("You don't have that card. `.gang` lists yours.");
                 if (card.Level >= CardLevels.MaxLevel) throw new BadInputException($"{card.Name} is already max level ({CardLevels.MaxLevel}).");
                 double next = CardLevels.TrainCost(card);
                 if (account.NetWorth < next)
@@ -351,57 +319,56 @@ namespace DiscordBot.Services
                 account.LastRaidOnUtcTicks.Remove(key);
         }
 
-        /// <summary>The result as a message: who won, the odds and roll, the money that moved, XP and what happens next.</summary>
-        /// <summary>One side's card as a short phrase: "🥊 Gary "Knuckles" Pemberton (Lv 4)", or the player's name when they have no card.</summary>
-        public static string CardLabel(CoinAccount account) =>
-            account.BattlePerson == null ? $"{account.Name} (no card)" : $"{Archetypes.Emoji(account.BattlePerson.Archetype)} {account.BattlePerson.Name} (Lv {account.BattlePerson.Level})";
+        /// <summary>A player's gang as a short phrase: "a crew of 3 (power 142)", or that they have none.</summary>
+        public static string GangLabel(CoinAccount account, DateTime now)
+        {
+            if (account.Cards.Count == 0) return "no gang";
+            var crew = GangRules.Crew(account.Cards, now);
+            return crew.Count == 0 ? $"{account.Cards.Count} cards, all lying low" : $"a crew of {crew.Count} (power {RaidRules.TotalPower(crew):0})";
+        }
 
-        /// <summary>The result as a message: who won, the odds and roll, the money that moved, a battle cry, XP and what happens next.</summary>
         public static string Describe(RaidResult r) => Describe(r, Random.Shared);
 
+        /// <summary>The result as a short message: who robbed what, the roll, the money, one battle cry and the XP.</summary>
         public static string Describe(RaidResult r, Random random)
         {
             var (a, t, c) = (r.Attacker, r.Target, r.Check);
-            var kind = Archetypes.Normalise(a.BattlePerson?.Archetype ?? Archetype.None);
-
-            //the picture shows both cards and the dice, so the text only has who, the roll, the money and one cry
+            string place = PropertyCatalog.Label(c.Property.Kind);
             var lines = new List<string>
             {
-                $"{(c.IsRevenge ? "🔥 **Revenge raid!** " : "⚔️ ")}**{a.Name}** raided **{t.Name}** · {Money(r.Stake)} stake · {t.RaidStance} stance{(c.Guarded ? " + guards" : "")}",
+                $"{(c.IsRevenge ? "🔥 **Revenge!** " : "⚔️ ")}**{a.Name}** sent a crew of {c.Crew.Count} to rob **{t.Name}**'s {place} · {Money(r.Stake)} stake",
             };
 
-            var dice = new List<string> { $"🎲 Needed **{r.Needed}+** ({ChancePercent(c.Chance)}%), rolled **{r.Roll}** {(r.Won ? "✅" : "❌")}" };
-            if (r.Rerolled) dice.Add("🃏 rerolled");
-            if (c.Matchup.Length > 0) dice.Add(c.Matchup);
-            if (r.Swing > 0) dice.Add($"🎰 Gambler {(r.Swing > 1 ? "hot +" : "cold -")}{Archetypes.GamblerSwing * 100:0}%");
-            if (c.Underdog > 1) dice.Add($"{t.Name} defends {Pct(c.Underdog - 1)} harder for being richer");
-            if (kind == Archetype.Gambler && r.Roll == 100) dice.Add("**NATURAL 100**: loot doubled");
-            if (kind == Archetype.Gambler && r.Roll == 1) dice.Add("**SNAKE EYES**: loss doubled");
+            var dice = new List<string>
+            {
+                $"🎲 Needed **{r.Needed}+** ({ChancePercent(c.Chance)}%), rolled **{r.Roll}** {(r.Won ? "✅" : "❌")}",
+                $"crew {c.AttackPower:0} vs 🔒{c.Security:0} + gang {RaidRules.TotalPower(c.Defenders):0}{(c.Guarded ? " with guards" : "")}",
+            };
+            if (c.PunchDown > 1) dice.Add($"{Pct(c.PunchDown - 1)} harder for punching down");
             lines.Add(string.Join(" · ", dice));
 
             var money = new List<string>();
             if (r.Won)
             {
-                money.Add($"💰 Took **{Money(r.Loot)}** ({r.LootMultiple:0.#}x){(r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} on their debt" : "")}{(r.Parachuted ? " (🪂 parachute)" : "")}");
+                money.Add($"💰 Took **{Money(r.Loot)}**{(r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} on their debt" : "")}{(r.Parachuted ? " (🪂 parachute)" : "")}");
                 money.Add($"{Money(r.BountySet)} is now a bounty on {a.Name}");
                 if (r.BountyCollected > 0) money.Add($"collected the {Money(r.BountyCollected)} bounty on {t.Name}");
-                money.Add($"{t.Name} is safe for {Wait(r.ProtectedFor)}");
+                money.Add($"the {PropertyCatalog.DisplayName(c.Property.Kind).ToLower()} is watched for {Wait(RaidRules.PropertyProtection)}");
             }
             else
             {
-                money.Add($"🛡️ Lost the {Money(r.Stake)} stake to {t.Name}");
-                if (r.CounterHit > 0) money.Add($"countered for {Money(r.CounterHit)} more{(r.CounterToDebt > 0 ? $" ({Money(r.CounterToDebt)} on debt)" : "")}");
-                if (r.ExtraLoss > 0) money.Add($"{Money(r.ExtraLoss)} extra for {(kind == Archetype.Thief ? "getting caught" : "rolling snake eyes")}");
-                if (r.BountyCollected > 0) money.Add($"{t.Name} collected the {Money(r.BountyCollected)} bounty on {a.Name}");
+                money.Add($"🛡️ {t.Name} keeps the {Money(r.Stake)} stake");
+                if (r.BountyCollected > 0) money.Add($"and the {Money(r.BountyCollected)} bounty on {a.Name}");
             }
             lines.Add(string.Join(" · ", money));
 
-            var winner = r.Won ? a : t;
-            if (winner.BattlePerson != null)
-                lines.Add($"{Archetypes.Emoji(winner.BattlePerson.Archetype)} **{winner.BattlePerson.Name}**: “{Archetypes.Cry(winner.BattlePerson.Archetype, true, random)}”");
+            var lead = (r.Won ? c.Crew : c.Defenders).FirstOrDefault();
+            if (lead != null)
+                lines.Add($"{lead.Emoji} **{lead.Name}**: “{GangRules.Cry(true, random)}”");
 
-            var footer = new List<string> { $"XP +{r.AttackerXp} / {(t.BattlePerson == null ? "none (no card, `.cardpull`)" : "+" + r.DefenderXp)}" };
-            if (r.Won && r.Streak >= 2) footer.Add($"🔥 {r.Streak} raids in a row");
+            var footer = new List<string> { $"XP +{r.AttackerXpEach} each / {(c.Defenders.Count == 0 ? "no gang to defend (`.pack`)" : $"+{r.DefenderXpEach} each")}" };
+            footer.AddRange(r.LevelUps.Take(3));
+            if (r.Won && r.Streak >= 2) footer.Add($"🔥 {r.Streak} jobs in a row");
             if (!c.IsRevenge) footer.Add($"{t.Name} can take revenge for {RaidRules.RevengeWindow.TotalHours:0}h");
             lines.Add(string.Join(" · ", footer));
             return string.Join("\n", lines);

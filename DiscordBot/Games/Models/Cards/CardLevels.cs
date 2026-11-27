@@ -3,8 +3,8 @@
 namespace DiscordBot.Games.Models.Cards
 {
     /// <summary>
-    /// Card levels: XP comes in by itself from raids and pulls, and `.train` buys the rest of the next level for cash
-    /// (into the jackpot). The level belongs to the player, so it carries over to a new card, and resets each season.
+    /// Card levels: each card levels on its own. XP comes from raids, packs and scrapping other cards, and `.train` buys the
+    /// rest of the next level for cash (into the jackpot). Levels reset each season; the cards are kept.
     /// </summary>
     public static class CardLevels
     {
@@ -17,7 +17,7 @@ namespace DiscordBot.Games.Models.Cards
         public const int DefenceWinXp = 40;
         public const int RaidLossXp = 15;
         public const int DefenceLossXp = 10;
-        /// <summary>Every card pull gives this much XP to your card, kept or not.</summary>
+        /// <summary>Every pack opened gives this much XP to your strongest card.</summary>
         public const int PullXp = 25;
 
         /// <summary>A whole level from 0 costs this; each level after costs <see cref="TrainGrowth"/> times the one before.</summary>
@@ -97,14 +97,6 @@ namespace DiscordBot.Games.Models.Cards
                 levels++;
             }
             return (levels, cost);
-        }
-
-        /// <summary>A new card keeps the player's level, XP and focus; only the rarity, stats, ability and art change.</summary>
-        public static void CarryOver(BattlePerson from, BattlePerson to)
-        {
-            if (from == null || to == null) return;
-            to.Level = from.Level;
-            to.Xp = from.Xp;
         }
 
         /// <summary>A card at the start of a new season: kept, but back to level 0 with no record.</summary>

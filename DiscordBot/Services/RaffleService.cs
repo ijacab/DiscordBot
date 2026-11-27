@@ -785,7 +785,7 @@ namespace DiscordBot.Services
                 }
                 case PowerUpIds.FreeCardPull:
                     user.LastFreePullDate = null;
-                    return "🃏 **Free Card Pull!** Your free daily `.cardpull` is available again.";
+                    return "🃏 **Free Card Pull!** Your free daily street pack (`.pack`) is available again.";
                 case PowerUpIds.InterestPass:
                     user.MostRecentDateBonusMet = now.ToString("yyyyMMdd");
                     return "📈 **Interest Pass!** Today counts as a bonus day, so you'll earn interest every hour.";

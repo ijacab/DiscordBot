@@ -215,7 +215,7 @@ namespace DiscordBot.Models
             new PowerUpDefinition { Id = PowerUpIds.PotShot, Name = "Pot Shot", Weight = Uncommon, Kind = PowerUpKind.Instant,
                 Description = $"Claim {PotShotPercent:0%} of the jackpot pool." },
             new PowerUpDefinition { Id = PowerUpIds.FreeCardPull, Name = "Free Card Pull", Weight = Common, Kind = PowerUpKind.Instant,
-                Description = "Your free daily card pull is available again." },
+                Description = "Your free daily street pack is available again." },
             new PowerUpDefinition { Id = PowerUpIds.InterestPass, Name = "Interest Pass", Weight = Common, Kind = PowerUpKind.Instant,
                 Description = "Today counts as a bonus day, so you earn hourly interest without needing a 50% bet." },
             new PowerUpDefinition { Id = PowerUpIds.Mirror, Name = "Mirror", Weight = Uncommon, Kind = PowerUpKind.Charges, Charges = 1, Duration = HoldTime,

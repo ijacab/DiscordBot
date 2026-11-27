@@ -131,8 +131,8 @@ namespace DiscordBot.Services
                 NetWorth = netWorth,
                 MostRecentDateBonusMet = DateTimeOffset.UtcNow.ToString("yyyyMMdd")
             };
-            if (_coinAccounts.CarriedCards.Remove(userId, out var card))
-                coinAccount.BattlePerson = card; //their card from last season, at level 0
+            if (_coinAccounts.CarriedGangs.Remove(userId, out var gang) && gang != null)
+                coinAccount.Cards.AddRange(gang); //their gang from last season, at level 0
 
             _coinAccounts.Accounts.Add(coinAccount);
 
@@ -242,19 +242,23 @@ namespace DiscordBot.Services
         /// </summary>
         public const double HourlyIncome = 1_000;
 
-        /// <summary>A new season. Everyone's Battle Person card is kept, back at level 0, and given back when their account is made again.</summary>
+        /// <summary>A new season. Everyone's gang is kept, every card back at level 0, and given back when their account is made again.</summary>
         public async Task ClearAll()
         {
-            var carried = new Dictionary<ulong, BattlePerson>();
-            foreach (var account in _coinAccounts.Accounts.Where(a => a.BattlePerson != null))
+            var carried = new Dictionary<ulong, List<BattlePerson>>();
+            foreach (var account in _coinAccounts.Accounts.Where(a => a.Cards.Count > 0))
             {
-                CardLevels.ResetForNewSeason(account.BattlePerson);
-                carried[account.UserId] = account.BattlePerson;
+                foreach (var card in account.Cards)
+                {
+                    CardLevels.ResetForNewSeason(card);
+                    card.RestedUntilUtcTicks = 0;
+                }
+                carried[account.UserId] = account.Cards;
             }
-            foreach (var pair in _coinAccounts.CarriedCards.Where(p => !carried.ContainsKey(p.Key)))
+            foreach (var pair in _coinAccounts.CarriedGangs.Where(p => !carried.ContainsKey(p.Key)))
                 carried[pair.Key] = pair.Value; //kept from an earlier season and not picked up yet
             var best = new Dictionary<ulong, WorthRecord>(_coinAccounts.AllTimeBest); //records survive a new season
-            _coinAccounts = new CoinAccounts { CarriedCards = carried, AllTimeBest = best };
+            _coinAccounts = new CoinAccounts { CarriedGangs = carried, AllTimeBest = best };
             string content = Serialize();
             await _fileService.UpdateContent(_fileName, content);
         }

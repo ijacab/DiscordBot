@@ -160,15 +160,20 @@ namespace DiscordBot.Managers
             await message.Channel.SendMessageAsync($"Live tickers are in <#{thread.Id}>. They update every 5 minutes.");
         }
 
-        /// <summary>`.buy property` and `.sell property`: "property" and "house" mean a house, not a stock.</summary>
+        /// <summary>`.buy property` and `.sell property`: "property", "house" and "business" mean property, not a stock.</summary>
         private static bool IsPropertyWord(string word) =>
-            word.Equals("property", StringComparison.OrdinalIgnoreCase) || word.Equals("house", StringComparison.OrdinalIgnoreCase) || word.Equals("houses", StringComparison.OrdinalIgnoreCase);
+            new[] { "property", "properties", "house", "houses", "business", "businesses" }.Contains(word.ToLowerInvariant());
+
+        private static bool IsBusinessWord(string word) => word.StartsWith("business", StringComparison.OrdinalIgnoreCase);
 
         private async Task BuyStock(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             if (args.Count >= 1 && IsPropertyWord(args[0]))
             {
-                await BuyProperty(client, message, args.Skip(1).ToList());
+                //`.buy house` is a house; `.buy property mansion` and `.buy business cafe` name the kind
+                var rest = args.Skip(1).ToList();
+                if (rest.Count == 0 && args[0].StartsWith("house", StringComparison.OrdinalIgnoreCase)) rest.Add("house");
+                await BuyProperty(client, message, rest, business: IsBusinessWord(args[0]));
                 return;
             }
             if (args.Count != 2) throw new BadSyntaxException();

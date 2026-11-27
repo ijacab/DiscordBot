@@ -1,75 +1,71 @@
 ﻿using Newtonsoft.Json;
 using System;
-using System.Runtime.Serialization;
 
 namespace DiscordBot.Games.Models.Cards
 {
     /// <summary>
-    /// A player's fighter: a face, a funny name, a rarity, an archetype and a level. Its strength is one number, <see cref="Power"/>:
-    /// the base, plus its rarity, plus what the level adds. The level (and XP) belong to the player and carry over to a new card.
+    /// One member of a player's gang: a face, a funny name, a rarity, maybe a foil, and its own level and XP. Its strength is one
+    /// number, <see cref="Power"/>: the base, plus its rarity, plus what its level adds, and a foil adds <see cref="GangRules.FoilBonus"/>
+    /// on top. A player holds up to <see cref="GangRules.MaxCards"/> of them (<see cref="Models.CoinAccounts.CoinAccount.Cards"/>).
+    /// Old saves' "Ability" (the archetype cards had) is ignored when they load.
     /// </summary>
     public class BattlePerson
     {
-        public const int PullCost = 1000;
-        private static readonly Random _random = new Random(); //best practice to use static object for random, not an instance for each time you want to use it
+        private static readonly Random _random = new Random();
         private int _level;
 
+        /// <summary>Picks this card out of the roster for buttons, menus and `.scrap`. Old saves get one when they load.</summary>
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string Name { get; set; }
         public int Level { get => _level; set => _level = Math.Clamp(value, 0, CardLevels.MaxLevel); }
         /// <summary>XP towards the next level (<see cref="CardLevels.XpToNext"/>).</summary>
         public int Xp { get; set; }
         public string FilePath { get; set; }
         public CardRarity Rarity { get; set; } = CardRarity.Common;
-        /// <summary>Saved as "Ability": the old ability slots became archetypes, keeping their numbers.</summary>
-        [JsonProperty("Ability")]
-        public Archetype Archetype { get; set; } = Archetype.None;
         public bool Foil { get; set; }
         public int Wins { get; set; }
         public int Losses { get; set; }
+        /// <summary>After a raid the card lies low until then (UTC ticks) and can't be sent on another (<see cref="GangRules.RestTime"/>). Defending never tires it.</summary>
+        public long RestedUntilUtcTicks { get; set; }
 
-        /// <summary>How strong the card is: base + rarity + level. Raids turn it into odds (<see cref="Models.RaidRules"/>).</summary>
-        [JsonIgnore] public double Power => CardLevels.PowerOf(Rarity, Level);
+        /// <summary>How strong the card is: base + rarity + level, then the foil bonus. Raids add up a crew's (<see cref="Models.RaidRules"/>).</summary>
+        [JsonIgnore] public double Power => CardLevels.PowerOf(Rarity, Level) * (Foil ? 1 + GangRules.FoilBonus : 1);
+
+        [JsonIgnore] public string Emoji => Foil ? "✨" : GangRules.RarityEmoji(Rarity);
+
+        public bool IsResting(DateTime now) => RestedUntilUtcTicks > now.Ticks;
 
         /// <summary>Used when loading a saved card: nothing is rolled, the saved values are read back.</summary>
         public BattlePerson()
         {
         }
 
-        /// <summary>Pulls a new card with a random rarity, archetype and foil. The name is the one given.</summary>
-        public BattlePerson(string name)
-        {
-            Name = name;
-            Roll(_random);
-        }
-
-        private void Roll(Random random)
-        {
-            Rarity = CardTraits.RollRarity(random);
-            Archetype = CardTraits.RollArchetype(random);
-            Foil = CardTraits.RollFoil(random);
-        }
-
-        /// <summary>Pulls a new card with a random rarity, archetype and foil, named to match.</summary>
-        public static BattlePerson Pull(Random random = null)
+        /// <summary>
+        /// A new card with a random rarity (at least <paramref name="minimum"/>, Legendary <paramref name="legendaryBoost"/> times as
+        /// likely) and foil, and a random gang name.
+        /// </summary>
+        public static BattlePerson Pull(Random random = null, CardRarity minimum = CardRarity.Common, double legendaryBoost = 1)
         {
             random ??= _random;
-            var card = new BattlePerson();
-            card.Roll(random);
-            card.Name = CardNamer.Generate(card.Archetype, random);
-            return card;
+            var rarity = CardTraits.RollRarity(random, legendaryBoost);
+            return new BattlePerson
+            {
+                Rarity = rarity < minimum ? minimum : rarity,
+                Foil = CardTraits.RollFoil(random),
+                Name = CardNamer.Generate(random),
+            };
         }
 
-        [OnDeserialized]
-        private void FixOldSaves(StreamingContext context) => Archetype = Archetypes.Normalise(Archetype);
+        /// <summary>"⭐ **Gary "Knuckles" Pemberton** · Rare · Lv 4 · power 47".</summary>
+        public string Line() => $"{Emoji} **{Name}** · {(Foil ? "Foil " : "")}{Rarity} · Lv {Level} · power {Power:0}";
 
         public string GetSummary()
         {
-            string foil = Foil ? "✨ **FOIL** (a rare shiny version)\n" : "";
+            string foil = Foil ? $"✨ **FOIL**: +{GangRules.FoilBonus:0%} power\n" : "";
             string level = Level >= CardLevels.MaxLevel ? "max level" : $"level {Level} ({Xp}/{CardLevels.XpToNext(Level)} XP)";
             return foil +
-                   $"{Archetypes.Label(Archetype)} · **{Rarity}**\n" +
-                   $"**Power {Power:0}** · {level} · W {Wins} / L {Losses}\n" +
-                   Archetypes.Trait(Archetype);
+                   $"{GangRules.RarityEmoji(Rarity)} **{Rarity}** · **Power {Power:0}** · {level}\n" +
+                   $"Raids: W {Wins} / L {Losses}";
         }
     }
 }

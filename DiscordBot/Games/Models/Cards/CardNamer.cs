@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
 
 namespace DiscordBot.Games.Models.Cards
 {
-    /// <summary>Names for pulled cards: a first name, a nickname that fits the archetype, and a surname, like Gary "Knuckles" Pemberton.</summary>
+    /// <summary>Gang names for new cards: a first name, a nickname and a surname, like Gary "Knuckles" Pemberton.</summary>
     public static class CardNamer
     {
         private static readonly string[] First =
@@ -18,20 +17,15 @@ namespace DiscordBot.Games.Models.Cards
             "Fairweather", "Calloway", "Brannigan", "Dufresne", "Pickles", "Plunkett", "Snodgrass", "Wobblebottom", "Crumpet", "Haddock", "Thistlewood",
         };
 
-        private static readonly Dictionary<Archetype, string[]> Nicknames = new Dictionary<Archetype, string[]>
+        private static readonly string[] Nicknames =
         {
-            [Archetype.Brute] = new[] { "Knuckles", "The Hammer", "Tiny", "Meatloaf", "Bonecrusher", "Big Tuna", "Sledge", "Haymaker" },
-            [Archetype.Guardian] = new[] { "The Wall", "Fortress", "Bubble Wrap", "Brick", "Iron Nan", "Doorstop", "Bunker", "Tupperware" },
-            [Archetype.Thief] = new[] { "Fingers", "Sticky", "Pocket Rocket", "Sneaky", "Slippery", "The Weasel", "Gloves", "Five-Finger" },
-            [Archetype.Trickster] = new[] { "Smoke", "The Fox", "Jinx", "Shifty", "Mirage", "Sleeves", "Plot Twist", "Wildcard" },
-            [Archetype.Gambler] = new[] { "Snake Eyes", "Lucky", "All-In", "Ace", "Double Down", "Jackpot", "Long Shot", "Cashout" },
-            [Archetype.None] = new[] { "The Rookie", "Nobody" },
+            "Knuckles", "The Hammer", "Tiny", "Meatloaf", "Bonecrusher", "Big Tuna", "Sledge", "Haymaker", "The Wall", "Brick", "Iron Nan",
+            "Doorstop", "Fingers", "Sticky", "Pocket Rocket", "Sneaky", "Slippery", "The Weasel", "Gloves", "Five-Finger", "Smoke", "The Fox",
+            "Jinx", "Shifty", "Sleeves", "Wildcard", "Snake Eyes", "Lucky", "All-In", "Ace", "Long Shot", "Crowbar", "Getaway", "The Accountant",
+            "Two Dogs", "Mad Dog", "Bolt Cutter", "Ski Mask", "Lockpick", "The Cleaner",
         };
 
-        public static string Generate(Archetype archetype, Random random)
-        {
-            var nicks = Nicknames.TryGetValue(Archetypes.Normalise(archetype), out var found) ? found : Nicknames[Archetype.None];
-            return $"{First[random.Next(First.Length)]} \"{nicks[random.Next(nicks.Length)]}\" {Last[random.Next(Last.Length)]}";
-        }
+        public static string Generate(Random random) =>
+            $"{First[random.Next(First.Length)]} \"{Nicknames[random.Next(Nicknames.Length)]}\" {Last[random.Next(Last.Length)]}";
     }
 }

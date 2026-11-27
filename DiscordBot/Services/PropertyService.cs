@@ -8,7 +8,7 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Services
 {
     /// <summary>
-    /// Houses. Bought and sold with cash only, valued on a shared market index, and always rented out for an
+    /// Houses and businesses. Bought and sold with cash only, valued on a shared market index, and always rented out for an
     /// hourly income after the agency's cut. Holding costs apply every hour.
     /// </summary>
     public class PropertyService
@@ -32,6 +32,8 @@ namespace DiscordBot.Services
 
         public async Task<(PropertyHolding Holding, double Cost)> Buy(CoinAccount account, PropertyKind kind)
         {
+            if (!PropertyCatalog.TypeOf(kind).Buyable || PropertyCatalog.TypeOf(kind).Kind != kind)
+                throw new BadInputException($"{PropertyCatalog.DisplayName(kind)}s aren't sold any more.");
             double index = _coinService.GetAll().PropertyIndex;
             double cost = PropertyCatalog.BuyCost(kind, index);
             if (cost > account.NetWorth)
@@ -86,7 +88,7 @@ namespace DiscordBot.Services
         public async Task<(int Sold, int Left, double Proceeds)> SellAll(CoinAccount account, DateTime? now = null)
         {
             if (account.Properties.Count == 0)
-                throw new BadInputException("You don't own any property. Buy a house with `.buy property`.");
+                throw new BadInputException("You don't own any property. Buy one with `.buy property house` (`.property` lists them all).");
 
             int sold = 0, left = 0;
             double total = 0;
@@ -104,14 +106,14 @@ namespace DiscordBot.Services
                 }
             }
             if (sold == 0)
-                throw new BadInputException("Squatters are living in every house you own, so none of them can be sold until they leave.");
+                throw new BadInputException("Squatters are living in every property you own, so none of them can be sold until they leave.");
             return (sold, left, total);
         }
 
         public PropertyHolding Get(CoinAccount account, int number)
         {
             if (account.Properties.Count == 0)
-                throw new BadInputException("You don't own any property. Buy a house with `.buy property`.");
+                throw new BadInputException("You don't own any property. Buy one with `.buy property house` (`.property` lists them all).");
             if (number < 1 || number > account.Properties.Count)
                 throw new BadInputException($"Pick a number from 1 to {account.Properties.Count}.");
             return account.Properties[number - 1];
@@ -119,7 +121,7 @@ namespace DiscordBot.Services
 
         /// <summary>Called every minute. Steps the market once a UTC day and pays rent for each hour that has passed and holding costs for each day.</summary>
         /// <param name="exposure">The share of player wealth in ordinary stocks and houses (0 to 1), which raises the crash chance. Only asked for on a day a crash could start.</param>
-        public Task TickIfDue(Func<double> exposure = null) => TickIfDue(DateTime.UtcNow, _random.NextDouble, exposure);
+        public Task TickIfDue(Func<double> exposure = null) => TickIfDue(DateTime.UtcNow, Random.Shared.NextDouble, exposure);
 
         public async Task TickIfDue(DateTime now, Func<double> random, Func<double> exposure = null)
         {
@@ -187,15 +189,22 @@ namespace DiscordBot.Services
         /// <summary>Rent for one hour on every property, less the agency's cut, goes to each landlord's cash. Every property is rented out.</summary>
         public static void PayRentOneHour(CoinAccounts data) => PayRentOneHour(data, DateTime.UtcNow);
 
-        /// <summary>As <see cref="PayRentOneHour(CoinAccounts)"/>. A property with squatters in pays its rent to the squatter instead.</summary>
-        public static void PayRentOneHour(CoinAccounts data, DateTime now)
+        public static void PayRentOneHour(CoinAccounts data, DateTime now) => PayRentOneHour(data, now, Random.Shared.NextDouble);
+
+        /// <summary>
+        /// As <see cref="PayRentOneHour(CoinAccounts)"/>. A property with squatters in pays its rent to the squatter instead. A business's
+        /// takings swing around their average each hour (<see cref="PropertyCatalog.SwungRent"/>, one <paramref name="random"/> draw each).
+        /// </summary>
+        public static void PayRentOneHour(CoinAccounts data, DateTime now, Func<double> random)
         {
             foreach (var account in data.Accounts.Where(a => a.Properties.Count > 0).ToList())
             {
                 var squats = account.Running(PowerUpIds.Squatted, now).OrderBy(s => s.ExpiresAtTicks).ToList();
                 foreach (var property in account.Properties)
                 {
-                    double net = PropertyCatalog.NetRentPerHour(property.Kind, data.PropertyIndex);
+                    double net = PropertyCatalog.TypeOf(property.Kind).IncomeSwing > 0
+                        ? PropertyCatalog.SwungRent(property.Kind, data.PropertyIndex, random())
+                        : PropertyCatalog.NetRentPerHour(property.Kind, data.PropertyIndex);
                     var squat = squats.FirstOrDefault(s => SquattedPropertyId(account, s) == property.Id);
                     var squatter = squat == null ? null : data.Accounts.FirstOrDefault(a => a.UserId == squat.BeneficiaryUserId);
                     DiscordBot.Models.Money.Credit(data, squatter ?? account, net);

@@ -4,11 +4,48 @@ using System.Linq;
 
 namespace DiscordBot.Models
 {
+    /// <summary>
+    /// What a property is. The numbers are saved, so never reorder them: <see cref="House"/> (0) is the suburban house every old
+    /// save holds, <see cref="Apartment"/> (1) is only for old saves, and the tiers after were added later.
+    /// </summary>
     public enum PropertyKind
     {
-        House,
+        /// <summary>The suburban house: the one house there used to be.</summary>
+        House = 0,
         /// <summary>No longer sold. Kept so old saves load; <see cref="Services.PropertyService.BuyBackApartments"/> pays them out.</summary>
-        Apartment
+        Apartment = 1,
+        Shack = 2,
+        Luxury = 3,
+        Mansion = 4,
+        Penthouse = 5,
+        FoodTruck = 6,
+        Cafe = 7,
+        Nightclub = 8,
+        Casino = 9,
+        Bank = 10,
+    }
+
+    /// <summary>One kind of property: its price at the base index, what it earns and costs an hour, and how hard it is to rob.</summary>
+    public sealed class PropertyType
+    {
+        public PropertyKind Kind { get; init; }
+        public string Name { get; init; }
+        public string Emoji { get; init; }
+        /// <summary>Words that pick it in `.buy property luxury` (the first is shown).</summary>
+        public string[] Words { get; init; }
+        public double BasePrice { get; init; }
+        /// <summary>Gross rent (or takings) an hour as a share of the current price, before vacancy and the agency.</summary>
+        public double GrossYieldPerHour { get; init; }
+        /// <summary>Rates, wages and upkeep an hour as a share of the current price.</summary>
+        public double HoldingCostPerHour { get; init; }
+        /// <summary>Its price moves as the market index to this power, so 1.5 booms and crashes harder than a house.</summary>
+        public double Volatility { get; init; } = 1;
+        /// <summary>A business's takings swing each hour between 1 - this and 1 + this times the average.</summary>
+        public double IncomeSwing { get; init; }
+        /// <summary>The defence a raid on it has to beat, added to the owner's gang (<see cref="RaidRules.DefencePower"/>).</summary>
+        public double Security { get; init; }
+        public bool IsBusiness { get; init; }
+        public bool Buyable { get; init; } = true;
     }
 
     /// <summary>A property the player owns. Its value comes from the shared market index, not from what they paid.</summary>
@@ -19,6 +56,8 @@ namespace DiscordBot.Models
         /// <summary>Everything paid for it, including stamp duty and conveyancing.</summary>
         public double PurchaseCost { get; set; }
         public long PurchasedUtcTicks { get; set; }
+        /// <summary>After a raid gets through, nobody can rob it again until then (UTC ticks), except with revenge (<see cref="RaidRules.PropertyProtection"/>).</summary>
+        public long RaidProtectedUntilUtcTicks { get; set; }
         //every property is rented out automatically; old saves' "LetOut" flag is ignored when loading
     }
 
@@ -76,20 +115,75 @@ namespace DiscordBot.Models
         /// <summary>At most this many hours of rent are paid at once (a week), if the bot was down for longer.</summary>
         public const int MaxRentCatchUpHours = 7 * 24;
 
-        public static double BasePrice(PropertyKind kind) => kind == PropertyKind.House ? HousePrice : ApartmentPrice;
+        /// <summary>Holding cost an hour for a business: wages and upkeep run a bit higher than a house's rates.</summary>
+        public const double BusinessHoldingCostPerHour = 0.0035;
+        /// <summary>Businesses' prices move as the index to this power: they boom and crash harder than houses.</summary>
+        public const double BusinessVolatility = 1.5;
+        /// <summary>A business's takings each hour are the average times a random 1 - this to 1 + this.</summary>
+        public const double BusinessIncomeSwing = 0.5;
 
-        public static double YieldPerHour(PropertyKind kind) => kind == PropertyKind.House ? HouseGrossYieldPerHour : ApartmentGrossYieldPerHour;
+        /// <summary>
+        /// Every kind, cheapest first within houses then businesses. Bigger places earn a little less per dollar but are much harder
+        /// to rob; businesses earn more than houses and swing more. <c>PropertyTierTests</c> keeps every one ahead of a bond.
+        /// </summary>
+        public static readonly IReadOnlyList<PropertyType> Types = new List<PropertyType>
+        {
+            House(PropertyKind.Shack, "Shack", "🛖", 150_000, 0.0075, 30, "shack", "hut"),
+            House(PropertyKind.House, "House", "🏠", HousePrice, HouseGrossYieldPerHour, 60, "house", "suburban", "home"),
+            House(PropertyKind.Luxury, "Luxury home", "🏡", 4_000_000, 0.0065, 110, "luxury", "lux"),
+            House(PropertyKind.Mansion, "Mansion", "🏰", 15_000_000, 0.0060, 180, "mansion"),
+            House(PropertyKind.Penthouse, "Penthouse", "🌆", 50_000_000, 0.0055, 270, "penthouse", "ph"),
+            Business(PropertyKind.FoodTruck, "Food truck", "🚚", 250_000, 0.0085, 20, "foodtruck", "truck", "food"),
+            Business(PropertyKind.Cafe, "Café", "☕", 1_200_000, 0.0082, 45, "cafe", "café", "coffee"),
+            Business(PropertyKind.Nightclub, "Nightclub", "🪩", 6_000_000, 0.0078, 90, "nightclub", "club"),
+            Business(PropertyKind.Casino, "Casino", "🎰", 25_000_000, 0.0075, 160, "casino"),
+            Business(PropertyKind.Bank, "Bank", "🏦", 80_000_000, 0.0071, 260, "bank"),
+            new PropertyType { Kind = PropertyKind.Apartment, Name = "Apartment", Emoji = "🏢", Words = new[] { "apartment" }, BasePrice = ApartmentPrice,
+                GrossYieldPerHour = ApartmentGrossYieldPerHour, HoldingCostPerHour = HoldingCostPerHour, Volatility = ApartmentVolatility, Security = 40, Buyable = false },
+        };
+
+        private static PropertyType House(PropertyKind kind, string name, string emoji, double price, double yield, double security, params string[] words) =>
+            new PropertyType { Kind = kind, Name = name, Emoji = emoji, Words = words, BasePrice = price, GrossYieldPerHour = yield, HoldingCostPerHour = HoldingCostPerHour, Security = security };
+
+        private static PropertyType Business(PropertyKind kind, string name, string emoji, double price, double yield, double security, params string[] words) =>
+            new PropertyType { Kind = kind, Name = name, Emoji = emoji, Words = words, BasePrice = price, GrossYieldPerHour = yield, HoldingCostPerHour = BusinessHoldingCostPerHour,
+                Volatility = BusinessVolatility, IncomeSwing = BusinessIncomeSwing, Security = security, IsBusiness = true };
+
+        /// <summary>The type of a kind. An unknown number (a newer save read by older code) reads as a house.</summary>
+        public static PropertyType TypeOf(PropertyKind kind) => Types.FirstOrDefault(t => t.Kind == kind) ?? Types.First(t => t.Kind == PropertyKind.House);
+
+        public static IEnumerable<PropertyType> Buyable => Types.Where(t => t.Buyable);
+
+        /// <summary>The buyable kind a word names ("luxury", "cafe", "bank"), or null.</summary>
+        public static PropertyType Find(string word)
+        {
+            string w = (word ?? "").Trim().ToLowerInvariant().Replace(" ", "").Replace("-", "");
+            foreach (string tryWord in new[] { w, w.TrimEnd('s'), w.EndsWith("es") ? w.Substring(0, w.Length - 2) : w })
+            {
+                var type = Buyable.FirstOrDefault(t => t.Words.Contains(tryWord));
+                if (type != null) return type;
+            }
+            return null;
+        }
+
+        public static double BasePrice(PropertyKind kind) => TypeOf(kind).BasePrice;
+
+        public static double YieldPerHour(PropertyKind kind) => TypeOf(kind).GrossYieldPerHour;
 
         /// <summary>Gross rent for one hour while let, before the vacancy allowance and agency fee. Follows the market price.</summary>
         public static double RentPerHour(PropertyKind kind, double index) => Price(kind, index) * YieldPerHour(kind);
 
-        public static string DisplayName(PropertyKind kind) => kind == PropertyKind.House ? "House" : "Apartment";
+        public static string DisplayName(PropertyKind kind) => TypeOf(kind).Name;
+
+        /// <summary>"🏰 Mansion".</summary>
+        public static string Label(PropertyKind kind) => $"{TypeOf(kind).Emoji} {TypeOf(kind).Name}";
 
         /// <summary>Current market price, before costs.</summary>
         public static double Price(PropertyKind kind, double index)
         {
-            double moved = kind == PropertyKind.House ? index : Math.Pow(index, ApartmentVolatility);
-            return Math.Round(BasePrice(kind) * moved, 2);
+            var type = TypeOf(kind);
+            double moved = type.Volatility == 1 ? index : Math.Pow(index, type.Volatility);
+            return Math.Round(type.BasePrice * moved, 2);
         }
 
         /// <summary>Total paid to buy at this index: the price plus stamp duty and conveyancing.</summary>
@@ -101,11 +195,21 @@ namespace DiscordBot.Models
         /// <summary>Gross rent for one hour while let, after the vacancy allowance and before the agency fee.</summary>
         public static double GrossRentPerHour(PropertyKind kind, double index) => RentPerHour(kind, index) * (1 - VacancyRate);
 
-        /// <summary>What the landlord is paid for one hour: gross rent less the agency's cut.</summary>
+        /// <summary>What the landlord is paid for one hour on average: gross rent less the agency's cut. A business swings around it.</summary>
         public static double NetRentPerHour(PropertyKind kind, double index) => GrossRentPerHour(kind, index) * (1 - AgencyFeeRate);
 
         /// <summary>Holding cost for one hour on a property at this index.</summary>
-        public static double HourlyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * HoldingCostPerHour;
+        public static double HourlyHoldingCost(PropertyKind kind, double index) => Price(kind, index) * TypeOf(kind).HoldingCostPerHour;
+
+        /// <summary>What it earns an hour on average after its holding cost: rent (or takings) less the agency, less rates and upkeep.</summary>
+        public static double ProfitPerHour(PropertyKind kind, double index) => NetRentPerHour(kind, index) - HourlyHoldingCost(kind, index);
+
+        /// <summary>One hour's takings for a business: the average times a random swing (<paramref name="u"/> uniform in 0..1). A house's rent doesn't swing.</summary>
+        public static double SwungRent(PropertyKind kind, double index, double u)
+        {
+            var type = TypeOf(kind);
+            return NetRentPerHour(kind, index) * (1 + type.IncomeSwing * (2 * u - 1));
+        }
     }
 
     /// <summary>The shared market index and the day-by-day moves that drive property prices.</summary>

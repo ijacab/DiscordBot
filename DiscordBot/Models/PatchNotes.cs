@@ -65,6 +65,9 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-05", "Gangs: hold up to 30 cards, open packs with `.pack` (street, crew, kingpin), `.fuse` and `.scrap` spares. Card types and stances are gone: rarity, level and foil set power."),
+            new PatchNote("2026-12-05", "Raids rob property now: `.raid @person` lists their places, your crew of 3 takes on its security and their gang. Stocks and cash are safe. A robbed place is watched for 8h."),
+            new PatchNote("2026-12-05", "Property has tiers now: shack, house, luxury home, mansion, penthouse, plus businesses from a food truck to a bank that earn more but swing harder. See `.property`."),
             new PatchNote("2026-12-05", "New `.convolang`: a `.convo` where every line has been bounced through `.lang` first. Topic words and a tag work the same."),
             new PatchNote("2026-12-04", "Roulette is back to its old result message, with the buttons kept. Anyone can press them to play their own last bets. Convo names are now display names, and `.lb alltime` checks every minute."),
             new PatchNote("2026-12-04", "The hourly jackpot payout is gone. Pot Shot, Pot Share, Jackpot Dip and Scratchie still take shares of it."),

@@ -17,42 +17,14 @@ using static DiscordBot.Models.CoinAccounts;
 namespace DiscordBot.Managers
 {
     /// <summary>
-    /// Battle Person raids and the card's control panel: `.raid`, `.train`, `.stance`, `.guards`, `.card`, and their buttons.
+    /// Raids on property: `.raid` and `.guards`, and the raid buttons (pick a property, revenge).
     /// The rules are in <see cref="RaidService"/>, <see cref="RaidRules"/> and <see cref="CardLevels"/>.
     /// </summary>
     public partial class CommandManager
     {
         // ---- typed commands
 
-        private async Task CardView(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            if (args.Count >= 1 && args[0].ToLowerInvariant() == "stance")
-            {
-                if (args.Count < 2 || !RaidRules.TryParseStance(args[1], out RaidStance stance)) throw new BadSyntaxException();
-                await message.Channel.SendMessageAsync(await StanceText(account, stance));
-                return;
-            }
-
-            BattlePerson card = account.BattlePerson;
-            if (card == null)
-            {
-                await message.SendRichEmbedMessage("No card", "You don't have a Battle Person yet. Type `.cardpull` to get one (your first pull each day is free).");
-                return;
-            }
-
-            var embed = DiscordHelper.GetEmbedBuilder(card.Name, card.GetSummary() + "\n\n" + CardPanel(account, DateTime.UtcNow)).Build();
-            if (!string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath))
-            {
-                using var image = File.OpenRead(card.FilePath);
-                await message.Channel.SendFileAsync(stream: image, Path.GetFileName(card.FilePath), embed: embed, components: CardButtons(account));
-            }
-            else
-            {
-                await message.Channel.SendMessageAsync(embed: embed, components: CardButtons(account));
-            }
-        }
-
+        /// <summary>`.raid` (revenge and bounties), `.raid @person` (their property and your odds on each), `.raid @person N` (rob property N).</summary>
         private async Task Raid(DiscordSocketClient client, SocketMessage message, List<string> args)
         {
             var now = DateTime.UtcNow;
@@ -66,32 +38,15 @@ namespace DiscordBot.Managers
             CoinAccount target = FindRaidTarget(message, args[0]);
             if (args.Count == 1)
             {
-                var check = _raidService.Check(attacker, target, now);
-                await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder($"⚔️ Raid {target.Name}?", RaidPreview(attacker, target, check)).Build(),
-                    components: check.Refusal == null ? RaidStakeButtons(attacker, target, check) : null);
+                var (text, menu) = RaidPreview(attacker, target, now);
+                await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder($"⚔️ Rob {target.Name}?", text).Build(), components: menu);
                 return;
             }
-
-            await PostRaid(attacker, target, args[1], message.Channel, now);
-        }
-
-        private async Task Train(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            bool max = args.Count > 0 && (args[0].ToLowerInvariant() == "max" || args[0].ToLowerInvariant() == "all");
-            await message.Channel.SendMessageAsync(await TrainText(account, max), components: CardButtons(account));
-        }
-
-        private async Task Stance(DiscordSocketClient client, SocketMessage message, List<string> args)
-        {
-            CoinAccount account = await _coinService.Get(message.Author.Id, message.Author.Username);
-            if (args.Count == 0)
-            {
-                await message.Channel.SendMessageAsync($"Your raid stance is **{RaidRules.Describe(account.RaidStance)}**.\nChange it with `.stance guard`, `.stance counter` or `.stance hoard`.");
-                return;
-            }
-            if (!RaidRules.TryParseStance(args[0], out RaidStance stance)) throw new BadSyntaxException();
-            await message.Channel.SendMessageAsync(await StanceText(account, stance));
+            if (args.Count != 2 || !int.TryParse(args[1].TrimStart('#'), out int number))
+                throw new BadInputException($"Raids rob a property now, so pick one by number: `.raid {target.Name}` lists what they own, then `.raid {target.Name} 1`.");
+            if (number < 1 || number > target.Properties.Count)
+                throw new BadInputException(target.Properties.Count == 0 ? $"{target.Name} owns no property, so there's nothing to rob." : $"{target.Name} has {target.Properties.Count} propert{(target.Properties.Count == 1 ? "y" : "ies")}. `.raid {target.Name}` lists them.");
+            await PostRaid(attacker, target, target.Properties[number - 1].Id, message.Channel, now);
         }
 
         private async Task Guards(DiscordSocketClient client, SocketMessage message, List<string> args)
@@ -102,26 +57,22 @@ namespace DiscordBot.Managers
 
         // ---- shared text and actions
 
-        /// <summary>Runs a raid with a stake typed as an amount, a percentage of cash, min or max, and posts the result.</summary>
-        private async Task PostRaid(CoinAccount attacker, CoinAccount target, string amountText, IMessageChannel channel, DateTime now)
+        /// <summary>Robs one of the target's properties and posts the result.</summary>
+        private async Task PostRaid(CoinAccount attacker, CoinAccount target, string propertyId, IMessageChannel channel, DateTime now)
         {
             if (_betManager.InitiatedBetUserIds.Contains(attacker.UserId)) throw new BadInputException("Finish your bet before raiding.");
             if (_betManager.InitiatedBetUserIds.Contains(target.UserId)) throw new BadInputException($"{target.Name} has a bet open. Try again when it's done.");
 
-            var check = _raidService.Check(attacker, target, now);
-            if (check.Refusal != null) throw new BadInputException(check.Refusal);
-            double stake = ParseStake(amountText, attacker, check);
-
-            var result = _raidService.Raid(attacker, target, stake, now);
+            var result = _raidService.Raid(attacker, target, propertyId, now);
             await _coinService.Update();
 
-            var builder = DiscordHelper.GetEmbedBuilder(result.Won ? "⚔️ Raid succeeded" : "🛡️ Raid failed", RaidService.Describe(result));
+            var builder = DiscordHelper.GetEmbedBuilder(result.Won ? "⚔️ Robbed" : "🛡️ Raid failed", RaidService.Describe(result));
             var revenge = result.Check.IsRevenge ? null : new ComponentBuilder()
                 .WithButton($"🔥 Revenge on {Trim(attacker.Name, 40)}…", Id(MoneyComponents.Raid, "revenge", target.UserId.ToString(), attacker.UserId.ToString()), ButtonStyle.Danger)
                 .Build();
             var mentions = new AllowedMentions { UserIds = new List<ulong> { target.UserId } };
 
-            //a picture of the two cards, if it can be drawn; the text carries everything either way
+            //a picture of the crew against the property, if it can be drawn; the text carries everything either way
             MemoryStream picture = null;
             try
             {
@@ -143,39 +94,40 @@ namespace DiscordBot.Managers
             }
         }
 
-        /// <summary>The picture for a raid result: both cards, the dice and the money.</summary>
+        /// <summary>The picture for a raid result: the crew's lead card against the property and the owner's lead card, and the dice.</summary>
         public static RaidScene RaidScene(RaidService.RaidResult r)
         {
-            RaidSide Side(CoinAccount account, bool winner) => new RaidSide
-            {
-                Name = account.BattlePerson?.Name ?? account.Name,
-                Kind = account.BattlePerson == null ? "NO CARD" : Archetypes.Name(account.BattlePerson.Archetype),
-                Level = account.BattlePerson?.Level ?? 0,
-                Rarity = account.BattlePerson?.Rarity ?? CardRarity.Common,
-                Power = RaidRules.Power(account.BattlePerson),
-                ArtPath = account.BattlePerson?.FilePath,
-                Winner = winner,
-            };
+            var c = r.Check;
+            var lead = c.Crew.FirstOrDefault();
+            var guard = c.Defenders.FirstOrDefault();
             return new RaidScene
             {
-                Attacker = Side(r.Attacker, r.Won),
-                Defender = Side(r.Target, !r.Won),
-                Banner = r.Check.IsRevenge ? (r.Won ? "REVENGE IS SWEET" : "REVENGE FAILED") : (r.Won ? "RAID SUCCEEDED" : "RAID FAILED"),
+                Attacker = new RaidSide
+                {
+                    Name = lead?.Name ?? r.Attacker.Name,
+                    Kind = $"CREW OF {c.Crew.Count}",
+                    Level = lead?.Level ?? 0,
+                    Rarity = lead?.Rarity ?? CardRarity.Common,
+                    Power = c.AttackPower,
+                    ArtPath = lead?.FilePath,
+                    Winner = r.Won,
+                },
+                Defender = new RaidSide
+                {
+                    Name = guard?.Name ?? r.Target.Name,
+                    Kind = PropertyCatalog.DisplayName(c.Property.Kind),
+                    Level = guard?.Level ?? 0,
+                    Rarity = guard?.Rarity ?? CardRarity.Common,
+                    Power = c.DefencePower,
+                    ArtPath = guard?.FilePath,
+                    Winner = !r.Won,
+                },
+                Banner = c.IsRevenge ? (r.Won ? "REVENGE IS SWEET" : "REVENGE FAILED") : (r.Won ? "ROBBED" : "RAID FAILED"),
                 Won = r.Won,
                 Needed = r.Needed,
                 Roll = r.Roll,
-                Footer = r.Won ? $"{RaidService.Money(r.Loot)} LOOT" : $"{RaidService.Money(r.Stake + r.ExtraLoss)} LOST",
+                Footer = r.Won ? $"{RaidService.Money(r.Loot)} LOOT" : $"{RaidService.Money(r.Stake)} LOST",
             };
-        }
-
-        private static double ParseStake(string text, CoinAccount attacker, RaidService.RaidCheck check)
-        {
-            text = (text ?? "").Trim().ToLowerInvariant();
-            double cash = Math.Max(0, attacker.NetWorth);
-            if (text == "max" || text == "all") return Math.Floor(Math.Min(cash, check.MaxStake));
-            if (text == "min") return check.MinStake;
-            if (Money.TryParse(text, cash, out double amount)) return Math.Floor(amount);
-            throw new BadInputException("That stake is gibberish. Use an amount like 5000, a share of your cash like 10%, min or max.");
         }
 
         /// <summary>A player to raid: a mention, an id, or the name on their account.</summary>
@@ -213,165 +165,83 @@ namespace DiscordBot.Managers
             return found;
         }
 
-        private string RaidPreview(CoinAccount attacker, CoinAccount target, RaidService.RaidCheck check)
+        /// <summary>How many of the target's properties the preview lists (the menu holds at most 25).</summary>
+        private const int MaxRaidTargets = 15;
+
+        /// <summary>The target's properties with your odds, loot and stake on each, and a menu to rob one.</summary>
+        private (string Text, MessageComponent Menu) RaidPreview(CoinAccount attacker, CoinAccount target, DateTime now)
         {
-            var card = target.BattlePerson;
+            var overall = _raidService.Check(attacker, target, null, now);
             var lines = new List<string>
             {
-                $"**You:** {RaidService.CardLabel(attacker)}, power {check.AttackPower:0}{(check.IsRevenge ? " with 🔥 revenge (+25%)" : "")}",
-                $"**{target.Name}:** {RaidService.CardLabel(target)}, defends at {check.DefencePower:0}: {target.RaidStance}{(check.Guarded ? ", with guards" : "")}{(check.Underdog > 1 ? $", {RaidService.Pct(check.Underdog - 1)} harder for being richer than you" : "")}",
+                $"**You:** {RaidService.GangLabel(attacker, now)}{(overall.IsRevenge ? $" with 🔥 revenge (+{RaidRules.RevengeBonus:0%}, ignores the cops)" : "")}",
+                $"**{target.Name}:** gang defence {RaidRules.TotalPower(overall.Defenders):0}{(overall.Guarded ? $", 💂 guards (x{RaidRules.GuardsMultiplier:0.#})" : "")}" +
+                    (overall.PunchDown > 1 ? $", {RaidService.Pct(overall.PunchDown - 1)} harder because you're richer" : ""),
             };
-            if (check.Matchup.Length > 0) lines.Add($"🔺 {check.Matchup}.");
-            if (Archetypes.Normalise(attacker.BattlePerson?.Archetype ?? Archetype.None) == Archetype.Gambler)
-                lines.Add($"🎰 Your Gambler's power swings {Archetypes.GamblerSwing * 100:0}% up or down on a coin flip when you raid, so the chance below is the middle of it.");
-            lines.Add($"**Chance to win:** {RaidService.ChancePercent(check.Chance)}% (you need {RaidService.NeededRoll(check.Chance)}+ on a d100)");
-            if (check.MaxStake >= check.MinStake)
-            {
-                double best = RaidRules.Loot(check.MaxStake, target.RaidStance, check.TargetWorth, Archetypes.LootMultiple(attacker.BattlePerson?.Archetype ?? Archetype.None, RaidRules.LootMultiple));
-                lines.Add($"**Stake:** {RaidService.Money(check.MinStake)} to {RaidService.Money(check.MaxStake)}{(check.IsRevenge ? $" (a revenge raid can stake what {target.Name} raided you with, at most)" : "")}. At the most, a win takes {RaidService.Money(best)} from them (you keep 90%, 10% becomes a bounty on you).");
-            }
             if (target.Bounty > 0) lines.Add($"💰 **Bounty on {target.Name}:** {RaidService.Money(target.Bounty)}, yours if you win.");
-            if (target.RaidStance == RaidStance.Counter) lines.Add("⚠️ They're on Counter: if you lose, they also take your stake again from you.");
-            if (check.Refusal != null) lines.Add($"\n❌ {check.Refusal}");
-            else lines.Add($"\nPress a stake below, or type `.raid {target.Name} 5000` (or 10%, min, max).");
-            return string.Join("\n", lines);
-        }
+            if (overall.Refusal != null)
+            {
+                lines.Add($"\n❌ {overall.Refusal}");
+                return (string.Join("\n", lines), null);
+            }
 
-        private MessageComponent RaidStakeButtons(CoinAccount attacker, CoinAccount target, RaidService.RaidCheck check)
-        {
-            string owner = attacker.UserId.ToString(), t = target.UserId.ToString();
-            return new ComponentBuilder()
-                .WithButton($"Min · {RaidService.Money(check.MinStake)}", Id(MoneyComponents.Raid, "go", owner, t, "min"), ButtonStyle.Secondary)
-                .WithButton($"Max · {RaidService.Money(Math.Min(check.MaxStake, Math.Floor(Math.Max(0, attacker.NetWorth))))}", Id(MoneyComponents.Raid, "go", owner, t, "max"), ButtonStyle.Danger)
-                .WithButton("Stake…", Id(MoneyComponents.Raid, "stake", owner, t), ButtonStyle.Primary)
-                .Build();
+            lines.Add("");
+            var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Raid, "pick", attacker.UserId.ToString(), target.UserId.ToString())).WithPlaceholder("Rob a property…");
+            for (int i = 0; i < target.Properties.Count && i < MaxRaidTargets; i++)
+            {
+                var property = target.Properties[i];
+                var check = _raidService.Check(attacker, target, property, now);
+                string label = PropertyCatalog.Label(property.Kind);
+                if (check.Refusal != null)
+                {
+                    lines.Add($"`{i + 1}` {label} · 🔒{check.Security:0} · ❌ {check.Refusal}");
+                    continue;
+                }
+                lines.Add($"`{i + 1}` {label} · 🔒{check.Security:0} · **{RaidService.ChancePercent(check.Chance)}%** · loot {RaidService.Money(check.Loot)} · stake {RaidService.Money(check.Stake)}");
+                menu.AddOption(Trim($"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · {RaidService.ChancePercent(check.Chance)}% · loot {RaidService.Money(check.Loot)}", 100), property.Id,
+                    Trim($"Stake {RaidService.Money(check.Stake)}, kept by {target.Name} if you fail", 100));
+            }
+            if (target.Properties.Count > MaxRaidTargets) lines.Add($"…and {target.Properties.Count - MaxRaidTargets} more (`.raid {target.Name} N`).");
+            lines.Add($"\nLoot is {RaidRules.LootHours:0} hours of the place's profit; you stake half of it. A robbed place is watched for {RaidRules.PropertyProtection.TotalHours:0} hours. " +
+                $"Your crew is your best {GangRules.CrewSize} rested cards, and they lie low for {GangRules.RestTime.TotalHours:0} hour after a job. Pick below or type `.raid {target.Name} N`.");
+            return (string.Join("\n", lines), menu.Options.Count == 0 ? null : new ComponentBuilder().WithSelectMenu(menu).Build());
         }
 
         private string RaidOverview(CoinAccount account, DateTime now)
         {
             var lines = new List<string>();
-            _raidService.Check(account, account, now); //drops expired revenge and cooldowns
-            int used = account.RecentRaidUtcTicks.Count;
-            lines.Add($"**Raids left this hour:** {Math.Max(0, RaidRules.RaidsPerHour - used)} of {RaidRules.RaidsPerHour}");
+            _raidService.Check(account, account, null, now); //drops expired revenge and cooldowns
+            lines.Add($"**Raids left this hour:** {Math.Max(0, RaidRules.RaidsPerHour - account.RecentRaidUtcTicks.Count)} of {RaidRules.RaidsPerHour} · **your crew:** {RaidService.GangLabel(account, now)}");
             if (account.RevengeTokens.Count > 0)
                 lines.Add("🔥 **Revenge ready on:** " + string.Join(", ", account.RevengeTokens.Select(r => $"{r.Name} ({RaidService.Wait(new DateTime(r.ExpiresUtcTicks) - now)} left)")));
             var bounties = _coinService.GetAll().Accounts.Where(a => a.Bounty > 0).OrderByDescending(a => a.Bounty).Take(5).ToList();
             if (bounties.Count > 0)
                 lines.Add("💰 **Bounties:** " + string.Join(", ", bounties.Select(a => $"{a.Name} {RaidService.Money(a.Bounty)}")));
-            if (account.RaidProtectedUntilUtcTicks > now.Ticks)
-                lines.Add($"🛡️ You're protected from raids for {RaidService.Wait(new DateTime(account.RaidProtectedUntilUtcTicks) - now)}.");
-            lines.Add($"Your stance: **{account.RaidStance}**. `.card` for your card's control panel.");
-            lines.Add("\n`.raid @person` shows your odds, then `.raid @person 5000` (or 10%, min, max) raids them.");
+            var watched = account.Properties.Where(p => p.RaidProtectedUntilUtcTicks > now.Ticks).ToList();
+            if (watched.Count > 0)
+                lines.Add($"🚓 {watched.Count} of your properties {(watched.Count == 1 ? "is" : "are")} watched by the cops after a robbery.");
+            lines.Add("\nRaids rob a property: `.raid @person` lists theirs with your odds, then pick one. Stocks and cash can't be robbed. `.gang` for your cards.");
             return string.Join("\n", lines);
-        }
-
-        /// <summary>The raid and levelling part of `.card`.</summary>
-        private string CardPanel(CoinAccount account, DateTime now)
-        {
-            var card = account.BattlePerson;
-            _raidService.Check(account, account, now); //drops expired revenge and cooldowns
-            var lines = new List<string>();
-            lines.Add(card.Level >= CardLevels.MaxLevel
-                ? "**Training:** max level."
-                : $"**Training:** {RaidService.Money(CardLevels.TrainCost(card))} for level {card.Level + 1} (`.train`, or `.train max`).");
-            lines.Add($"**Raid power:** {RaidRules.AttackPower(card, null, false):0} attacking, {RaidRules.DefencePower(card, null, account.RaidStance, account.GuardsUntilUtcTicks > now.Ticks, 1):0} defending");
-            lines.Add($"**Stance:** {RaidRules.Describe(account.RaidStance)}");
-            lines.Add(account.GuardsUntilUtcTicks > now.Ticks
-                ? $"**Guards:** on duty for {RaidService.Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}"
-                : $"**Guards:** none (`.guards` hires them for 6 hours: {RaidService.Money(_raidService.GuardsCost(account))})");
-            if (account.RaidProtectedUntilUtcTicks > now.Ticks)
-                lines.Add($"**Protected** from raids for {RaidService.Wait(new DateTime(account.RaidProtectedUntilUtcTicks) - now)}");
-            if (account.Bounty > 0) lines.Add($"💰 **Bounty on you:** {RaidService.Money(account.Bounty)}");
-            if (account.RevengeTokens.Count > 0)
-                lines.Add("🔥 **Revenge ready on:** " + string.Join(", ", account.RevengeTokens.Select(r => r.Name)));
-            var s = account.Stats;
-            lines.Add($"**Raids:** won {s.RaidsWon} / lost {s.RaidsLost} · **defences:** won {s.DefencesWon} / lost {s.DefencesLost}" + (account.RaidStreak >= 2 ? $" · 🔥 {account.RaidStreak} raid wins in a row" : ""));
-            return string.Join("\n", lines);
-        }
-
-        private MessageComponent CardButtons(CoinAccount account)
-        {
-            var card = account.BattlePerson;
-            if (card == null) return null;
-            string owner = account.UserId.ToString();
-            var builder = new ComponentBuilder();
-            bool max = card.Level >= CardLevels.MaxLevel;
-            builder.WithButton(max ? "Max level" : $"Train · {RaidService.Money(CardLevels.TrainCost(card))}", Id(MoneyComponents.Card, "train", owner), ButtonStyle.Success, disabled: max, row: 0);
-            builder.WithButton("Train max", Id(MoneyComponents.Card, "trainmax", owner), ButtonStyle.Success, disabled: max, row: 0);
-            builder.WithButton($"Hire guards · {RaidService.Money(_raidService.GuardsCost(account))}", Id(MoneyComponents.Card, "guards", owner), ButtonStyle.Primary, row: 0);
-
-            var stance = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Card, "stance", owner)).WithPlaceholder($"Stance: {account.RaidStance}");
-            foreach (RaidStance option in Enum.GetValues(typeof(RaidStance)))
-                stance.AddOption(option.ToString(), option.ToString(), Trim(RaidRules.Describe(option), 100), isDefault: option == account.RaidStance);
-            builder.WithSelectMenu(stance, 1);
-
-            return builder.Build();
-        }
-
-        private async Task<string> TrainText(CoinAccount account, bool max)
-        {
-            int before = account.BattlePerson?.Level ?? 0;
-            var (levels, cost) = _raidService.Train(account, max ? CardLevels.MaxLevel : 1);
-            await _coinService.Update();
-            var card = account.BattlePerson;
-            string next = card.Level >= CardLevels.MaxLevel ? "Max level!" : $"Next level costs {RaidService.Money(CardLevels.TrainCost(card))}.";
-            return $"🏋️ {account.Name} trained **{card.Name}** {before} → **{card.Level}** ({levels} level{(levels == 1 ? "" : "s")}) for {RaidService.Money(cost)}, into the jackpot. {next}";
         }
 
         private async Task<string> GuardsText(CoinAccount account, DateTime now)
         {
             double cost = _raidService.HireGuards(account, now);
             await _coinService.Update();
-            return $"💂 {account.Name} hired guards for {RaidService.Money(cost)}, into the jackpot. On duty for {RaidService.Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}: your card defends 50% harder against raids.";
-        }
-
-        private async Task<string> StanceText(CoinAccount account, RaidStance stance)
-        {
-            account.RaidStance = stance;
-            await _coinService.Update();
-            return $"🛡️ {account.Name}'s raid stance is now **{RaidRules.Describe(stance)}**.";
+            return $"💂 {account.Name} hired guards for {RaidService.Money(cost)}, into the jackpot. On duty for {RaidService.Wait(new DateTime(account.GuardsUntilUtcTicks) - now)}: your property defends {RaidRules.GuardsMultiplier - 1:0%} harder against raids.";
         }
 
         // ---- clicks
 
-        private async Task CardComponent(SocketMessageComponent component, string action, string[] args)
-        {
-            if (!await IsOwner(component, args)) return;
-            CoinAccount account = await _coinService.Get(component.User.Id, component.User.Username);
-            switch (action)
-            {
-                case "keep":
-                    if (args.Length < 2) break;
-                    await component.DeferAsync();
-                    await component.FollowupAsync(await KeepFromButton(account, args[1]));
-                    return;
-                case "train":
-                case "trainmax":
-                    await component.DeferAsync();
-                    await component.FollowupAsync(await TrainText(account, action == "trainmax"));
-                    MarkActiveFromInteraction(component);
-                    return;
-                case "guards":
-                    await component.DeferAsync();
-                    await component.FollowupAsync(await GuardsText(account, DateTime.UtcNow));
-                    MarkActiveFromInteraction(component);
-                    return;
-                case "stance":
-                {
-                    string value = component.Data.Values?.FirstOrDefault();
-                    if (!Enum.TryParse(value, out RaidStance stance)) break;
-                    await component.DeferAsync(ephemeral: true);
-                    await component.FollowupAsync(await StanceText(account, stance), ephemeral: true);
-                    return;
-                }
-            }
-            await ReplyPrivately(component, "That button doesn't do anything any more.");
-        }
-
         private async Task RaidComponent(SocketMessageComponent component, string action, string[] args)
         {
+            if (action == "go" || action == "stake")
+            {
+                await ReplyPrivately(component, "Raids rob a property now. `.raid @person` lists what they own.");
+                return;
+            }
             if (!await IsOwner(component, args)) return;
-            if (args.Length < 2 || !ulong.TryParse(args[1], out ulong targetId))
+            if (args.Length < 2 || !ulong.TryParse(args[1], out ulong targetId) || component.Channel == null)
             {
                 await ReplyPrivately(component, "That button doesn't do anything any more.");
                 return;
@@ -382,43 +252,29 @@ namespace DiscordBot.Managers
                 await ReplyPrivately(component, "That player isn't playing any more.");
                 return;
             }
-
+            CoinAccount attacker = await _coinService.Get(component.User.Id, component.User.Username);
             switch (action)
             {
-                case "go":
-                    if (args.Length < 3) break;
-                    if (component.Channel == null) break;
+                case "pick":
+                {
+                    string propertyId = component.Data.Values?.FirstOrDefault();
+                    if (string.IsNullOrEmpty(propertyId)) break;
                     await component.DeferAsync();
-                    await PostRaid(await _coinService.Get(component.User.Id, component.User.Username), target, args[2], component.Channel, DateTime.UtcNow);
+                    await PostRaid(attacker, target, propertyId, component.Channel, DateTime.UtcNow);
                     MarkActiveFromInteraction(component);
                     return;
-                case "stake":
+                }
                 case "revenge":
-                    await component.RespondWithModalAsync(AmountModal(Id(MoneyComponents.Raid, "amt", args[0], targetId.ToString()),
-                        Trim(action == "revenge" ? $"Revenge on {target.Name}" : $"Raid {target.Name}", 45), "Your stake", "5000, 10%, min or max"));
+                {
+                    var (text, menu) = RaidPreview(attacker, target, DateTime.UtcNow);
+                    await component.RespondAsync(embed: DiscordHelper.GetEmbedBuilder($"🔥 Revenge on {target.Name}", text).Build(), components: menu, ephemeral: true);
                     return;
+                }
             }
             await ReplyPrivately(component, "That button doesn't do anything any more.");
         }
 
-        private async Task RaidModal(SocketModal modal, string action, string[] args)
-        {
-            if (action != "amt" || args.Length < 2 || !ulong.TryParse(args[0], out ulong ownerId) || !ulong.TryParse(args[1], out ulong targetId)
-                || !ButtonOwner.Allows(ownerId, modal.User.Id) || modal.Channel == null)
-            {
-                await ReplyPrivately(modal, "That form doesn't do anything any more.");
-                return;
-            }
-            CoinAccount target = _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == targetId);
-            if (target == null)
-            {
-                await ReplyPrivately(modal, "That player isn't playing any more.");
-                return;
-            }
-            await modal.DeferAsync();
-            string amount = modal.Data.Components.FirstOrDefault(c => c.CustomId == "amount")?.Value ?? "";
-            await PostRaid(await _coinService.Get(modal.User.Id, modal.User.Username), target, amount, modal.Channel, DateTime.UtcNow);
-            MarkActiveFromInteraction(modal);
-        }
+        private Task RaidModal(SocketModal modal, string action, string[] args) =>
+            ReplyPrivately(modal, "Raids rob a property now. `.raid @person` lists what they own.");
     }
 }

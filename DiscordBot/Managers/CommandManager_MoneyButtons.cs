@@ -44,9 +44,15 @@ namespace DiscordBot.Managers
             return menu.Options.Count == 0 ? null : new ComponentBuilder().WithSelectMenu(menu).Build();
         }
 
-        private static MessageComponent PropertyBuyButton() => new ComponentBuilder()
-            .WithButton("Buy a house", Id(MoneyComponents.Property, "buy"), ButtonStyle.Success)
-            .Build();
+        /// <summary>A menu of everything for sale with today's price. Picking one buys it for whoever picked (`prop:buykind`).</summary>
+        private static MessageComponent PropertyBuyButton(double index)
+        {
+            var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Property, "buykind")).WithPlaceholder("Buy a property…");
+            foreach (var type in PropertyCatalog.Buyable)
+                menu.AddOption(Trim($"{type.Name} · ${Common.Helpers.FormatHelper.GetCommaNumber(Math.Round(PropertyCatalog.BuyCost(type.Kind, index)))} with stamp duty", 100),
+                    type.Kind.ToString(), Trim($"About ${Common.Helpers.FormatHelper.GetCommaNumber(Math.Round(PropertyCatalog.ProfitPerHour(type.Kind, index)))} an hour after costs, security {type.Security:0}", 100), new Emoji(type.Emoji));
+            return new ComponentBuilder().WithSelectMenu(menu).Build();
+        }
 
         /// <summary>Turns auto-sell the other way. Only for the account's owner.</summary>
         private static MessageComponent AutoSellButton(CoinAccount account) =>
@@ -77,11 +83,11 @@ namespace DiscordBot.Managers
             if (account.Properties.Count > 0)
             {
                 double index = _coinService.GetAll().PropertyIndex;
-                var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Property, "sell", owner)).WithPlaceholder("Sell a house…");
+                var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Property, "sell", owner)).WithPlaceholder("Sell a property…");
                 for (int i = 0; i < account.Properties.Count && i < 25; i++)
                 {
                     var property = account.Properties[i];
-                    menu.AddOption(Trim($"{i + 1}. {PropertyCatalog.DisplayName(property.Kind)} · sells for ${Common.Helpers.FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))}", 100), property.Id);
+                    menu.AddOption(Trim($"{i + 1}. {PropertyCatalog.Label(property.Kind)} · sells for ${Common.Helpers.FormatHelper.GetCommaNumber(PropertyCatalog.SaleValue(property.Kind, index))}", 100), property.Id);
                 }
                 builder.WithSelectMenu(menu, row++);
                 any = true;
@@ -261,11 +267,25 @@ namespace DiscordBot.Managers
             var user = component.User;
             switch (action)
             {
-                case "buy":
+                case "buykind":
+                {
+                    //a menu pick only asks, privately: a mis-tap shouldn't buy an $80M bank
+                    if (!Enum.TryParse(component.Data.Values?.FirstOrDefault(), out PropertyKind picked) || !PropertyCatalog.TypeOf(picked).Buyable) break;
+                    double cost = PropertyCatalog.BuyCost(picked, _coinService.GetAll().PropertyIndex);
+                    await component.RespondAsync($"Buy a {PropertyCatalog.Label(picked).ToLower()} for about ${Common.Helpers.FormatHelper.GetCommaNumber(Math.Round(cost))} with stamp duty?",
+                        components: new ComponentBuilder().WithButton("Buy it", Id(MoneyComponents.Property, "buyconfirm", picked.ToString()), ButtonStyle.Success).Build(), ephemeral: true);
+                    return;
+                }
+                case "buy": //the old Buy a house button
+                case "buyconfirm":
+                {
+                    var kind = PropertyKind.House;
+                    if (action == "buyconfirm" && (args.Length < 1 || !Enum.TryParse(args[0], out kind))) break;
                     await component.DeferAsync();
-                    await component.FollowupAsync(await BuyPropertyText(user.Id, user.Username, user.Mention), components: PropertyBuyButton());
+                    await component.FollowupAsync(await BuyPropertyText(user.Id, user.Username, user.Mention, kind), components: PropertyBuyButton(_coinService.GetAll().PropertyIndex));
                     MarkActiveFromInteraction(component);
                     return;
+                }
                 case "sell":
                 {
                     if (!await IsOwner(component, args)) return;

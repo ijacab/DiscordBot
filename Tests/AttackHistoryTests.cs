@@ -53,16 +53,22 @@ namespace Tests
         {
             var coins = new CoinService(new LocalFileService(), new AppSettings { PrestigeDisabled = true });
             coins.GetAll().Accounts.Clear();
-            var a = new CoinAccount { UserId = 1, Name = "raider", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0) };
-            var b = new CoinAccount { UserId = 2, Name = "target", NetWorth = 100_000, BattlePerson = RaidTests.AverageCard(0) };
+            coins.GetAll().PropertyIndex = 1.0;
+            var a = new CoinAccount { UserId = 1, Name = "raider", NetWorth = 100_000, Cards = { RaidTests.AverageCard(0) } };
+            var b = new CoinAccount { UserId = 2, Name = "target", NetWorth = 100_000, Cards = { RaidTests.AverageCard(0) } };
+            var house = new PropertyHolding { Kind = PropertyKind.House };
+            b.Properties.Add(house);
             coins.GetAll().Accounts.Add(a);
             coins.GetAll().Accounts.Add(b);
+            double loot = RaidRules.Loot(PropertyKind.House, 1.0, 100_000 + 950_000);
 
-            new RaidService(coins, x => x.NetWorth, new FixedRolls(0.0)).Raid(a, b, 1_000, Now);   //a d100 of 100: the raid works
-            Assert.Equal(2_000, b.RecentAttacks[0].Lost, 2);
+            new RaidService(coins, x => x.NetWorth + 950_000 * x.Properties.Count, new FixedRolls(0.0)).Raid(a, b, house.Id, Now);   //a d100 of 100: the raid works
+            Assert.Equal(loot, b.RecentAttacks[0].Lost, 2);
             Assert.Equal("Raid", b.RecentAttacks[0].Source);
 
-            new RaidService(coins, x => x.NetWorth, new FixedRolls(0.99)).Raid(a, b, 5_000, Now.AddHours(7)); //a d100 of 1: it fails
+            house.RaidProtectedUntilUtcTicks = 0;
+            a.Cards[0].RestedUntilUtcTicks = 0;
+            new RaidService(coins, x => x.NetWorth + 950_000 * x.Properties.Count, new FixedRolls(0.99)).Raid(a, b, house.Id, Now.AddHours(7)); //a d100 of 1: it fails
             Assert.True(b.RecentAttacks[0].Lost < 0);   //the defender came out ahead
             Assert.Contains("you kept", b.RecentAttacks[0].Detail);
             Assert.Equal(2, b.RecentAttacks.Count);

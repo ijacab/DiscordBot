@@ -25,7 +25,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_Property.cs .property .buyproperty .sellproperty .autosell
     CommandManager_Economy.cs  leaderboard, net worth graphs, .donate, .jackpot, .stats
     CommandManager_PowerUps.cs .pu: power-ups, catalog, using one
-    CommandManager_Cards.cs    .cardpull and the Keep button
+    CommandManager_Cards.cs    gangs: .pack (.cardpull), .gang (.card), .train, .fuse, .scrap and their buttons
     CommandManager_Attacks.cs  .attacks: recap of the latest attacks on you
     CommandManager_Suggest.cs  .sug/.suggest: master suggestions list
     CommandManager_ConvoSettings.cs  .convoset: change `.convo` randomness live (ConvoSettings, convo_settings.json)
@@ -38,7 +38,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     CommandManager_MoneyButtons.cs  money buttons/menus: stocks, power-ups, property, auto-sell, blackjack, duck race
     CommandManager_Slots.cs    .slots and the slot machine's buttons / bet form
     CommandManager_Roulette.cs .roulette and its buttons / bets form (anyone can press them, each plays their own last bets)
-    CommandManager_Raids.cs    .raid, .train, .stance, .guards, the `.card` control panel and their buttons
+    CommandManager_Raids.cs    .raid (rob a property), .guards and the raid buttons
     BetManager.cs              bet init/resolve, bonuses, stats updates
   Games/
     BaseMultiplayerGame.cs     game base class
@@ -64,7 +64,7 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
       BasePlayer.cs IPlayer.cs BlackjackPlayer.cs DuckRacePlayer.cs
       GameContext.cs             who acts and where (from a typed command or a button click)
       Card.cs CardDeck.cs DiceRoller.cs RouletteBet.cs
-      Cards/                   BattlePerson (rarity + archetype + level = Power), Archetypes (5 kinds, matchups, battle cries), CardNamer, CardTraits (rarity/foil rolls), CardLevels (power, XP, training)
+      Cards/                   BattlePerson (rarity + level, foil bonus = Power), GangRules (packs, crew, fuse, scrap, battle cries), CardNamer, CardTraits (rarity/foil rolls), CardLevels (power, XP, training)
   Services/
     CoinService.cs             accounts, interest, leaderboard, top account
     RaffleService.cs           hourly rubber-banded raffle; the power-up won goes off straight away (kept for `.pu use` if it can't)
@@ -104,13 +104,13 @@ DiscordBot/                    main app (DiscordBot.csproj, .sln lives here)
     AttackHistory.cs           the per-player attack log (`.attacks`): records and how they read
     SyncSet.cs                 small thread-safe set (open bets)
     MoneyComponents.cs         money button prefixes (stk/pu/prop/debt/card/raid) and ButtonOwner (owner-only buttons)
-    RaidRules.cs               raid numbers: card power, stances, guards, underdog penalty, stake limits, loot
+    RaidRules.cs               raid numbers: crew vs security + gang, guards, punching down, loot (hours of profit), stake, protection
     StockThread.cs             saved `.stocksthread` state: thread and board message ids per server
     MarketCycle.cs             rare market-wide crashes: phases, per-tick drift for stocks, property moves
     PatchNotes.cs              one-line change log shown by .patchnotes
     ConvoModel.cs              `.convo` generator: word Markov chain over the scraped messages, "user: text" lines
     PowerUp.cs                 raffle power-up catalog and the buffs on accounts
-    Property.cs                house prices, costs, rent and the shared market index (apartments: old saves only)
+    Property.cs                PropertyCatalog.Types: house tiers and businesses (price, rent, costs, swing, security), the shared market index (apartments: old saves only)
     ConvoService/LLMOptions.cs
     DuckDuckGoService/         ImageResult, ImageSearch
   Installers/OllamaInstaller.cs
@@ -125,7 +125,7 @@ Common/                        shared net10.0 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: ConvoLangTests, TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
+Tests/                         xunit: ConvoLangTests, TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, PropertyTierTests, GangTests, RaidTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look
