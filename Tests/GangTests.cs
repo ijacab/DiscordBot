@@ -181,6 +181,19 @@ namespace Tests
         }
 
         [Fact]
+        public void AnAdmin_CanVoteTheirOwnCard()
+        {
+            var admin = Player(99);
+            var card = RaidTests.AverageCard(0);
+            admin.Cards.Add(card);
+            bool IsAdmin(ulong id) => id == 99;
+            Assert.False(GangRules.VoteGlitch(card, admin, admin, IsAdmin, Now));
+            Assert.False(GangRules.VoteGlitch(card, admin, Player(2), IsAdmin, Now));
+            Assert.True(GangRules.VoteGlitch(card, admin, Player(3), IsAdmin, Now));
+            Assert.Equal(CardRarity.Glitched, card.Rarity);
+        }
+
+        [Fact]
         public void GlitchVotes_AdminFirst_UpgradesOnTheThirdVote()
         {
             var owner = Player(1);

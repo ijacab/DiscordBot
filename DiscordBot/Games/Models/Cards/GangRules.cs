@@ -130,7 +130,7 @@ namespace DiscordBot.Games.Models.Cards
         public static readonly TimeSpan GlitchVoterActive = TimeSpan.FromHours(24);
 
         /// <summary>
-        /// One vote that <paramref name="card"/>'s face is glitched. Refused (<see cref="BadInputException"/>) for the owner, a repeat vote,
+        /// One vote that <paramref name="card"/>'s face is glitched. Refused (<see cref="BadInputException"/>) for the owner (unless they're a bot admin), a repeat vote,
         /// a voter who hasn't used money in <see cref="GlitchVoterActive"/>, or one over <see cref="GlitchVotesPerDay"/> today. The card
         /// becomes <see cref="CardRarity.Glitched"/> once it has <see cref="GlitchVotesNeeded"/> votes with at least one from a bot admin
         /// (<paramref name="isAdmin"/>). Returns true when this vote made it Glitched.
@@ -140,7 +140,7 @@ namespace DiscordBot.Games.Models.Cards
             if (card == null || owner == null || !owner.Cards.Contains(card)) throw new BadInputException("That card isn't in the gang any more.");
             if (card.Rarity == CardRarity.Glitched) throw new BadInputException($"{card.Name} is already Glitched.");
             if (voter == null) throw new BadInputException("Only players can vote. Use money once (any bet) and come back.");
-            if (voter.UserId == owner.UserId) throw new BadInputException("You can't vote your own card glitched. Get someone else to look at it.");
+            if (voter.UserId == owner.UserId && !isAdmin(voter.UserId)) throw new BadInputException("You can't vote your own card glitched. Get someone else to look at it.");
             if (card.GlitchVoterIds.Contains(voter.UserId)) throw new BadInputException($"You already voted {card.Name} glitched ({VoteCount(card, isAdmin)}).");
             if (now.Ticks - voter.LastActiveUtcTicks > GlitchVoterActive.Ticks)
                 throw new BadInputException("Only players who've used money in the last day can vote. Go gamble something first.");
