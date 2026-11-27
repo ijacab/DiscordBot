@@ -142,6 +142,96 @@ namespace Tests
         }
 
         [Fact]
+        public void Glitched_IsTheStrongest_AndCantBeRolledOrFused()
+        {
+            Assert.True(RaidTests.AverageCard(0, CardRarity.Glitched).Power > RaidTests.AverageCard(0, CardRarity.Legendary).Power);
+            var random = new Random(5);
+            Assert.DoesNotContain(Enumerable.Range(0, 20_000).Select(_ => CardTraits.RollRarity(random, 2)), r => r == CardRarity.Glitched);
+            var cards = Enumerable.Range(0, 3).Select(_ => RaidTests.AverageCard(0, CardRarity.Legendary)).ToList();
+            Assert.Throws<BadInputException>(() => GangRules.Fuse(cards, CardRarity.Legendary, random));
+            Assert.True(GangRules.ScrapXp(RaidTests.AverageCard(0, CardRarity.Glitched)) > GangRules.ScrapXp(RaidTests.AverageCard(0, CardRarity.Legendary)));
+        }
+
+        private static CoinAccount Player(ulong id) => new CoinAccount { UserId = id, Name = $"p{id}", LastActiveUtcTicks = Now.AddHours(-1).Ticks };
+
+        [Fact]
+        public void GlitchVotes_NeedThreeOthers_OneOfThemABotAdmin()
+        {
+            var owner = Player(1);
+            var card = RaidTests.AverageCard(4);
+            owner.Cards.Add(card);
+            bool IsAdmin(ulong id) => id == 99;
+
+            Assert.Throws<BadInputException>(() => GangRules.VoteGlitch(card, owner, owner, IsAdmin, Now)); //not your own
+            Assert.False(GangRules.VoteGlitch(card, owner, Player(2), IsAdmin, Now));
+            var three = Player(3);
+            Assert.False(GangRules.VoteGlitch(card, owner, three, IsAdmin, Now));
+            Assert.Throws<BadInputException>(() => GangRules.VoteGlitch(card, owner, three, IsAdmin, Now)); //once each
+            var idle = Player(5);
+            idle.LastActiveUtcTicks = Now.AddDays(-3).Ticks;
+            Assert.Throws<BadInputException>(() => GangRules.VoteGlitch(card, owner, idle, IsAdmin, Now)); //not active
+            Assert.False(GangRules.VoteGlitch(card, owner, Player(4), IsAdmin, Now)); //3 votes, no admin yet
+            Assert.Contains("waiting for a bot admin", GangRules.VoteCount(card, IsAdmin));
+            Assert.Equal(CardRarity.Common, card.Rarity);
+
+            Assert.True(GangRules.VoteGlitch(card, owner, Player(99), IsAdmin, Now)); //the admin confirms
+            Assert.Equal(CardRarity.Glitched, card.Rarity);
+            Assert.Equal(4, card.Level);
+            Assert.Throws<BadInputException>(() => GangRules.VoteGlitch(card, owner, Player(6), IsAdmin, Now)); //already Glitched
+        }
+
+        [Fact]
+        public void GlitchVotes_AdminFirst_UpgradesOnTheThirdVote()
+        {
+            var owner = Player(1);
+            var card = RaidTests.AverageCard(0);
+            owner.Cards.Add(card);
+            bool IsAdmin(ulong id) => id == 99;
+            Assert.False(GangRules.VoteGlitch(card, owner, Player(99), IsAdmin, Now));
+            Assert.False(GangRules.VoteGlitch(card, owner, Player(2), IsAdmin, Now));
+            Assert.True(GangRules.VoteGlitch(card, owner, Player(3), IsAdmin, Now));
+        }
+
+        [Fact]
+        public void GlitchVotes_AreCappedPerDay()
+        {
+            var voter = Player(2);
+            for (int i = 0; i < GangRules.GlitchVotesPerDay; i++)
+            {
+                var owner = Player(10 + (ulong)i);
+                owner.Cards.Add(RaidTests.AverageCard(0));
+                GangRules.VoteGlitch(owner.Cards[0], owner, voter, _ => false, Now);
+            }
+            var last = Player(50);
+            last.Cards.Add(RaidTests.AverageCard(0));
+            Assert.Throws<BadInputException>(() => GangRules.VoteGlitch(last.Cards[0], last, voter, _ => false, Now));
+            GangRules.VoteGlitch(last.Cards[0], last, voter, _ => false, Now.AddDays(1).AddHours(-1).Date.AddHours(1)); //a new day
+        }
+
+        [Fact]
+        public void APack_IsRefusedPastFifteenCards()
+        {
+            Assert.Equal(15, GangRules.MaxCards);
+            var account = new CoinAccount { UserId = 1, Name = "a", NetWorth = 1e9 };
+            account.Cards.AddRange(Enumerable.Range(0, 12).Select(_ => RaidTests.AverageCard(0)));
+            DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127"); //12 + 3 fits
+            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Crew), "20261127"));
+            account.Cards.AddRange(Enumerable.Range(0, 10).Select(_ => RaidTests.AverageCard(0))); //an old gang of 22 keeps its cards
+            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127"));
+        }
+
+        [Fact]
+        public void TheGangPicture_DrawsAFullGangNumbered()
+        {
+            var cards = Enumerable.Range(0, GangRules.MaxCards).Select(i => RaidTests.AverageCard(i, (CardRarity)(i % 5), foil: i % 4 == 0)).ToList();
+            using var picture = RaidRenderer.RenderGrid(cards, 5, numbered: true);
+            using var image = SixLabors.ImageSharp.Image.Load(picture);
+            Assert.True(image.Width < 900 && image.Height < 800);
+            using var one = RaidRenderer.RenderGrid(cards.Take(1).ToList(), 5, numbered: true);
+            Assert.True(one.Length > 0);
+        }
+
+        [Fact]
         public void PackPicture_Draws()
         {
             var cards = GangRules.Open(GangRules.Pack(PackKind.Crew), new Random(2));

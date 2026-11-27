@@ -7,7 +7,9 @@ namespace DiscordBot.Games.Models.Cards
         Common,
         Rare,
         Epic,
-        Legendary
+        Legendary,
+        /// <summary>A face the site messed up, voted up by players (<see cref="GangRules.VoteGlitch"/>). Never rolled or fused.</summary>
+        Glitched
     }
 
     /// <summary>How a card is rolled: its rarity and whether it's a foil.</summary>

@@ -177,25 +177,36 @@ namespace DiscordBot.Services
         private const int StripCard = 150;
         private const int StripGap = 10;
 
+        /// <summary>A row of cards, as opened from a pack.</summary>
+        public static MemoryStream RenderStrip(IList<BattlePerson> cards) => RenderGrid(cards, Math.Max(1, cards.Count), numbered: false);
+
         /// <summary>
-        /// A row of cards, as opened from a pack: each face framed in its rarity's colour (a foil gets a gold star), with its name, rarity and
-        /// power under it.
+        /// Cards in rows of <paramref name="columns"/>: each face framed in its rarity's colour (a foil gets a gold star), with its name, rarity,
+        /// level and power under it, and with <paramref name="numbered"/> its place (#1, #2…) in the corner, as `.gang` numbers them.
         /// </summary>
-        public static MemoryStream RenderStrip(IList<BattlePerson> cards)
+        public static MemoryStream RenderGrid(IList<BattlePerson> cards, int columns, bool numbered)
         {
-            int count = Math.Max(1, cards.Count);
-            int width = Margin * 2 + count * StripCard + (count - 1) * StripGap;
-            int height = Margin * 2 + StripCard + 70;
+            columns = Math.Max(1, Math.Min(columns, Math.Max(1, cards.Count)));
+            int rows = Math.Max(1, (cards.Count + columns - 1) / columns);
+            int panelHeight = StripCard + 66;
+            int width = Margin * 2 + columns * StripCard + (columns - 1) * StripGap;
+            int height = Margin * 2 + rows * panelHeight + (rows - 1) * StripGap;
             using var image = new Image<Rgba32>(width, height);
             PixelFont.FillRect(image, 0, 0, width, height, Background);
             for (int i = 0; i < cards.Count; i++)
             {
                 var card = cards[i];
-                int x = Margin + i * (StripCard + StripGap), y = Margin;
-                PixelFont.FillRect(image, x, y, StripCard, StripCard + 66, PanelColor);
-                Border(image, x, y, StripCard, StripCard + 66, RarityColor(card.Rarity), 3);
+                int x = Margin + (i % columns) * (StripCard + StripGap), y = Margin + (i / columns) * (panelHeight + StripGap);
+                PixelFont.FillRect(image, x, y, StripCard, panelHeight, PanelColor);
+                Border(image, x, y, StripCard, panelHeight, RarityColor(card.Rarity), 3);
                 int artX = x + (StripCard - ArtSize) / 2, artY = y + 8;
                 DrawArt(image, new RaidSide { ArtPath = card.FilePath }, artX, artY);
+                if (numbered)
+                {
+                    string number = $"#{i + 1}";
+                    PixelFont.FillRect(image, artX, artY, PixelFont.TextWidth(number, 2) + 6, PixelFont.GlyphHeight * 2 + 6, Background);
+                    PixelFont.DrawText(image, number, artX + 3, artY + 3, BrightColor, 2);
+                }
                 if (card.Foil)
                     PixelFont.DrawText(image, "*", artX + ArtSize - 16, artY + 2, GoldColor, 3);
                 string name = (card.Name ?? "").ToUpperInvariant().Replace("\"", "");
@@ -205,7 +216,7 @@ namespace DiscordBot.Services
                     PixelFont.DrawText(image, line, x + (StripCard - PixelFont.TextWidth(line, 1)) / 2, textY, BrightColor, 1);
                     textY += 10;
                 }
-                string rarity = (card.Foil ? "FOIL " : "") + card.Rarity.ToString().ToUpperInvariant();
+                string rarity = $"{(card.Foil ? "FOIL " : "")}{card.Rarity.ToString().ToUpperInvariant()} LV {card.Level}";
                 PixelFont.DrawText(image, rarity, x + (StripCard - PixelFont.TextWidth(rarity, 1)) / 2, y + StripCard + 40, RarityColor(card.Rarity), 1);
                 string power = $"POWER {card.Power:0}";
                 PixelFont.DrawText(image, power, x + (StripCard - PixelFont.TextWidth(power, 2)) / 2, y + StripCard + 50, GoldColor, 2);
@@ -223,6 +234,7 @@ namespace DiscordBot.Services
                 case CardRarity.Rare: return new Rgba32(66, 135, 245);
                 case CardRarity.Epic: return new Rgba32(163, 73, 235);
                 case CardRarity.Legendary: return GoldColor;
+                case CardRarity.Glitched: return new Rgba32(0, 230, 230);
                 default: return new Rgba32(150, 152, 158);
             }
         }

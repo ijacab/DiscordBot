@@ -32,7 +32,7 @@ namespace DiscordBot.Games.Models.Cards
     /// </summary>
     public static class GangRules
     {
-        public const int MaxCards = 30;
+        public const int MaxCards = 15;
         public const int CrewSize = 3;
         /// <summary>A card that went on a raid lies low this long before it can go on another.</summary>
         public static readonly TimeSpan RestTime = TimeSpan.FromHours(1);
@@ -46,7 +46,7 @@ namespace DiscordBot.Games.Models.Cards
         /// XP a scrapped card gives by rarity (Common, Rare, Epic, Legendary). Kept low on purpose: a street pack scrapped must never buy
         /// XP cheaper than `.train` does at level 0 (<c>GangTests.Scrapping_NeverBeatsTraining</c>), or nobody would train.
         /// </summary>
-        public static readonly int[] ScrapXpByRarity = { 10, 25, 60, 150 };
+        public static readonly int[] ScrapXpByRarity = { 10, 25, 60, 150, 300 };
 
         public static readonly IReadOnlyList<PackType> Packs = new List<PackType>
         {
@@ -75,7 +75,7 @@ namespace DiscordBot.Games.Models.Cards
         }
 
         public static string RarityEmoji(CardRarity rarity) =>
-            rarity == CardRarity.Legendary ? "🟨" : rarity == CardRarity.Epic ? "🟪" : rarity == CardRarity.Rare ? "🟦" : "⬜";
+            rarity == CardRarity.Glitched ? "🌀" : rarity == CardRarity.Legendary ? "🟨" : rarity == CardRarity.Epic ? "🟪" : rarity == CardRarity.Rare ? "🟦" : "⬜";
 
         /// <summary>The roster strongest first; ties in a fixed order so the numbers on `.gang` don't jump about.</summary>
         public static List<BattlePerson> Ordered(IEnumerable<BattlePerson> cards) =>
@@ -109,7 +109,7 @@ namespace DiscordBot.Games.Models.Cards
         /// </summary>
         public static (List<BattlePerson> Used, BattlePerson Made) Fuse(List<BattlePerson> cards, CardRarity rarity, Random random)
         {
-            if (rarity == CardRarity.Legendary) throw new BadInputException("Legendaries are as good as it gets: there's nothing to fuse them into.");
+            if (rarity >= CardRarity.Legendary) throw new BadInputException($"{rarity} is as good as fusing gets: there's nothing to fuse them into.");
             var used = Ordered(cards.Where(c => c.Rarity == rarity)).AsEnumerable().Reverse().Take(FuseCount).ToList();
             if (used.Count < FuseCount)
                 throw new BadInputException($"Fusing takes {FuseCount} {rarity} cards and you have {used.Count}.");
@@ -120,6 +120,51 @@ namespace DiscordBot.Games.Models.Cards
             foreach (var card in used) cards.Remove(card);
             cards.Add(made);
             return (used, made);
+        }
+
+        /// <summary>Other players' votes a card needs to become Glitched, one of them from a bot admin.</summary>
+        public const int GlitchVotesNeeded = 3;
+        /// <summary>Glitch votes one player can cast a day.</summary>
+        public const int GlitchVotesPerDay = 5;
+        /// <summary>Only players who used money this recently can vote, so a fresh alt can't.</summary>
+        public static readonly TimeSpan GlitchVoterActive = TimeSpan.FromHours(24);
+
+        /// <summary>
+        /// One vote that <paramref name="card"/>'s face is glitched. Refused (<see cref="BadInputException"/>) for the owner, a repeat vote,
+        /// a voter who hasn't used money in <see cref="GlitchVoterActive"/>, or one over <see cref="GlitchVotesPerDay"/> today. The card
+        /// becomes <see cref="CardRarity.Glitched"/> once it has <see cref="GlitchVotesNeeded"/> votes with at least one from a bot admin
+        /// (<paramref name="isAdmin"/>). Returns true when this vote made it Glitched.
+        /// </summary>
+        public static bool VoteGlitch(BattlePerson card, DiscordBot.Models.CoinAccounts.CoinAccount owner, DiscordBot.Models.CoinAccounts.CoinAccount voter, Func<ulong, bool> isAdmin, DateTime now)
+        {
+            if (card == null || owner == null || !owner.Cards.Contains(card)) throw new BadInputException("That card isn't in the gang any more.");
+            if (card.Rarity == CardRarity.Glitched) throw new BadInputException($"{card.Name} is already Glitched.");
+            if (voter == null || voter.UserId == owner.UserId) throw new BadInputException("You can't vote your own card glitched. Get someone else to look at it.");
+            if (card.GlitchVoterIds.Contains(voter.UserId)) throw new BadInputException($"You already voted {card.Name} glitched ({VoteCount(card, isAdmin)}).");
+            if (now.Ticks - voter.LastActiveUtcTicks > GlitchVoterActive.Ticks)
+                throw new BadInputException("Only players who've used money in the last day can vote. Go gamble something first.");
+            string today = now.ToString("yyyyMMdd");
+            if (voter.GlitchVoteDate != today) { voter.GlitchVoteDate = today; voter.GlitchVotesToday = 0; }
+            if (voter.GlitchVotesToday >= GlitchVotesPerDay) throw new BadInputException($"You've used your {GlitchVotesPerDay} glitch votes for today.");
+
+            voter.GlitchVotesToday++;
+            card.GlitchVoterIds.Add(voter.UserId);
+            if (card.GlitchVoterIds.Count >= GlitchVotesNeeded && card.GlitchVoterIds.Any(isAdmin))
+            {
+                card.Rarity = CardRarity.Glitched;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>"2/3 votes", or "3/3, waiting for a bot admin to confirm".</summary>
+        public static string VoteCount(BattlePerson card, Func<ulong, bool> isAdmin)
+        {
+            int votes = card.GlitchVoterIds.Count;
+            if (card.Rarity == CardRarity.Glitched) return "Glitched";
+            return votes >= GlitchVotesNeeded && !card.GlitchVoterIds.Any(isAdmin)
+                ? $"{votes}/{GlitchVotesNeeded}, waiting for a bot admin to confirm"
+                : $"{Math.Min(votes, GlitchVotesNeeded)}/{GlitchVotesNeeded} votes{(card.GlitchVoterIds.Any(isAdmin) ? "" : ", one from a bot admin")}";
         }
 
         /// <summary>Reads "common", "rare", "epic" (or "c", "r", "e").</summary>

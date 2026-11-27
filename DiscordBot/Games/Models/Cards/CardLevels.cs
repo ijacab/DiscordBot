@@ -35,6 +35,7 @@ namespace DiscordBot.Games.Models.Cards
                 case CardRarity.Rare: return 14;
                 case CardRarity.Epic: return 18;
                 case CardRarity.Legendary: return 23;
+                case CardRarity.Glitched: return 30;
                 default: return 10;
             }
         }

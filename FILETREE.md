@@ -125,7 +125,7 @@ Common/                        shared net10.0 lib
 
 WebAlerter/                    StrawmanChecker.cs, Models/StrawmanTrade.cs
 
-Tests/                         xunit: ConvoLangTests, TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, PropertyTierTests, GangTests, RaidTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
+Tests/                         xunit: ConvoLangTests, FaceServiceTests, TablesAndPotTests (roulette, pot power-ups, all-time records, convo names), BlackjackTests, GPTHelperTests, WebAlerterTests, PropertyTests, PropertyTierTests, GangTests, RaidTests, DebtTests, AutoSellTests, TextPaginatorTests, DiscordConfigTests
 ```
 
 ## Where to look

@@ -114,6 +114,8 @@ namespace DiscordBot.Models
         public bool CrisisResetPending { get; set; }
         /// <summary>Every player's gang kept from last season, given back (at level 0) when their account is made again.</summary>
         public Dictionary<ulong, List<BattlePerson>> CarriedGangs { get; set; } = new Dictionary<ulong, List<BattlePerson>>();
+        /// <summary>Set once every gang's cards that shared a face have been given new ones (<c>CommandManager.RepairDuplicateFacesOnce</c>).</summary>
+        public bool CardFaceRepairDone { get; set; }
         /// <summary>Old saves: the single card each player kept from last season. Read and moved into <see cref="CarriedGangs"/>, never written.</summary>
         public Dictionary<ulong, BattlePerson> CarriedCards { get; set; } = new Dictionary<ulong, BattlePerson>();
         public bool ShouldSerializeCarriedCards() => CarriedCards.Count > 0;
@@ -151,6 +153,9 @@ namespace DiscordBot.Models
                 LegacyCard = null;
             }
 
+            /// <summary>Glitch votes cast today (<see cref="GangRules.VoteGlitch"/>), and the UTC day (yyyyMMdd) they're for.</summary>
+            public string GlitchVoteDate { get; set; }
+            public int GlitchVotesToday { get; set; }
             public string LastGambleDate { get; set; } //yyyyMMdd (UTC) of the most recent resolved gamble
             public string LastFreePullDate { get; set; } //yyyyMMdd (UTC) of the day the free daily street pack was opened
             /// <summary>The UTC hour (hours since 1970) of the player's last jackpot roll, and how many they've used in it. See <see cref="Managers.BetManager.TryUseJackpotRoll"/>.</summary>

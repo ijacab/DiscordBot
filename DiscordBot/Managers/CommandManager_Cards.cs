@@ -76,8 +76,9 @@ namespace DiscordBot.Managers
             string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
             PackRefusal(account, pack, today);
 
-            //get the faces before charging, so nobody pays when the image service is down; a card whose face failed gets a stand-in
-            var faces = await Task.WhenAll(Enumerable.Range(0, pack.Cards).Select(_ => TryFetchFace()));
+            //get the faces before charging, so nobody pays when the image service is down; a card whose face failed gets a stand-in.
+            //one at a time and each different, since the site hands the same face to requests made together
+            var faces = await _faceService.FetchDistinct(pack.Cards, FaceHashes(account.Cards));
             if (faces.All(f => f == null))
                 throw new BadInputException("The face printer is down, so nothing was opened or charged. Try again in a bit.");
 
@@ -128,7 +129,7 @@ namespace DiscordBot.Managers
             {
                 _logger.LogWarning(ex, "Couldn't draw the pack picture");
             }
-            var components = PackButtons(account, today);
+            var components = PackButtons(account, today, cards);
             if (picture != null)
             {
                 using (picture)
@@ -141,7 +142,7 @@ namespace DiscordBot.Managers
         private static bool IsFreePack(CoinAccount account, PackType pack, string today) => pack.Kind == PackKind.Street && account.LastFreePullDate != today;
 
         /// <summary>Throws when the pack can't be opened: no room in the gang, or not enough cash.</summary>
-        private static void PackRefusal(CoinAccount account, PackType pack, string today)
+        public static void PackRefusal(CoinAccount account, PackType pack, string today)
         {
             if (account.Cards.Count + pack.Cards > GangRules.MaxCards)
                 throw new BadInputException($"Your gang has {account.Cards.Count}/{GangRules.MaxCards} cards, so a {pack.Cards}-card {pack.Name.ToLower()} won't fit. " +
@@ -151,20 +152,83 @@ namespace DiscordBot.Managers
                     (pack.Kind == PackKind.Street ? " Your first street pack each day is free, come back tomorrow." : ""));
         }
 
-        private async Task<byte[]> TryFetchFace()
+        /// <summary>The hash of every face in a gang. Foils are hashed as saved (holographic), which never matches a plain face, so they're never mistaken for one.</summary>
+        private static HashSet<string> FaceHashes(IEnumerable<BattlePerson> cards)
+        {
+            var hashes = new HashSet<string>();
+            foreach (var card in GangRules.Ordered(cards))
+            {
+                string hash = TryHashFile(card.FilePath);
+                if (hash != null) hashes.Add(hash);
+            }
+            return hashes;
+        }
+
+        private static string TryHashFile(string path)
         {
             try
             {
-                using var faceStream = await _faceService.Run();
-                using var buffer = new MemoryStream();
-                await faceStream.CopyToAsync(buffer);
-                return buffer.Length > 0 ? buffer.ToArray() : null;
+                return !string.IsNullOrEmpty(path) && File.Exists(path) ? FaceService.HashOf(File.ReadAllBytes(path)) : null;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "Couldn't fetch a card face");
                 return null;
             }
+        }
+
+        private bool _faceRepairStarted;
+
+        /// <summary>
+        /// Once after the deploy that fixed packs handing out the same face: every card whose picture matches another card's in the same
+        /// gang gets a new face (the first keeps its own). Runs in the background; the flag is saved when it ends, even if the face site
+        /// was down for some, so it never loops.
+        /// </summary>
+        private void RepairDuplicateFacesOnce()
+        {
+            if (_faceRepairStarted || _coinService.GetAll().CardFaceRepairDone) return;
+            _faceRepairStarted = true;
+            _ = Task.Run(async () =>
+            {
+                int changed = 0;
+                try
+                {
+                    foreach (var account in _coinService.GetAll().Accounts.ToList())
+                    {
+                        List<BattlePerson> cards;
+                        lock (_packLock) cards = GangRules.Ordered(account.Cards);
+                        var seen = new HashSet<string>();
+                        var dupes = new List<BattlePerson>();
+                        foreach (var card in cards)
+                        {
+                            string hash = TryHashFile(card.FilePath);
+                            if (hash == null) continue;
+                            if (!seen.Add(hash)) dupes.Add(card);
+                        }
+                        if (dupes.Count == 0) continue;
+
+                        var faces = await _faceService.FetchDistinct(dupes.Count, seen);
+                        Directory.CreateDirectory(CardDirectory);
+                        for (int i = 0; i < dupes.Count; i++)
+                        {
+                            if (faces[i] == null) continue;
+                            var card = dupes[i];
+                            string path = Path.Combine(CardDirectory, $"{account.UserId}_{card.Id}.jpg");
+                            await File.WriteAllBytesAsync(path, card.Foil ? FoilEffect.Apply(faces[i]) : faces[i]);
+                            RaidRenderer.ForgetArt(card.FilePath);
+                            RaidRenderer.ForgetArt(path);
+                            card.FilePath = path;
+                            changed++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Repairing duplicate card faces failed");
+                }
+                _coinService.GetAll().CardFaceRepairDone = true;
+                await _coinService.Update();
+                _logger.LogInformation("Gave {Changed} cards that shared a face a new one", changed);
+            });
         }
 
         private static void DeleteCardImages(IEnumerable<BattlePerson> cards)
@@ -200,9 +264,34 @@ namespace DiscordBot.Managers
                 shown = FindRaidTarget(message, args[0]);
 
             bool own = shown.UserId == account.UserId;
-            var embed = DiscordHelper.GetEmbedBuilder(own ? "🕶️ Your gang" : $"🕶️ {shown.Name}'s gang", GangText(shown, now, own)).Build();
-            await message.Channel.SendMessageAsync(embed: embed, components: own ? GangButtons(account, now) : CardPicker(shown));
+            var embed = DiscordHelper.GetEmbedBuilder(own ? "🕶️ Your gang" : $"🕶️ {shown.Name}'s gang", GangText(shown, now, own));
+            var components = own ? GangButtons(account, now) : CardPicker(shown);
+            //the whole gang as one picture, numbered as the list is; the text alone if it can't be drawn
+            MemoryStream picture = null;
+            var ordered = GangRules.Ordered(shown.Cards);
+            if (ordered.Count > 0)
+            {
+                try
+                {
+                    picture = RaidRenderer.RenderGrid(ordered, GangColumns, numbered: true);
+                    embed.WithImageUrl("attachment://gang.png");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Couldn't draw the gang picture");
+                }
+            }
+            if (picture != null)
+            {
+                using (picture)
+                    await message.Channel.SendFileAsync(picture, "gang.png", embed: embed.Build(), components: components);
+            }
+            else
+                await message.Channel.SendMessageAsync(embed: embed.Build(), components: components);
         }
+
+        /// <summary>Cards per row in the `.gang` picture: 15 cards make 5 by 3.</summary>
+        private const int GangColumns = 5;
 
         private string GangText(CoinAccount account, DateTime now, bool own)
         {
@@ -238,7 +327,10 @@ namespace DiscordBot.Managers
         private async Task ShowCard(IMessageChannel channel, CoinAccount owner, BattlePerson card, int number, SocketMessageComponent component = null)
         {
             string text = card.GetSummary() + (card.Level < CardLevels.MaxLevel ? $"\nTraining to level {card.Level + 1}: {RaidService.Money(CardLevels.TrainCost(card))} (`.train {number}`)" : "") +
-                $"\nScraps for {GangRules.ScrapXp(card)} XP.";
+                $"\nScraps for {GangRules.ScrapXp(card)} XP." +
+                (card.Rarity == CardRarity.Glitched ? "" : $"\n🌀 Face messed up? Other players can vote it Glitched, the top rarity ({GangRules.VoteCount(card, IsBotAdmin)}).");
+            var vote = card.Rarity == CardRarity.Glitched ? null : new ComponentBuilder()
+                .WithButton("🌀 Glitched?", Id(MoneyComponents.Card, "glitch", owner.UserId.ToString(), card.Id), ButtonStyle.Secondary).Build();
             var embed = DiscordHelper.GetEmbedBuilder($"#{number} {card.Name} ({owner.Name})", text);
             bool art = !string.IsNullOrEmpty(card.FilePath) && File.Exists(card.FilePath);
             if (art) embed.WithImageUrl("attachment://" + Path.GetFileName(card.FilePath));
@@ -247,17 +339,17 @@ namespace DiscordBot.Managers
                 if (art)
                 {
                     using var image = File.OpenRead(card.FilePath);
-                    await component.FollowupWithFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build(), ephemeral: true);
+                    await component.FollowupWithFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build(), components: vote, ephemeral: true);
                 }
-                else await component.FollowupAsync(embed: embed.Build(), ephemeral: true);
+                else await component.FollowupAsync(embed: embed.Build(), components: vote, ephemeral: true);
                 return;
             }
             if (art)
             {
                 using var image = File.OpenRead(card.FilePath);
-                await channel.SendFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build());
+                await channel.SendFileAsync(image, Path.GetFileName(card.FilePath), embed: embed.Build(), components: vote);
             }
-            else await channel.SendMessageAsync(embed: embed.Build());
+            else await channel.SendMessageAsync(embed: embed.Build(), components: vote);
         }
 
         /// <summary>`.train [N] [max]`: trains card N (your strongest when there's no number) a level, or as many as your cash pays for.</summary>
@@ -333,7 +425,8 @@ namespace DiscordBot.Managers
 
         // ---- buttons
 
-        private MessageComponent PackButtons(CoinAccount account, string today)
+        /// <summary>Pack buttons for the opener, and a glitch vote per new card for everyone else.</summary>
+        private MessageComponent PackButtons(CoinAccount account, string today, IList<BattlePerson> opened = null)
         {
             string owner = account.UserId.ToString();
             var builder = new ComponentBuilder();
@@ -341,7 +434,40 @@ namespace DiscordBot.Managers
                 builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(pack.Price))}", 80),
                     Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
             builder.WithButton("My gang", Id(MoneyComponents.Card, "gang", owner), ButtonStyle.Secondary, row: 0);
+            for (int i = 0; opened != null && i < opened.Count && i < 5; i++)
+                builder.WithButton($"🌀 #{i + 1} glitched?", Id(MoneyComponents.Card, "glitch", owner, opened[i].Id), ButtonStyle.Secondary, row: 1);
             return builder.Build();
+        }
+
+        private bool IsBotAdmin(ulong userId) => _adminIds.Contains(userId);
+
+        /// <summary>A glitch vote from a button: privately says where the vote stands, and publicly when it turned the card Glitched.</summary>
+        private async Task GlitchVote(SocketMessageComponent component, string[] args)
+        {
+            var owner = args.Length > 0 && ulong.TryParse(args[0], out ulong ownerId) ? _coinService.GetAll().Accounts.FirstOrDefault(a => a.UserId == ownerId) : null;
+            string cardId = args.Length > 1 ? args[1] : null;
+            CoinAccount voter = await _coinService.Get(component.User.Id, component.User.Username);
+            bool glitched;
+            BattlePerson card;
+            string count;
+            try
+            {
+                lock (_packLock)
+                {
+                    card = owner?.Cards.FirstOrDefault(c => c.Id == cardId);
+                    glitched = GangRules.VoteGlitch(card, owner, voter, IsBotAdmin, DateTime.UtcNow);
+                    count = GangRules.VoteCount(card, IsBotAdmin);
+                }
+            }
+            catch (BadInputException ex)
+            {
+                await ReplyPrivately(component, ex.Message);
+                return;
+            }
+            await _coinService.Update();
+            await component.RespondAsync(glitched ? $"🌀 Your vote made {card.Name} Glitched!" : $"🌀 Vote counted for {card.Name}: {count}.", ephemeral: true);
+            if (glitched && component.Channel != null)
+                await component.Channel.SendMessageAsync($"🌀 **{card.Name}** is **GLITCHED**! The crowd has spoken: {owner.Name}'s card is now the top rarity, power {card.Power:0}.", allowedMentions: AllowedMentions.None);
         }
 
         private MessageComponent GangButtons(CoinAccount account, DateTime now)
@@ -398,6 +524,11 @@ namespace DiscordBot.Managers
                 }
                 await component.DeferAsync(ephemeral: true);
                 await ShowCard(component.Channel, owner, ordered[index], index + 1, component);
+                return;
+            }
+            if (action == "glitch")
+            {
+                await GlitchVote(component, args);
                 return;
             }
             if (action == "keep" || action == "stance")

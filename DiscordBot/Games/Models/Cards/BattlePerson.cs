@@ -27,6 +27,8 @@ namespace DiscordBot.Games.Models.Cards
         public int Losses { get; set; }
         /// <summary>After a raid the card lies low until then (UTC ticks) and can't be sent on another (<see cref="GangRules.RestTime"/>). Defending never tires it.</summary>
         public long RestedUntilUtcTicks { get; set; }
+        /// <summary>Everyone who voted this card's face glitched (<see cref="GangRules.VoteGlitch"/>).</summary>
+        public System.Collections.Generic.List<ulong> GlitchVoterIds { get; set; } = new System.Collections.Generic.List<ulong>();
 
         /// <summary>How strong the card is: base + rarity + level, then the foil bonus. Raids add up a crew's (<see cref="Models.RaidRules"/>).</summary>
         [JsonIgnore] public double Power => CardLevels.PowerOf(Rarity, Level) * (Foil ? 1 + GangRules.FoilBonus : 1);

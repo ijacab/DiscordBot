@@ -65,6 +65,8 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-06", "Packs give every card its own face, and cards that shared one got new faces. `.gang` shows your whole gang as one picture. Gangs now hold 15 cards."),
+            new PatchNote("2026-12-06", "New top rarity 🌀 Glitched: if a card's face came out messed up, press 🌀 Glitched? on it. 3 votes from other players, one a bot admin, upgrade it."),
             new PatchNote("2026-12-05", "Gangs: hold up to 30 cards, open packs with `.pack` (street, crew, kingpin), `.fuse` and `.scrap` spares. Card types and stances are gone: rarity, level and foil set power."),
             new PatchNote("2026-12-05", "Raids rob property now: `.raid @person` lists their places, your crew of 3 takes on its security and their gang. Stocks and cash are safe. A robbed place is watched for 8h."),
             new PatchNote("2026-12-05", "Property has tiers now: shack, house, luxury home, mansion, penthouse, plus businesses from a food truck to a bank that earn more but swing harder. See `.property`."),
