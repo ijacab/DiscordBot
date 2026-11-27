@@ -243,6 +243,26 @@ namespace Tests
         }
 
         [Fact]
+        public void Revenge_OnARaiderWithNoProperty_RobsTheirStash_UpToWhatTheyTook()
+        {
+            var (coins, raids, a, b, house) = Setup(1_000_000, 1_000_000, 0.0);
+            var first = raids.Raid(a, b, house.Id, Now);
+            Assert.Contains("owns no property", raids.Check(new CoinAccount { UserId = 7, Name = "x", NetWorth = 1_000, Cards = Gang(1) }, a, null, Now).Refusal);
+
+            double before = Total(coins);
+            var check = raids.Check(b, a, null, Now.AddMinutes(1), stash: true);
+            Assert.Null(check.Refusal);
+            Assert.Equal(Math.Floor(first.Stake / RaidRules.StakeShare), check.Loot);
+            var back = raids.Raid(b, a, RaidService.StashId, Now.AddMinutes(1));
+            Assert.True(back.Check.IsStash);
+            Assert.Contains("stash", RaidService.Describe(back, new Random(1)));
+            Assert.Equal("STASH", DiscordBot.Managers.CommandManager.RaidScene(back).Defender.Kind);
+            Assert.Equal(before, Total(coins), 2);
+            Assert.Empty(b.RevengeTokens);
+            Assert.NotNull(raids.Check(b, a, null, Now.AddMinutes(2), stash: true).Refusal); //revenge used up
+        }
+
+        [Fact]
         public void RaidingSomeoneRicher_GivesMoreXp()
         {
             var (_, raids, a, b, house) = Setup(10_000, 5_000_000, 0.0);

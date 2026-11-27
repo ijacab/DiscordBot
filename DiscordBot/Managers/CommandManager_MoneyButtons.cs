@@ -281,7 +281,10 @@ namespace DiscordBot.Managers
                 {
                     var kind = PropertyKind.House;
                     if (action == "buyconfirm" && (args.Length < 1 || !Enum.TryParse(args[0], out kind))) break;
-                    await component.DeferAsync();
+                    if (action == "buyconfirm") //take the button away first, so a double tap can't buy two
+                        await component.UpdateAsync(m => { m.Content = "Buying…"; m.Components = new ComponentBuilder().Build(); });
+                    else
+                        await component.DeferAsync();
                     await component.FollowupAsync(await BuyPropertyText(user.Id, user.Username, user.Mention, kind), components: PropertyBuyButton(_coinService.GetAll().PropertyIndex));
                     MarkActiveFromInteraction(component);
                     return;

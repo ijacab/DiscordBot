@@ -29,7 +29,7 @@ namespace DiscordBot.Managers
         private const string CardDirectory = "card_images";
 
         /// <summary>One pack at a time is added to an account, so two packs opened together can't pass the card limit or spend the same cash.</summary>
-        private static readonly object _packLock = new object();
+        private static object _packLock => RaidService.Sync; //the same lock raids take, since both change and read the card list
 
         // ---- typed commands
 
@@ -38,14 +38,15 @@ namespace DiscordBot.Managers
         {
             var pack = args.Count == 0 ? GangRules.Pack(PackKind.Street) : GangRules.FindPack(args[0])
                 ?? throw new BadInputException("Which pack? " + string.Join(", ", GangRules.Packs.Select(p => $"`.pack {p.Kind.ToString().ToLower()}`")) + ".");
-            _ = Task.Run(() => OpenPackAndPost(message.Author, message.Channel, pack));
+            _ = Task.Run(() => OpenPackAndPost(message.Author, message.Channel, pack, null));
             return Task.CompletedTask;
         }
 
         /// <summary>The old `.cardpull`: a street pack.</summary>
         public Task CardPull(DiscordSocketClient client, SocketMessage message, List<string> args) => OpenPackCommand(client, message, new List<string>());
 
-        private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack)
+        /// <summary>Opens and posts a pack. A refusal goes back privately when it came from a button (<paramref name="click"/>), else to the channel.</summary>
+        private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack, SocketMessageComponent click)
         {
             try
             {
@@ -54,7 +55,11 @@ namespace DiscordBot.Managers
             }
             catch (BadInputException ex)
             {
-                try { await channel.SendMessageAsync($"{user.Mention} {ex.Message}", allowedMentions: AllowedMentions.None); }
+                try
+                {
+                    if (click != null) await click.FollowupAsync(ex.Message, ephemeral: true);
+                    else await channel.SendMessageAsync($"{user.Mention} {ex.Message}", allowedMentions: AllowedMentions.None);
+                }
                 catch (Exception) { }
             }
             catch (Exception ex)
@@ -196,7 +201,7 @@ namespace DiscordBot.Managers
 
             bool own = shown.UserId == account.UserId;
             var embed = DiscordHelper.GetEmbedBuilder(own ? "🕶️ Your gang" : $"🕶️ {shown.Name}'s gang", GangText(shown, now, own)).Build();
-            await message.Channel.SendMessageAsync(embed: embed, components: own ? GangButtons(account, now) : CardPicker(shown, null));
+            await message.Channel.SendMessageAsync(embed: embed, components: own ? GangButtons(account, now) : CardPicker(shown));
         }
 
         private string GangText(CoinAccount account, DateTime now, bool own)
@@ -324,7 +329,7 @@ namespace DiscordBot.Managers
 
         /// <summary>The old `.stance`: stances are gone.</summary>
         private Task StanceGone(DiscordSocketClient client, SocketMessage message, List<string> args) =>
-            message.Channel.SendMessageAsync("Stances are gone. Raids hit property now: your property's security and your best cards defend it, and `.guards` makes them 50% tougher.");
+            message.Channel.SendMessageAsync($"Stances are gone. Raids hit property now: your property's security and your best cards defend it, and `.guards` makes them {RaidRules.GuardsMultiplier - 1:0%} tougher.");
 
         // ---- buttons
 
@@ -361,7 +366,7 @@ namespace DiscordBot.Managers
         }
 
         /// <summary>A menu to look at one of a player's cards (privately, for whoever picks).</summary>
-        private static MessageComponent CardPicker(CoinAccount account, string _)
+        private static MessageComponent CardPicker(CoinAccount account)
         {
             var menu = CardPickerMenu(account);
             return menu == null ? null : new ComponentBuilder().WithSelectMenu(menu).Build();
@@ -408,7 +413,7 @@ namespace DiscordBot.Managers
                 {
                     if (args.Length < 2 || !Enum.TryParse(args[1], out PackKind kind) || component.Channel == null) break;
                     await component.DeferAsync();
-                    _ = Task.Run(() => OpenPackAndPost(component.User, component.Channel, GangRules.Pack(kind)));
+                    _ = Task.Run(() => OpenPackAndPost(component.User, component.Channel, GangRules.Pack(kind), component));
                     MarkActiveFromInteraction(component);
                     return;
                 }

@@ -18,6 +18,12 @@ namespace DiscordBot.Services
     public class RaidService
     {
         private static readonly object _lock = new object();
+
+        /// <summary>The lock raids take. Packs, fusing and scrapping change the card list under it too.</summary>
+        public static object Sync => _lock;
+
+        /// <summary>What a revenge raid picks to hit a raider who owns no property: their stash of cash.</summary>
+        public const string StashId = "stash";
         private readonly CoinService _coinService;
         private readonly Func<CoinAccount, double> _totalWorth;
         private readonly Random _random;
@@ -43,6 +49,8 @@ namespace DiscordBot.Services
             public string Refusal { get; set; }
             public bool IsRevenge { get; set; }
             public PropertyHolding Property { get; set; }
+            /// <summary>A revenge raid on a raider with no property: it robs their cash instead (<see cref="StashId"/>).</summary>
+            public bool IsStash { get; set; }
             public List<BattlePerson> Crew { get; set; } = new List<BattlePerson>();
             public List<BattlePerson> Defenders { get; set; } = new List<BattlePerson>();
             public double Security { get; set; }
@@ -86,7 +94,7 @@ namespace DiscordBot.Services
         /// The check for raiding <paramref name="property"/> (one of the target's). With no property it only checks who can raid whom
         /// (the gang, shield, limits and that the target owns anything).
         /// </summary>
-        public RaidCheck Check(CoinAccount attacker, CoinAccount target, PropertyHolding property, DateTime now)
+        public RaidCheck Check(CoinAccount attacker, CoinAccount target, PropertyHolding property, DateTime now, bool stash = false)
         {
             Prune(attacker, now);
             Prune(target, now);
@@ -97,6 +105,7 @@ namespace DiscordBot.Services
                 IsRevenge = attacker.RevengeTokens.Any(t => t.UserId == target.UserId),
                 Guarded = target.GuardsUntilUtcTicks > now.Ticks,
                 Property = property,
+                IsStash = stash && property == null,
                 Crew = GangRules.Crew(attacker.Cards, now),
                 Defenders = GangRules.Defenders(target.Cards),
             };
@@ -107,6 +116,14 @@ namespace DiscordBot.Services
                 double index = _coinService.GetAll().PropertyIndex;
                 check.Security = PropertyCatalog.TypeOf(property.Kind).Security;
                 check.Loot = RaidRules.Loot(property.Kind, index, check.TargetWorth);
+                check.Stake = RaidRules.Stake(check.Loot);
+            }
+            else if (check.IsStash)
+            {
+                //what they took from you, at most a fifth of what they're worth; no security on a stash
+                var token = attacker.RevengeTokens.FirstOrDefault(t => t.UserId == target.UserId);
+                double took = token == null ? 0 : token.Stake / RaidRules.StakeShare;
+                check.Loot = Math.Floor(Math.Max(0, Math.Min(took, Math.Max(0, check.TargetWorth) * RaidRules.MaxLootShare)));
                 check.Stake = RaidRules.Stake(check.Loot);
             }
             check.DefencePower = RaidRules.DefencePower(check.Defenders, check.Security, check.Guarded, check.PunchDown);
@@ -132,16 +149,18 @@ namespace DiscordBot.Services
 
             if (!check.IsRevenge && attacker.LastRaidOnUtcTicks.TryGetValue(target.UserId, out long last) && now.Ticks - last < RaidRules.PairCooldown.Ticks)
                 return $"You raided {target.Name} recently. You can hit them again in {Wait(new DateTime(last) + RaidRules.PairCooldown - now)}.";
-            if (target.Properties.Count == 0)
+            if (target.Properties.Count == 0 && !check.IsRevenge)
                 return $"{target.Name} owns no property, so there's nothing to rob. Stocks and cash can't be raided.";
-            if (check.Property == null) return null;
+            if (check.IsStash && target.Properties.Count > 0)
+                return $"{target.Name} owns property, so rob that.";
+            if (check.Property == null && !check.IsStash) return null;
 
-            string place = PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
-            if (!check.IsRevenge && check.Property.RaidProtectedUntilUtcTicks > now.Ticks)
+            string place = check.IsStash ? "stash" : PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
+            if (!check.IsRevenge && check.Property?.RaidProtectedUntilUtcTicks > now.Ticks)
                 return $"{target.Name}'s {place} was just robbed and the cops are watching it for {Wait(new DateTime(check.Property.RaidProtectedUntilUtcTicks) - now)}.";
             if (check.Loot < 1) return $"{target.Name}'s {place} has nothing worth taking.";
             if (attacker.NetWorth < check.Stake)
-                return $"Robbing {target.Name}'s {place} means putting up a {Money(check.Stake)} stake (half the loot) in cash, and you have {Money(Math.Max(0, attacker.NetWorth))}.";
+                return $"Robbing {target.Name}'s {place} means putting up a {Money(check.Stake)} stake ({RaidRules.StakeShare:0%} of the loot) in cash, and you have {Money(Math.Max(0, attacker.NetWorth))}.";
             return null;
         }
 
@@ -150,9 +169,10 @@ namespace DiscordBot.Services
         {
             lock (_lock)
             {
-                var property = target.Properties.FirstOrDefault(p => p.Id == propertyId)
+                bool stash = propertyId == StashId;
+                var property = stash ? null : target.Properties.FirstOrDefault(p => p.Id == propertyId)
                     ?? throw new BadInputException($"{target.Name} doesn't own that any more. `.raid {target.Name}` shows what they've got.");
-                var check = Check(attacker, target, property, now);
+                var check = Check(attacker, target, property, now, stash);
                 if (check.Refusal != null) throw new BadInputException(check.Refusal);
 
                 attacker.RecentRaidUtcTicks.Add(now.Ticks);
@@ -212,10 +232,11 @@ namespace DiscordBot.Services
             target.Bounty = 0;
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), attacker, result.BountyCollected);
 
-            string place = PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
+            string place = PlaceName(check);
             AttackHistory.Record(target, attacker.UserId, attacker.Name, check.IsRevenge ? "Revenge raid" : "Raid", loot,
                 lootToDebt > 0 ? $"robbed your {place}, {Money(lootToDebt)} of it went on your debt" : $"robbed your {place}", now);
-            check.Property.RaidProtectedUntilUtcTicks = (now + RaidRules.PropertyProtection).Ticks;
+            if (check.Property != null)
+                check.Property.RaidProtectedUntilUtcTicks = (now + RaidRules.PropertyProtection).Ticks;
 
             attacker.Stats.RaidsWon++;
             result.Streak = ++attacker.RaidStreak;
@@ -241,7 +262,7 @@ namespace DiscordBot.Services
             DiscordBot.Models.Money.Credit(_coinService.GetAll(), target, result.BountyCollected);
 
             AttackHistory.Record(target, attacker.UserId, attacker.Name, check.IsRevenge ? "Revenge raid" : "Raid",
-                -(result.Stake + result.BountyCollected), $"they tried your {PropertyCatalog.DisplayName(check.Property.Kind).ToLower()} and failed, you kept their stake", now);
+                -(result.Stake + result.BountyCollected), $"they tried your {PlaceName(check)} and failed, you kept their stake", now);
             attacker.Stats.RaidsLost++;
             attacker.RaidStreak = 0;
             attacker.Stats.RaidMoneyLost += result.Stake;
@@ -253,6 +274,9 @@ namespace DiscordBot.Services
             GiveXp(check.Crew, result.AttackerXpEach, won: false, result.LevelUps);
             GiveXp(check.Defenders, result.DefenderXpEach, won: true, result.LevelUps);
         }
+
+        /// <summary>"mansion", or "stash" for a revenge raid on cash.</summary>
+        public static string PlaceName(RaidCheck check) => check.IsStash ? "stash" : PropertyCatalog.DisplayName(check.Property.Kind).ToLower();
 
         private static void GiveXp(List<BattlePerson> cards, int xp, bool won, List<string> levelUps)
         {
@@ -333,7 +357,7 @@ namespace DiscordBot.Services
         public static string Describe(RaidResult r, Random random)
         {
             var (a, t, c) = (r.Attacker, r.Target, r.Check);
-            string place = PropertyCatalog.Label(c.Property.Kind);
+            string place = c.IsStash ? "💰 stash" : PropertyCatalog.Label(c.Property.Kind);
             var lines = new List<string>
             {
                 $"{(c.IsRevenge ? "🔥 **Revenge!** " : "⚔️ ")}**{a.Name}** sent a crew of {c.Crew.Count} to rob **{t.Name}**'s {place} · {Money(r.Stake)} stake",
@@ -353,7 +377,7 @@ namespace DiscordBot.Services
                 money.Add($"💰 Took **{Money(r.Loot)}**{(r.LootToDebt > 0 ? $", {Money(r.LootToDebt)} on their debt" : "")}{(r.Parachuted ? " (🪂 parachute)" : "")}");
                 money.Add($"{Money(r.BountySet)} is now a bounty on {a.Name}");
                 if (r.BountyCollected > 0) money.Add($"collected the {Money(r.BountyCollected)} bounty on {t.Name}");
-                money.Add($"the {PropertyCatalog.DisplayName(c.Property.Kind).ToLower()} is watched for {Wait(RaidRules.PropertyProtection)}");
+                if (!c.IsStash) money.Add($"the {PlaceName(c)} is watched for {Wait(RaidRules.PropertyProtection)}");
             }
             else
             {

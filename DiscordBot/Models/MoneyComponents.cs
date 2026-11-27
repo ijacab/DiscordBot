@@ -19,7 +19,7 @@
         public const string Stats = "stats";
         /// <summary>Gang buttons under `.gang` and pack results: packs, train, guards (for the owner) and the card viewer (anyone).</summary>
         public const string Card = "card";
-        /// <summary>Raid buttons: stake buttons under a `.raid @person` preview (for the raider) and Revenge under a result (for the raided).</summary>
+        /// <summary>Raid buttons: the property menu under a `.raid @person` preview (for the raider) and Revenge under a result (for the robbed).</summary>
         public const string Raid = "raid";
     }
 

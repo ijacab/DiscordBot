@@ -36,6 +36,7 @@ namespace Tests
         [InlineData("food-truck", PropertyKind.FoodTruck)]
         [InlineData("house", PropertyKind.House)]
         [InlineData("lux", PropertyKind.Luxury)]
+        [InlineData("luxury home", PropertyKind.Luxury)]
         public void Find_ReadsTheWordsPeopleType(string word, PropertyKind kind) => Assert.Equal(kind, PropertyCatalog.Find(word).Kind);
 
         [Fact]

@@ -99,7 +99,7 @@ namespace Tests
             var (used, made) = GangRules.Fuse(cards, CardRarity.Common, new Random(1));
             Assert.Equal(new[] { 1, 2, 4 }, used.Select(c => c.Level).OrderBy(l => l));
             Assert.Equal(CardRarity.Rare, made.Rarity);
-            Assert.Equal(4, made.Level);
+            Assert.Equal(1, made.Level); //the lowest of the three, so fusing can't carry a trained card up
             Assert.True(made.Foil);
             Assert.Equal(3, cards.Count);
             Assert.Contains(made, cards);
@@ -111,8 +111,24 @@ namespace Tests
         [Fact]
         public void Scrap_GivesRarityXpPlusSomeForLevels()
         {
-            Assert.Equal(50, GangRules.ScrapXp(RaidTests.AverageCard(0)));
-            Assert.Equal(800 + 10 * GangRules.ScrapXpPerLevel, GangRules.ScrapXp(RaidTests.AverageCard(10, CardRarity.Legendary)));
+            Assert.Equal(GangRules.ScrapXpByRarity[0], GangRules.ScrapXp(RaidTests.AverageCard(0)));
+            Assert.Equal(GangRules.ScrapXpByRarity[3] + 10 * GangRules.ScrapXpPerLevel, GangRules.ScrapXp(RaidTests.AverageCard(10, CardRarity.Legendary)));
+        }
+
+        [Fact]
+        public void Scrapping_NeverBeatsTraining()
+        {
+            //what a scrapped card gives on average, against what `.train` charges per XP at its cheapest (level 0)
+            double averageXp = CardTraits.LegendaryChance * GangRules.ScrapXpByRarity[3] + CardTraits.EpicChance * GangRules.ScrapXpByRarity[2]
+                + CardTraits.RareChance * GangRules.ScrapXpByRarity[1] + (1 - CardTraits.LegendaryChance - CardTraits.EpicChance - CardTraits.RareChance) * GangRules.ScrapXpByRarity[0];
+            double cheapestTraining = CardLevels.FullLevelCost(0) / CardLevels.XpToNext(0);
+            foreach (var pack in GangRules.Packs)
+            {
+                double xp = pack.Cards * averageXp * (pack.LegendaryBoost > 1 ? 1.5 : 1.2) + CardLevels.PullXp; //guarantees lift it a bit
+                Assert.True(pack.Price / xp > cheapestTraining, $"a {pack.Name} scrapped buys XP at ${pack.Price / xp:0.##} each");
+            }
+            //and scrapping a trained card gives back far less than its training cost
+            Assert.True(GangRules.ScrapXpPerLevel * 2 < CardLevels.XpToNext(0)); //under half of even the cheapest level
         }
 
         [Fact]

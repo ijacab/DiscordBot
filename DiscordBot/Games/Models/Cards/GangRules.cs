@@ -42,6 +42,11 @@ namespace DiscordBot.Games.Models.Cards
         public const int FuseCount = 3;
         /// <summary>Scrapping a card gives this much XP per level it had, on top of its rarity's (<see cref="ScrapXp"/>).</summary>
         public const int ScrapXpPerLevel = 25;
+        /// <summary>
+        /// XP a scrapped card gives by rarity (Common, Rare, Epic, Legendary). Kept low on purpose: a street pack scrapped must never buy
+        /// XP cheaper than `.train` does at level 0 (<c>GangTests.Scrapping_NeverBeatsTraining</c>), or nobody would train.
+        /// </summary>
+        public static readonly int[] ScrapXpByRarity = { 10, 25, 60, 150 };
 
         public static readonly IReadOnlyList<PackType> Packs = new List<PackType>
         {
@@ -74,7 +79,7 @@ namespace DiscordBot.Games.Models.Cards
 
         /// <summary>The roster strongest first; ties in a fixed order so the numbers on `.gang` don't jump about.</summary>
         public static List<BattlePerson> Ordered(IEnumerable<BattlePerson> cards) =>
-            (cards ?? Enumerable.Empty<BattlePerson>()).OrderByDescending(c => c.Power).ThenByDescending(c => c.Level).ThenBy(c => c.Id, StringComparer.Ordinal).ToList();
+            new List<BattlePerson>(cards ?? Enumerable.Empty<BattlePerson>()).OrderByDescending(c => c.Power).ThenByDescending(c => c.Level).ThenBy(c => c.Id, StringComparer.Ordinal).ToList();
 
         /// <summary>Who goes on a raid: the strongest cards that aren't lying low.</summary>
         public static List<BattlePerson> Crew(IEnumerable<BattlePerson> cards, DateTime now) =>
@@ -95,13 +100,12 @@ namespace DiscordBot.Games.Models.Cards
         /// <summary>XP that scrapping this card gives another: its rarity's worth plus some for each level.</summary>
         public static int ScrapXp(BattlePerson card)
         {
-            int base_ = card.Rarity == CardRarity.Legendary ? 800 : card.Rarity == CardRarity.Epic ? 300 : card.Rarity == CardRarity.Rare ? 120 : 50;
-            return base_ + ScrapXpPerLevel * card.Level;
+            return ScrapXpByRarity[Math.Clamp((int)card.Rarity, 0, ScrapXpByRarity.Length - 1)] + ScrapXpPerLevel * card.Level;
         }
 
         /// <summary>
-        /// Fuses the <see cref="FuseCount"/> weakest cards of <paramref name="rarity"/> into one new card of the next rarity, at the highest
-        /// level of the three and foil if any of them was. Removes them from <paramref name="cards"/> and adds the new one. Returns both.
+        /// Fuses the <see cref="FuseCount"/> weakest cards of <paramref name="rarity"/> into one new card of the next rarity, at the lowest
+        /// level of the three (so fusing can't carry one trained card up every rarity) and foil if any of them was. Removes them from <paramref name="cards"/> and adds the new one. Returns both.
         /// </summary>
         public static (List<BattlePerson> Used, BattlePerson Made) Fuse(List<BattlePerson> cards, CardRarity rarity, Random random)
         {
@@ -111,7 +115,7 @@ namespace DiscordBot.Games.Models.Cards
                 throw new BadInputException($"Fusing takes {FuseCount} {rarity} cards and you have {used.Count}.");
             var made = BattlePerson.Pull(random);
             made.Rarity = rarity + 1;
-            made.Level = used.Max(c => c.Level);
+            made.Level = used.Min(c => c.Level);
             made.Foil = used.Any(c => c.Foil);
             foreach (var card in used) cards.Remove(card);
             cards.Add(made);

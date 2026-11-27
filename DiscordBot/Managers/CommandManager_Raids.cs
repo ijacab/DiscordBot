@@ -42,6 +42,11 @@ namespace DiscordBot.Managers
                 await message.Channel.SendMessageAsync(embed: DiscordHelper.GetEmbedBuilder($"⚔️ Rob {target.Name}?", text).Build(), components: menu);
                 return;
             }
+            if (args.Count == 2 && args[1].Equals(RaidService.StashId, StringComparison.OrdinalIgnoreCase))
+            {
+                await PostRaid(attacker, target, RaidService.StashId, message.Channel, now);
+                return;
+            }
             if (args.Count != 2 || !int.TryParse(args[1].TrimStart('#'), out int number))
                 throw new BadInputException($"Raids rob a property now, so pick one by number: `.raid {target.Name}` lists what they own, then `.raid {target.Name} 1`.");
             if (number < 1 || number > target.Properties.Count)
@@ -115,7 +120,7 @@ namespace DiscordBot.Managers
                 Defender = new RaidSide
                 {
                     Name = guard?.Name ?? r.Target.Name,
-                    Kind = PropertyCatalog.DisplayName(c.Property.Kind),
+                    Kind = c.IsStash ? "STASH" : PropertyCatalog.DisplayName(c.Property.Kind),
                     Level = guard?.Level ?? 0,
                     Rarity = guard?.Rarity ?? CardRarity.Common,
                     Power = c.DefencePower,
@@ -187,6 +192,21 @@ namespace DiscordBot.Managers
 
             lines.Add("");
             var menu = new SelectMenuBuilder().WithCustomId(Id(MoneyComponents.Raid, "pick", attacker.UserId.ToString(), target.UserId.ToString())).WithPlaceholder("Rob a property…");
+            if (target.Properties.Count == 0 && overall.IsRevenge)
+            {
+                //a raider with no property can still be hit back: revenge robs their cash
+                var stash = _raidService.Check(attacker, target, null, now, stash: true);
+                if (stash.Refusal != null)
+                    lines.Add($"💰 Their stash · ❌ {stash.Refusal}");
+                else
+                {
+                    lines.Add($"💰 **Their stash** (they own no property) · **{RaidService.ChancePercent(stash.Chance)}%** · loot {RaidService.Money(stash.Loot)} · stake {RaidService.Money(stash.Stake)}");
+                    menu.AddOption(Trim($"Their stash · {RaidService.ChancePercent(stash.Chance)}% · loot {RaidService.Money(stash.Loot)}", 100), RaidService.StashId,
+                        Trim($"Stake {RaidService.Money(stash.Stake)}, kept by {target.Name} if you fail", 100));
+                }
+                lines.Add($"\nRevenge robs their cash, up to what they took from you. Pick below or type `.raid {target.Name} stash`.");
+                return (string.Join("\n", lines), menu.Options.Count == 0 ? null : new ComponentBuilder().WithSelectMenu(menu).Build());
+            }
             for (int i = 0; i < target.Properties.Count && i < MaxRaidTargets; i++)
             {
                 var property = target.Properties[i];
@@ -202,7 +222,7 @@ namespace DiscordBot.Managers
                     Trim($"Stake {RaidService.Money(check.Stake)}, kept by {target.Name} if you fail", 100));
             }
             if (target.Properties.Count > MaxRaidTargets) lines.Add($"…and {target.Properties.Count - MaxRaidTargets} more (`.raid {target.Name} N`).");
-            lines.Add($"\nLoot is {RaidRules.LootHours:0} hours of the place's profit; you stake half of it. A robbed place is watched for {RaidRules.PropertyProtection.TotalHours:0} hours. " +
+            lines.Add($"\nLoot is {RaidRules.LootHours:0} hours of the place's profit; you stake {RaidRules.StakeShare:0%} of it. A robbed place is watched for {RaidRules.PropertyProtection.TotalHours:0} hours. " +
                 $"Your crew is your best {GangRules.CrewSize} rested cards, and they lie low for {GangRules.RestTime.TotalHours:0} hour after a job. Pick below or type `.raid {target.Name} N`.");
             return (string.Join("\n", lines), menu.Options.Count == 0 ? null : new ComponentBuilder().WithSelectMenu(menu).Build());
         }

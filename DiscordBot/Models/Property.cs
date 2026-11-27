@@ -130,7 +130,7 @@ namespace DiscordBot.Models
         {
             House(PropertyKind.Shack, "Shack", "🛖", 150_000, 0.0075, 30, "shack", "hut"),
             House(PropertyKind.House, "House", "🏠", HousePrice, HouseGrossYieldPerHour, 60, "house", "suburban", "home"),
-            House(PropertyKind.Luxury, "Luxury home", "🏡", 4_000_000, 0.0065, 110, "luxury", "lux"),
+            House(PropertyKind.Luxury, "Luxury home", "🏡", 4_000_000, 0.0065, 110, "luxury", "lux", "luxuryhome"),
             House(PropertyKind.Mansion, "Mansion", "🏰", 15_000_000, 0.0060, 180, "mansion"),
             House(PropertyKind.Penthouse, "Penthouse", "🌆", 50_000_000, 0.0055, 270, "penthouse", "ph"),
             Business(PropertyKind.FoodTruck, "Food truck", "🚚", 250_000, 0.0085, 20, "foodtruck", "truck", "food"),
