@@ -86,7 +86,7 @@ namespace Tests
             double trainingCost = Enumerable.Range(0, (int)Math.Round(levelsAhead)).Sum(CardLevels.FullLevelCost);
             Assert.InRange(trainingCost, 25_000, 50_000);
             var street = GangRules.Pack(PackKind.Street);
-            Assert.InRange(street.Price / street.Cards / CardTraits.LegendaryChance, 25_000, 50_000);
+            Assert.InRange(street.MinPrice / street.Cards / CardTraits.LegendaryChance, 25_000, 50_000);
         }
 
         [Fact]

@@ -38,7 +38,7 @@ namespace DiscordBot.Managers
         {
             var pack = args.Count == 0 ? GangRules.Pack(PackKind.Street) : GangRules.FindPack(args[0])
                 ?? throw new BadInputException("Which pack? " + string.Join(", ", GangRules.Packs.Select(p => $"`.pack {p.Kind.ToString().ToLower()}`")) + ".");
-            _ = Task.Run(() => OpenPackAndPost(message.Author, message.Channel, pack, null));
+            _ = Task.Run(() => OpenPackAndPost(message.Author, message.Channel, pack, null, 0));
             return Task.CompletedTask;
         }
 
@@ -49,14 +49,14 @@ namespace DiscordBot.Managers
         /// <summary>Players with a pack opening now: one at a time each, so two packs can't fetch the same faces side by side.</summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, bool> _openingPacks = new System.Collections.Concurrent.ConcurrentDictionary<ulong, bool>();
 
-        private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack, SocketMessageComponent click)
+        private async Task OpenPackAndPost(IUser user, IMessageChannel channel, PackType pack, SocketMessageComponent click, double shownPrice)
         {
             bool mine = _openingPacks.TryAdd(user.Id, true);
             try
             {
                 if (!mine) throw new BadInputException("You're already opening a pack. Wait for it.");
                 using (channel.EnterTypingState())
-                    await OpenPack(user, channel, pack);
+                    await OpenPack(user, channel, pack, shownPrice);
             }
             catch (BadInputException ex)
             {
@@ -79,11 +79,12 @@ namespace DiscordBot.Managers
             }
         }
 
-        private async Task OpenPack(IUser user, IMessageChannel channel, PackType pack)
+        /// <param name="shownPrice">The price on the button that was pressed (0 for a typed command): a pack that now costs more is refused instead of charged, since net worth moves.</param>
+        private async Task OpenPack(IUser user, IMessageChannel channel, PackType pack, double shownPrice)
         {
             CoinAccount account = await _coinService.Get(user.Id, user.Username);
             string today = DateTimeOffset.UtcNow.ToString("yyyyMMdd");
-            PackRefusal(account, pack, today);
+            PackRefusal(account, pack, today, PackPrice(account, pack));
 
             //get the faces before charging, so nobody pays when the image service is down; a card whose face failed gets a stand-in.
             //one at a time and each different, since the site hands the same face to requests made together
@@ -103,15 +104,19 @@ namespace DiscordBot.Managers
             }
 
             bool free;
+            double price;
             string xpLine = "";
             try
             {
                 lock (_packLock)
                 {
-                    PackRefusal(account, pack, today); //again: something may have changed while the faces downloaded
+                    price = PackPrice(account, pack); //again: net worth and cash may have changed while the faces downloaded
+                    PackRefusal(account, pack, today, price);
                     free = IsFreePack(account, pack, today);
+                    if (!free && shownPrice > 0 && price > shownPrice)
+                        throw new BadInputException($"That button said {Money.Format(shownPrice)}, but your {pack.Name.ToLower()} now costs {Money.Format(price)}. Nothing was charged: `.gang` has fresh buttons, or type `.pack {pack.Kind.ToString().ToLower()}`.");
                     if (free) account.LastFreePullDate = today;
-                    else Money.Debit(account, pack.Price);
+                    else Money.Debit(account, price);
                     var strongest = GangRules.Ordered(account.Cards).FirstOrDefault();
                     if (strongest != null)
                         xpLine = $" {strongest.Name}: {CardLevels.AddXp(strongest, CardLevels.PullXp)}.";
@@ -125,7 +130,7 @@ namespace DiscordBot.Managers
             }
             await _coinService.Update();
 
-            string paid = free ? "Free daily street pack." : $"{Money.Format(pack.Price)} spent.";
+            string paid = free ? "Free daily street pack." : $"{Money.Format(price)} spent.";
             string text = $"{paid}{xpLine} Your gang has {account.Cards.Count}/{GangRules.MaxCards} cards. `.gang` to see them.";
             var embed = DiscordHelper.GetEmbedBuilder($"{pack.Emoji} {user.Username} opened a {pack.Name}", string.Join("\n", cards.Select(c => c.Line())));
             MemoryStream picture = null;
@@ -148,16 +153,19 @@ namespace DiscordBot.Managers
                 await channel.SendMessageAsync(text, embed: embed.Build(), components: components, allowedMentions: AllowedMentions.None);
         }
 
+        /// <summary>What a pack costs this player right now: its share of their total net worth, at least its minimum.</summary>
+        private double PackPrice(CoinAccount account, PackType pack) => GangRules.PriceFor(pack, _worth.TotalWorth(account));
+
         private static bool IsFreePack(CoinAccount account, PackType pack, string today) => pack.Kind == PackKind.Street && account.LastFreePullDate != today;
 
         /// <summary>Throws when the pack can't be opened: no room in the gang, or not enough cash.</summary>
-        public static void PackRefusal(CoinAccount account, PackType pack, string today)
+        public static void PackRefusal(CoinAccount account, PackType pack, string today, double price)
         {
             if (account.Cards.Count + pack.Cards > GangRules.MaxCards)
                 throw new BadInputException($"Your gang has {account.Cards.Count}/{GangRules.MaxCards} cards, so a {pack.Cards}-card {pack.Name.ToLower()} won't fit. " +
                     $"`.fuse common` turns {GangRules.FuseCount} into one better card, and `.scrap N` turns one into XP.");
-            if (!IsFreePack(account, pack, today) && account.NetWorth < pack.Price)
-                throw new BadInputException($"A {pack.Name.ToLower()} costs {Money.Format(pack.Price)} and you have {Money.Format(Math.Max(0, account.NetWorth))}." +
+            if (!IsFreePack(account, pack, today) && account.NetWorth < price)
+                throw new BadInputException($"A {pack.Name.ToLower()} costs {pack.Share:0%} of your total worth (at least {Money.Format(pack.MinPrice)}): {Money.Format(price)}, and you have {Money.Format(Math.Max(0, account.NetWorth))} in cash." +
                     (pack.Kind == PackKind.Street ? " Your first street pack each day is free, come back tomorrow." : ""));
         }
 
@@ -492,8 +500,8 @@ namespace DiscordBot.Managers
             string owner = account.UserId.ToString();
             var builder = new ComponentBuilder();
             foreach (var pack in GangRules.Packs)
-                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(pack.Price))}", 80),
-                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
+                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(PackPrice(account, pack)))}", 80),
+                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString(), PackPrice(account, pack).ToString("0")), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
             builder.WithButton("My gang", Id(MoneyComponents.Card, "gang", owner), ButtonStyle.Secondary, row: 0);
             for (int i = 0; opened != null && i < opened.Count && i < 5; i++)
                 builder.WithButton(Trim($"🌀 {opened[i].Name.Split(' ')[0]} glitched?", 80), Id(MoneyComponents.Card, "glitch", owner, opened[i].Id), ButtonStyle.Secondary, row: 1);
@@ -539,8 +547,8 @@ namespace DiscordBot.Managers
             string today = now.ToString("yyyyMMdd");
             var builder = new ComponentBuilder();
             foreach (var pack in GangRules.Packs)
-                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(pack.Price))}", 80),
-                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString()), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
+                builder.WithButton(Trim($"{pack.Name} · {(IsFreePack(account, pack, today) ? "FREE" : RaidService.Money(PackPrice(account, pack)))}", 80),
+                    Id(MoneyComponents.Card, "pack", owner, pack.Kind.ToString(), PackPrice(account, pack).ToString("0")), pack.Kind == PackKind.Street ? ButtonStyle.Success : ButtonStyle.Primary, row: 0);
             var strongest = GangRules.Ordered(account.Cards).FirstOrDefault();
             if (strongest != null)
             {
@@ -606,8 +614,9 @@ namespace DiscordBot.Managers
                 case "pack":
                 {
                     if (args.Length < 2 || !Enum.TryParse(args[1], out PackKind kind) || component.Channel == null) break;
+                    double shown = args.Length > 2 && double.TryParse(args[2], out double parsed) ? parsed : 0; //old buttons carry no price
                     await component.DeferAsync();
-                    _ = Task.Run(() => OpenPackAndPost(component.User, component.Channel, GangRules.Pack(kind), component));
+                    _ = Task.Run(() => OpenPackAndPost(component.User, component.Channel, GangRules.Pack(kind), component, shown));
                     MarkActiveFromInteraction(component);
                     return;
                 }

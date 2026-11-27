@@ -125,7 +125,7 @@ namespace Tests
             foreach (var pack in GangRules.Packs)
             {
                 double xp = pack.Cards * averageXp * (pack.LegendaryBoost > 1 ? 1.5 : 1.2) + CardLevels.PullXp; //guarantees lift it a bit
-                Assert.True(pack.Price / xp > cheapestTraining, $"a {pack.Name} scrapped buys XP at ${pack.Price / xp:0.##} each");
+                Assert.True(pack.MinPrice / xp > cheapestTraining, $"a {pack.Name} scrapped buys XP at ${pack.MinPrice / xp:0.##} each");
             }
             //and scrapping a trained card gives back far less than its training cost
             Assert.True(GangRules.ScrapXpPerLevel * 2 < CardLevels.XpToNext(0)); //under half of even the cheapest level
@@ -227,10 +227,38 @@ namespace Tests
             Assert.Equal(15, GangRules.MaxCards);
             var account = new CoinAccount { UserId = 1, Name = "a", NetWorth = 1e9 };
             account.Cards.AddRange(Enumerable.Range(0, 12).Select(_ => RaidTests.AverageCard(0)));
-            DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127"); //12 + 3 fits
-            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Crew), "20261127"));
+            DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127", 3_000); //12 + 3 fits
+            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Crew), "20261127", 15_000));
             account.Cards.AddRange(Enumerable.Range(0, 10).Select(_ => RaidTests.AverageCard(0))); //an old gang of 22 keeps its cards
-            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127"));
+            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127", 3_000));
+        }
+
+        [Fact]
+        public void PacksCost_AShareOfNetWorth_NeverBelowTheirMinimum()
+        {
+            var street = GangRules.Pack(PackKind.Street);
+            var crew = GangRules.Pack(PackKind.Crew);
+            var kingpin = GangRules.Pack(PackKind.Kingpin);
+            Assert.Equal(new[] { 3_000.0, 15_000.0, 150_000.0 }, new[] { street, crew, kingpin }.Select(p => GangRules.PriceFor(p, 10_000)));
+            Assert.Equal(new[] { 3_000.0, 15_000.0, 150_000.0 }, new[] { street, crew, kingpin }.Select(p => GangRules.PriceFor(p, -5_000)));
+            Assert.Equal(new[] { 200_000.0, 1_000_000.0, 3_300_000.0 }, new[] { street, crew, kingpin }.Select(p => GangRules.PriceFor(p, 10_000_000)));
+            Assert.Equal(1_000_001, GangRules.PriceFor(crew, 10_000_001 - 0.5)); //rounded up to a whole dollar
+            Assert.Equal(3_300_000, GangRules.PriceFor(kingpin, 10_000_000.0000001)); //float noise doesn't add a dollar
+            Assert.Equal(150_000, GangRules.PriceFor(kingpin, double.NaN));
+        }
+
+        [Fact]
+        public void APack_NeedsCashForItsPrice_AndTheFreeOneNeedsNone()
+        {
+            var account = new CoinAccount { UserId = 1, Name = "a", NetWorth = 50_000 };
+            var kingpin = GangRules.Pack(PackKind.Kingpin);
+            DiscordBot.Managers.CommandManager.PackRefusal(account, kingpin, "20261127", 50_000);
+            var ex = Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, kingpin, "20261127", 50_001));
+            Assert.Contains("33%", ex.Message);
+            account.NetWorth = 0;
+            DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127", 999_999); //the daily one is free
+            account.LastFreePullDate = "20261127";
+            Assert.Throws<BadInputException>(() => DiscordBot.Managers.CommandManager.PackRefusal(account, GangRules.Pack(PackKind.Street), "20261127", 3_000));
         }
 
         [Fact]

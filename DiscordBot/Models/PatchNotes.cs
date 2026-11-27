@@ -65,6 +65,7 @@ namespace DiscordBot.Models
 
         public static readonly IReadOnlyList<PatchNote> All = new List<PatchNote>
         {
+            new PatchNote("2026-12-06", "Packs now cost 2% / 10% / 33% of your total worth, never less than before. `.portfolio` lists your property by type."),
             new PatchNote("2026-12-06", "Packs give every card its own face, and cards that shared one got new faces. `.gang` shows your whole gang as one picture. Gangs now hold 15 cards."),
             new PatchNote("2026-12-06", "New top rarity 🌀 Glitched: if a card's face came out messed up, press 🌀 Glitched? on it. 3 votes from other players, one a bot admin, upgrade it."),
             new PatchNote("2026-12-05", "Gangs: collect many cards, open packs with `.pack` (street, crew, kingpin), `.fuse` and `.scrap` spares. Card types and stances are gone: rarity, level and foil set power."),

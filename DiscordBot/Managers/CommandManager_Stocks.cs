@@ -289,19 +289,9 @@ namespace DiscordBot.Managers
                     lines.Add($"🎟️ old {option.Symbol} {(option.IsCall ? "call" : "put")} · {Money.Format(option.PayoutAt(market.Find(option.Symbol)?.FairPrice ?? option.Strike))} · {FormatRemaining(option.ExpiresAt - DateTime.UtcNow)} left");
             }
 
-            //houses: one line. Every house is worth the same (one market index), so it's just how many, what they'd sell for, and what they earn
+            //property: a total, then a line per type owned (houses first, then businesses, in catalog order)
             if (account.Properties.Count > 0)
-            {
-                int count = account.Properties.Count;
-                double paid = account.Properties.Sum(p => p.PurchaseCost);
-                var squatted = account.Running(PowerUpIds.Squatted, DateTime.UtcNow).Select(sq => PropertyService.SquattedPropertyId(account, sq)).ToHashSet();
-                double rent = account.Properties.Where(p => !squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index));
-                double holding = account.Properties.Sum(p => PropertyCatalog.HourlyHoldingCost(p.Kind, index));
-                double earning = rent - holding;
-                string squat = squatted.Count > 0 ? $" · 🏚️ squatters in {squatted.Count}" : "";
-                lines.Add($"\n🏠 **{count} house{(count == 1 ? "" : "s")} {Money.Format(propertyValue)}** (paid {Money.Format(paid)}, {Money.Signed(propertyValue - paid)} if sold now)");
-                lines.Add($"{(earning >= 0 ? "🟢" : "🔴")} Earning {Money.Signed(earning)} an hour after rent, fees and upkeep{squat}");
-            }
+                lines.AddRange(PropertyLines(account, index, propertyValue));
 
             if (account.Debt > 0)
                 lines.Add($"\n💳 **Debt {Money.Format(-account.Debt)}**, growing {CoinAccount.HourlyDebtInterest:P0} an hour. Auto-sell is {(account.AutoSellForDebt ? "on" : "off (`.autosell on`)")}.");
@@ -310,6 +300,33 @@ namespace DiscordBot.Managers
             var components = account.UserId == message.Author.Id ? PortfolioComponents(account, holdings) : null;
             await SendPagedEmbeds(message.Channel, $"{account.Name}'s portfolio", lines, components);
         }
+
+        /// <summary>The property part of `.portfolio`: the total and what it earns an hour, then each type owned with its count, value, gain if sold and earnings.</summary>
+        public static List<string> PropertyLines(CoinAccount account, double index, double propertyValue)
+        {
+            var lines = new List<string>();
+            var squatted = account.Running(PowerUpIds.Squatted, DateTime.UtcNow).Select(sq => PropertyService.SquattedPropertyId(account, sq)).ToHashSet();
+            double Earning(IEnumerable<PropertyHolding> places) =>
+                places.Where(p => !squatted.Contains(p.Id)).Sum(p => PropertyCatalog.NetRentPerHour(p.Kind, index)) - places.Sum(p => PropertyCatalog.HourlyHoldingCost(p.Kind, index));
+
+            double earning = Earning(account.Properties);
+            string squat = squatted.Count > 0 ? $" · 🏚️ squatters in {squatted.Count}" : "";
+            lines.Add($"\n🏘️ **Property {Money.Format(propertyValue)}** · {(earning >= 0 ? "🟢" : "🔴")} earning {Money.Signed(earning)} an hour after rent, fees and upkeep{squat}");
+            foreach (var type in PropertyCatalog.Types)
+            {
+                var places = account.Properties.Where(p => p.Kind == type.Kind).ToList();
+                if (places.Count == 0) continue;
+                double value = places.Sum(p => PropertyCatalog.SaleValue(p.Kind, index));
+                double paid = places.Sum(p => p.PurchaseCost);
+                double perHour = Earning(places);
+                string name = places.Count == 1 ? type.Name : PluralName(type.Name);
+                lines.Add($"{type.Emoji} **{places.Count} {name} {Money.Format(value)}** (paid {Money.Format(paid)}, {Money.Signed(value - paid)} if sold now) · {Money.Signed(perHour)}/h{(type.IsBusiness ? $" · swings ±{PropertyCatalog.BusinessIncomeSwing:0%}" : "")}");
+            }
+            return lines;
+        }
+
+        /// <summary>"Shack" to "Shacks", "Luxury home" to "Luxury homes", "Café" to "Cafés": every kind's plural is just an s.</summary>
+        private static string PluralName(string name) => name + "s";
 
         private static string SignedMoney(double amount) =>
             $"{(amount < 0 ? "-" : "+")}${FormatHelper.GetCommaNumber(Math.Abs(amount))}";

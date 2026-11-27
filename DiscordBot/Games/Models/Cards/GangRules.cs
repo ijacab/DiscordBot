@@ -19,7 +19,10 @@ namespace DiscordBot.Games.Models.Cards
         public string Name { get; init; }
         public string Emoji { get; init; }
         public int Cards { get; init; }
-        public double Price { get; init; }
+        /// <summary>The least a pack ever costs (what it cost before prices followed net worth).</summary>
+        public double MinPrice { get; init; }
+        /// <summary>The share of the buyer's total net worth it costs, when that's more than <see cref="MinPrice"/>.</summary>
+        public double Share { get; init; }
         /// <summary>One card in the pack is at least this rare.</summary>
         public CardRarity Guaranteed { get; init; }
         /// <summary>Legendary is this many times as likely in this pack.</summary>
@@ -50,10 +53,14 @@ namespace DiscordBot.Games.Models.Cards
 
         public static readonly IReadOnlyList<PackType> Packs = new List<PackType>
         {
-            new PackType { Kind = PackKind.Street, Name = "Street pack", Emoji = "📦", Cards = 3, Price = 3_000, Guaranteed = CardRarity.Common },
-            new PackType { Kind = PackKind.Crew, Name = "Crew pack", Emoji = "🎁", Cards = 5, Price = 15_000, Guaranteed = CardRarity.Rare },
-            new PackType { Kind = PackKind.Kingpin, Name = "Kingpin pack", Emoji = "💼", Cards = 5, Price = 150_000, Guaranteed = CardRarity.Epic, LegendaryBoost = 2 },
+            new PackType { Kind = PackKind.Street, Name = "Street pack", Emoji = "📦", Cards = 3, MinPrice = 3_000, Share = 0.02, Guaranteed = CardRarity.Common },
+            new PackType { Kind = PackKind.Crew, Name = "Crew pack", Emoji = "🎁", Cards = 5, MinPrice = 15_000, Share = 0.10, Guaranteed = CardRarity.Rare },
+            new PackType { Kind = PackKind.Kingpin, Name = "Kingpin pack", Emoji = "💼", Cards = 5, MinPrice = 150_000, Share = 0.33, Guaranteed = CardRarity.Epic, LegendaryBoost = 2 },
         };
+
+        /// <summary>What a pack costs someone worth <paramref name="totalWorth"/>: its share of that, never less than its minimum. Whole dollars.</summary>
+        public static double PriceFor(PackType pack, double totalWorth) =>
+            !double.IsFinite(totalWorth) ? pack.MinPrice : Math.Ceiling(Math.Round(Math.Max(pack.MinPrice, pack.Share * Math.Max(0, totalWorth)), 2));
 
         public static PackType Pack(PackKind kind) => Packs.First(p => p.Kind == kind);
 
